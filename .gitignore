@@ -16,6 +16,10 @@ wheels/
 data/youtube_cache/*
 !data/youtube_cache/.gitkeep
 
+# Kamma run logs — machine-specific operational data
+kamma/runs/
+kamma/setup_state.json
+
 # OS junk
 .DS_Store
 Thumbs.db
