@@ -49,6 +49,10 @@ Prune dead links periodically.
 - Buddhist Insights @ Empty Cloud
 - Bhikkhu Dhammānanda
 - Yuttadhammo Bhikkhu
+- Doug's Dharma | UCPIyEJzvW7SsbiIrooixjNA
+- Amaravati Buddhist Monastery | UCsgmmAelfZ2kfXZ08xlHpDw
+- Doug's Dharma | UCPIyEJzvW7SsbiIrooixjNA
+- Amaravati Buddhist Monastery | UCsgmmAelfZ2kfXZ08xlHpDw
 
 ## probationary
 - Clear Mountain Monastery Project
