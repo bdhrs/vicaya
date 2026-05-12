@@ -19,6 +19,7 @@ data/youtube_cache/*
 # Kamma run logs — machine-specific operational data
 kamma/runs/
 kamma/setup_state.json
+kamma/lessons.md
 
 # OS junk
 .DS_Store
