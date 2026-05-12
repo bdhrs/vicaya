@@ -41,6 +41,7 @@ All user-specific paths come from the project's `.env` file (see `.env.example` 
 - Canon db: read-only SQLite at the path baked into the helper module.
 - Calibre library: path baked into the helper module. **Note: FTS indexing is in progress (14k books, takes days). Until then, Calibre search is metadata-only. The helper falls back automatically — don't try to force FTS.**
 - `gemini` CLI on PATH for cross-check.
+- **Book code → source XML map**: `/home/bodhirasa/MyFiles/3_Active/dpd-db/tools/pali_text_files.py` maps every canon book code (e.g. `s0201m_mul`) to its source XML file in the DPD database. Consult this when you need to know which raw XML file a given book code corresponds to, or when debugging why a search returns no results for a book you expect to exist.
 
 ## Calling the helpers
 
@@ -256,6 +257,81 @@ web_refs:
 ## Open Threads
 - <questions raised but not answered>
 - <follow-up research worth doing>
+```
+
+### Frontmatter rules (agents get these wrong — read carefully)
+
+**Rule F1 — Quote any value that contains `: ` (colon-space).**
+
+The `topic` field almost always contains a colon. If it is not quoted, Obsidian's YAML
+parser will silently corrupt it. Wrap the whole value in double quotes:
+
+```yaml
+# WRONG — YAML parser breaks on the second colon
+topic: Meditation Subjects in Early Buddhist Texts: Frequency and Description
+
+# CORRECT
+topic: "Meditation Subjects in Early Buddhist Texts: Frequency and Description"
+```
+
+**Rule F2 — `canon_refs` entries must come verbatim from `resolve-citation` output.
+Never guess or infer a sutta number from a sutta name, or a name from a number.**
+
+The `human` field returned by `resolve-citation` is the *only* authoritative string.
+Copy it exactly. Common hallucination patterns to avoid:
+
+```yaml
+# WRONG — agent guessed that MN22 = Mahāsatipaṭṭhāna (it is not; DN22 is)
+- MN22 Mahāsatipaṭṭhānasuttaṃ para 10
+
+# WRONG — agent confabulated a range "AN9.93-432" which is not a real reference
+- AN9.93-432 para 977 (Ānāpānasati Sutta)
+
+# WRONG — parenthetical gloss is fabricated and wrong (DN11 is Kevaddhā, not Six Recollections)
+- DN11 Kevattasuttaṃ (Six Recollections)
+
+# CORRECT — taken verbatim from resolve-citation output
+- MN118 Ānāpānasatisuttaṃ para 977
+- DN22 Mahāsatipaṭṭhānasuttaṃ para 374
+```
+
+**Rule F3 — `web_refs` URL and annotation must refer to the same sutta/text.**
+
+Write only the URL and the retrieval date. If you add an annotation, verify it matches
+the URL. A URL pointing to `dn/dn.22.0.than.html` is DN22, *not* MN118:
+
+```yaml
+# WRONG — URL is DN22 but annotation says MN118
+- https://accesstoinsight.org/tipitaka/dn/dn.22.0.than.html (MN118 ...) — retrieved 2026-05-12
+
+# CORRECT
+- https://accesstoinsight.org/tipitaka/dn/dn.22.0.than.html — retrieved 2026-05-12
+```
+
+**Rule F4 — `library_refs` use the integer `book_id` from Calibre, not a made-up number.**
+
+Format: `<book_id>: <title> — <author>`. The `book_id` comes from the `CalibreHit.book_id`
+field. Never invent an ID.
+
+### Correct frontmatter example (reference this when writing)
+
+```yaml
+---
+date: 2026-05-12
+topic: "Ānāpānasati: Breath Meditation in the Nikāyas"
+tags:
+  - research
+  - pali
+  - meditation
+canon_refs:
+  - MN118 Ānāpānasatisuttaṃ para 977
+  - SN54.1 Ekadhammosuttaṃ para 1
+library_refs:
+  - 223: On Meditation - Instructions from Talks by Ajaan Chah — Ajahn Chah
+  - 1683: Buddhist Meditation and Depth Psychology — Douglas M. Burns
+web_refs:
+  - https://accesstoinsight.org/tipitaka/mn/mn.118.than.html — retrieved 2026-05-12
+---
 ```
 
 Write the note via the Obsidian CLI. Slugify the topic for the filename:
