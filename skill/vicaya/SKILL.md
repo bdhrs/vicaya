@@ -95,18 +95,170 @@ Pull 2–4 search variations (Pāḷi term, English gloss, related concept). Sum
 
 ### Phase 2 — Canon search
 
+**Book code map** — all codes are embedded here. Never guess a code from memory.
+
+Codes come directly from the CST XML file headers. The suffix `_mul` = mūla (root text);
+`_att` = aṭṭhakathā (commentary); `_tik` = ṭīkā (sub-commentary). Pass codes verbatim
+to `--books`.
+
+**Each book code is also the exact SQLite table name in the canon database.** For example,
+the Paṭisambhidāmagga mūla is stored in a table named `s0517m_mul`, with columns
+`paranum`, `pali`, `english`, `chinese`. The `search-canon` helper queries these tables
+directly using the codes you pass to `--books`. This means you can also query the database
+directly via `sqlite3` if you need ordered paragraph access (e.g. `SELECT paranum, pali,
+english, chinese FROM s0517m_mul ORDER BY CAST(paranum AS INTEGER) LIMIT 5`).
+
+#### Aggregate patterns
+
+| Scope | Mūla | Commentary |
+|---|---|---|
+| All suttas | `s*_mul` | `s*_att` |
+| Dīgha Nikāya | `s01*_mul` | `s01*_att` |
+| Majjhima Nikāya | `s02*_mul` | `s02*_att` |
+| Saṃyutta Nikāya | `s03*_mul` | `s03*_att` |
+| Aṅguttara Nikāya | `s04*_mul` | `s04*_att` |
+| Khuddaka Nikāya | `s05*_mul` | `s05*_att` |
+| Vinaya | `vin*_mul` | `vin*_att` |
+| Abhidhamma | `abh*_mul` | `abh*_att` |
+| Sub-commentaries (all) | — | `*_tik` |
+
+Mūla + commentary together: `--books "s02*_mul" "s02*_att"`
+
+#### Dīgha Nikāya (Sumaṅgalavilāsinī)
+
+| Mūla | Aṭṭhakathā | Pāḷi title | Suttas |
+|---|---|---|---|
+| `s0101m_mul` | `s0101a_att` | Sīlakkhandhavaggapāḷi | DN 1–13 |
+| `s0102m_mul` | `s0102a_att` | Mahāvaggapāḷi | DN 14–23 |
+| `s0103m_mul` | `s0103a_att` | Pāthikavaggapāḷi | DN 24–34 |
+
+#### Majjhima Nikāya (Papañcasūdanī)
+
+| Mūla | Aṭṭhakathā | Pāḷi title | Suttas |
+|---|---|---|---|
+| `s0201m_mul` | `s0201a_att` | Mūlapaṇṇāsapāḷi | MN 1–50 |
+| `s0202m_mul` | `s0202a_att` | Majjhimapaṇṇāsapāḷi | MN 51–100 |
+| `s0203m_mul` | `s0203a_att` | Uparipaṇṇāsapāḷi | MN 101–152 |
+
+#### Saṃyutta Nikāya (Sāratthappakāsinī)
+
+| Mūla | Aṭṭhakathā | Pāḷi title | Saṃyuttas |
+|---|---|---|---|
+| `s0301m_mul` | `s0301a_att` | Sagāthāvaggo | SN 1–11 |
+| `s0302m_mul` | `s0302a_att` | Nidānavaggo | SN 12–21 |
+| `s0303m_mul` | `s0303a_att` | Khandhavaggo | SN 22–34 |
+| `s0304m_mul` | `s0304a_att` | Saḷāyatanavaggo | SN 35–44 |
+| `s0305m_mul` | `s0305a_att` | Mahāvaggo | SN 45–56 |
+
+#### Aṅguttara Nikāya (Manorathapūraṇī)
+
+Note: 11 mūla files consolidate into 4 commentary files.
+
+| Mūla | Aṭṭhakathā | Pāḷi title | Nipātas |
+|---|---|---|---|
+| `s0401m_mul` | `s0401a_att` | Ekakanipātapāḷi | AN 1 |
+| `s0402m1_mul` | `s0402a_att` | Dukanipātapāḷi | AN 2 |
+| `s0402m2_mul` | *(in s0402a_att)* | Tikanipātapāḷi | AN 3 |
+| `s0402m3_mul` | *(in s0402a_att)* | Catukkanipātapāḷi | AN 4 |
+| `s0403m1_mul` | `s0403a_att` | Pañcakanipātapāḷi | AN 5 |
+| `s0403m2_mul` | *(in s0403a_att)* | Chakkanipātapāḷi | AN 6 |
+| `s0403m3_mul` | *(in s0403a_att)* | Sattakanipātapāḷi | AN 7 |
+| `s0404m1_mul` | `s0404a_att` | Aṭṭhakanipātapāḷi | AN 8 |
+| `s0404m2_mul` | *(in s0404a_att)* | Navakanipātapāḷi | AN 9 |
+| `s0404m3_mul` | *(in s0404a_att)* | Dasakanipātapāḷi | AN 10 |
+| `s0404m4_mul` | *(in s0404a_att)* | Ekādasakanipātapāḷi | AN 11 |
+
+#### Khuddaka Nikāya
+
+| KN # | Mūla | Aṭṭhakathā | English name |
+|---|---|---|---|
+| 1 | `s0501m_mul` | `s0501a_att` | Khuddakapāṭha |
+| 2 | `s0502m_mul` | `s0502a_att` | Dhammapada |
+| 3 | `s0503m_mul` | `s0503a_att` | Udāna |
+| 4 | `s0504m_mul` | `s0504a_att` | Itivuttaka |
+| 5 | `s0505m_mul` | `s0505a_att` | Suttanipāta |
+| 6 | `s0506m_mul` | `s0506a_att` | Vimānavatthu |
+| 7 | `s0507m_mul` | `s0507a_att` | Petavatthu |
+| 8 | `s0508m_mul` | `s0508a1_att` `s0508a2_att` | Theragāthā |
+| 9 | `s0509m_mul` | `s0509a_att` | Therīgāthā |
+| 10 | `s0510m1_mul` `s0510m2_mul` | `s0510a_att` | Apadāna |
+| 11 | `s0511m_mul` | `s0511a_att` | Buddhavaṃsa |
+| 12 | `s0512m_mul` | `s0512a_att` | Cariyāpiṭaka |
+| 13–14 | `s0513m_mul` `s0514m_mul` | `s0513a1_att` `s0513a2_att` `s0513a3_att` `s0513a4_att` `s0514a1_att` `s0514a2_att` `s0514a3_att` | Jātaka |
+| 15 | `s0515m_mul` | `s0515a_att` | Mahāniddesa |
+| 16 | `s0516m_mul` | `s0516a_att` | Cūḷaniddesa |
+| 17 | `s0517m_mul` | `s0517a_att` | Paṭisambhidāmagga |
+| 18 | `s0518m_nrf` | — | Milindapañha |
+| 19 | `s0519m_mul` | `s0519a_att` | Nettippakaraṇa |
+| 20 | `s0520m_nrf` | — | Peṭakopadesa |
+
+To search mūla + commentary together for one KN book:
+`--books s0502m_mul s0502a_att` (Dhammapada + Dhammapada-aṭṭhakathā)
+
+#### Vinaya (Samantapāsādikā)
+
+| Mūla | Aṭṭhakathā | Pāḷi title |
+|---|---|---|
+| `vin01m_mul` | `vin01a_att` | Pārājikapāḷi |
+| `vin02m1_mul` | `vin02a1_att` | Pācittiyapāḷi |
+| `vin02m2_mul` | `vin02a2_att` | Mahāvaggapāḷi |
+| `vin02m3_mul` | `vin02a3_att` | Cūḷavaggapāḷi |
+| `vin02m4_mul` | `vin02a4_att` | Parivārapāḷi |
+
+#### Abhidhamma
+
+| Mūla | Aṭṭhakathā | Pāḷi title | Book |
+|---|---|---|---|
+| `abh01m_mul` | `abh01a_att` | Dhammasaṅgaṇīpāḷi | Abh 1 |
+| `abh02m_mul` | `abh02a_att` | Vibhaṅgapāḷi | Abh 2 |
+| `abh03m1_mul` | `abh03a_att` | Dhātukathāpāḷi | Abh 3 |
+| `abh03m2_mul` | *(in abh03a_att)* | Puggalapaññattipāḷi | Abh 4 |
+| `abh03m3_mul` | *(in abh03a_att)* | Kathāvatthupāḷi | Abh 5 |
+| `abh03m4_mul` `abh03m5_mul` `abh03m6_mul` | *(in abh03a_att)* | Yamakapāḷi | Abh 6 |
+| `abh03m7_mul` … `abh03m11_mul` | *(in abh03a_att)* | Paṭṭhānapāḷi | Abh 7 |
+
+#### Post-canonical
+
+| Code | Pāḷi title | Notes |
+|---|---|---|
+| `e0101n_mul` `e0102n_mul` | Visuddhimaggo | Buddhaghosa's path manual (2 vols) |
+
 Infer the canon scope from the question. Examples:
-- "in the suttas" → `books=["s*"]`
-- "in the suttas and commentaries" → `books=["s*", "*_att"]`
-- "in the Vinaya" → `books=["vin*"]`
-- "in the Abhidhamma" → `books=["abh*"]`
-- "in the Khuddaka" → `books=["s05*"]`
+- "in the suttas" → `--books s*_mul`
+- "in the suttas and commentaries" → `--books "s*_mul" "*_att"`
+- "in the Vinaya" → `--books vin*_mul`
+- "in the Abhidhamma" → `--books abh*_mul`
+- "in the Khuddaka" → `--books s05*_mul`
 - Unspecified → default to suttas mūla (helper default, `books=None`)
 
 ```bash
 uv run tools/research_sources.py search-canon "<Pāḷi term>" --books "s*_mul" --lang pali --limit 20
 # Also try English if the user used English terms:
 uv run tools/research_sources.py search-canon "<English term>" --books "s*_mul" --lang english --limit 10
+```
+
+**Example — search for "ñāṇa" in the Paṭisambhidāmagga only, get Pāḷi + English:**
+
+```bash
+uv run tools/research_sources.py search-canon "ñāṇa" --books s0517m_mul --lang pali --limit 5
+```
+
+Returns `CanonHit` objects. Read `pali` and `english` fields directly — there is no `snippet` field:
+
+```json
+{
+  "book_code": "s0517m_mul",
+  "paranum": "1",
+  "pali": "Sotāvadhāne paññā sutamaye ñāṇaṃ.",
+  "english": "In attentive hearing, wisdom is knowledge born of hearing.",
+  "chinese": "于专注听闻的智慧，是闻所成智。"
+}
+```
+
+Then confirm which sutta the paragraph belongs to:
+
+```bash
+uv run tools/research_sources.py resolve-citation s0517m_mul 1
 ```
 
 For each hit you'll cite, run `resolve-citation` with that hit's `book_code` and `paranum` to get the human-readable reference (e.g. `MN60 Apaṇṇakasuttaṃ para 97`):

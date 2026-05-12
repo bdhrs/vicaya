@@ -1,0 +1,150 @@
+search_key,type,pitaka,nikaya,pali_title,english_name,notes
+# ── Aggregate patterns (pass to --books to search an entire nikāya) ──────────
+s*_mul,nikaya,Suttantapiṭaka,,All sutta mūla,All Suttas (DN + MN + SN + AN + KN),Default scope for most research
+s01*_mul,nikaya,Suttantapiṭaka,Dīghanikāyo,Dīghanikāyo,Dīgha Nikāya (all volumes),DN suttas 1–34
+s02*_mul,nikaya,Suttantapiṭaka,Majjhimanikāyo,Majjhimanikāyo,Majjhima Nikāya (all volumes),MN suttas 1–152
+s03*_mul,nikaya,Suttantapiṭaka,Saṃyuttanikāyo,Saṃyuttanikāyo,Saṃyutta Nikāya (all volumes),SN saṃyuttas 1–56
+s04*_mul,nikaya,Suttantapiṭaka,Aṅguttaranikāyo,Aṅguttaranikāyo,Aṅguttara Nikāya (all volumes),AN nipātas 1–11
+s05*_mul,nikaya,Suttantapiṭaka,Khuddakanikāyo,Khuddakanikāyo,Khuddaka Nikāya (all volumes),All 20 KN books (mūla only)
+vin*_mul,nikaya,Vinayapiṭaka,,Vinayapiṭaka,Vinaya (all volumes),Full Vinaya — Suttavibhaṅga + Khandhaka + Parivāra
+abh*_mul,nikaya,Abhidhammapiṭaka,,Abhidhammapiṭaka,Abhidhamma (all volumes),All 7 Abhidhamma books
+# ── Dīgha Nikāya ─────────────────────────────────────────────────────────────
+s0101m_mul,volume,Suttantapiṭaka,Dīghanikāyo,Sīlakkhandhavaggapāḷi,Dīgha Nikāya vol. 1,DN 1–13 (Sīlakkhandhavagga)
+s0102m_mul,volume,Suttantapiṭaka,Dīghanikāyo,Mahāvaggapāḷi,Dīgha Nikāya vol. 2,DN 14–23 (Mahāvagga)
+s0103m_mul,volume,Suttantapiṭaka,Dīghanikāyo,Pāthikavaggapāḷi,Dīgha Nikāya vol. 3,DN 24–34 (Pāthikavagga)
+# ── Majjhima Nikāya ───────────────────────────────────────────────────────────
+s0201m_mul,volume,Suttantapiṭaka,Majjhimanikāyo,Mūlapaṇṇāsapāḷi,Majjhima Nikāya vol. 1,MN 1–50 (Mūlapaṇṇāsa)
+s0202m_mul,volume,Suttantapiṭaka,Majjhimanikāyo,Majjhimapaṇṇāsapāḷi,Majjhima Nikāya vol. 2,MN 51–100 (Majjhimapaṇṇāsa)
+s0203m_mul,volume,Suttantapiṭaka,Majjhimanikāyo,Uparipaṇṇāsapāḷi,Majjhima Nikāya vol. 3,MN 101–152 (Uparipaṇṇāsa)
+# ── Saṃyutta Nikāya ───────────────────────────────────────────────────────────
+s0301m_mul,volume,Suttantapiṭaka,Saṃyuttanikāyo,Sagāthāvaggo,Saṃyutta Nikāya vol. 1,SN 1–11 (Sagāthāvagga)
+s0302m_mul,volume,Suttantapiṭaka,Saṃyuttanikāyo,Nidānavaggo,Saṃyutta Nikāya vol. 2,SN 12–21 (Nidānavagga)
+s0303m_mul,volume,Suttantapiṭaka,Saṃyuttanikāyo,Khandhavaggo,Saṃyutta Nikāya vol. 3,SN 22–34 (Khandhavagga)
+s0304m_mul,volume,Suttantapiṭaka,Saṃyuttanikāyo,Saḷāyatanavaggo,Saṃyutta Nikāya vol. 4,SN 35–44 (Saḷāyatanavagga)
+s0305m_mul,volume,Suttantapiṭaka,Saṃyuttanikāyo,Mahāvaggo,Saṃyutta Nikāya vol. 5,SN 45–56 (Mahāvagga)
+# ── Aṅguttara Nikāya ─────────────────────────────────────────────────────────
+s0401m_mul,volume,Suttantapiṭaka,Aṅguttaranikāyo,Ekakanipātapāḷi,Aṅguttara Nikāya — Ones (AN 1),AN nipāta 1
+s0402m1_mul,volume,Suttantapiṭaka,Aṅguttaranikāyo,Dukanipātapāḷi,Aṅguttara Nikāya — Twos (AN 2),AN nipāta 2
+s0402m2_mul,volume,Suttantapiṭaka,Aṅguttaranikāyo,Tikanipātapāḷi,Aṅguttara Nikāya — Threes (AN 3),AN nipāta 3
+s0402m3_mul,volume,Suttantapiṭaka,Aṅguttaranikāyo,Catukkanipātapāḷi,Aṅguttara Nikāya — Fours (AN 4),AN nipāta 4
+s0403m1_mul,volume,Suttantapiṭaka,Aṅguttaranikāyo,Pañcakanipātapāḷi,Aṅguttara Nikāya — Fives (AN 5),AN nipāta 5
+s0403m2_mul,volume,Suttantapiṭaka,Aṅguttaranikāyo,Chakkanipātapāḷi,Aṅguttara Nikāya — Sixes (AN 6),AN nipāta 6
+s0403m3_mul,volume,Suttantapiṭaka,Aṅguttaranikāyo,Sattakanipātapāḷi,Aṅguttara Nikāya — Sevens (AN 7),AN nipāta 7
+s0404m1_mul,volume,Suttantapiṭaka,Aṅguttaranikāyo,Aṭṭhakanipātapāḷi,Aṅguttara Nikāya — Eights (AN 8),AN nipāta 8
+s0404m2_mul,volume,Suttantapiṭaka,Aṅguttaranikāyo,Navakanipātapāḷi,Aṅguttara Nikāya — Nines (AN 9),AN nipāta 9
+s0404m3_mul,volume,Suttantapiṭaka,Aṅguttaranikāyo,Dasakanipātapāḷi,Aṅguttara Nikāya — Tens (AN 10),AN nipāta 10
+s0404m4_mul,volume,Suttantapiṭaka,Aṅguttaranikāyo,Ekādasakanipātapāḷi,Aṅguttara Nikāya — Elevens (AN 11),AN nipāta 11
+# ── Khuddaka Nikāya ───────────────────────────────────────────────────────────
+s0501m_mul,volume,Suttantapiṭaka,Khuddakanikāyo,Khuddakapāṭhapāḷi,Khuddakapāṭha (Minor Readings),KN 1
+s0502m_mul,volume,Suttantapiṭaka,Khuddakanikāyo,Dhammapadapāḷi,Dhammapada,KN 2
+s0503m_mul,volume,Suttantapiṭaka,Khuddakanikāyo,Udānapāḷi,Udāna,KN 3
+s0504m_mul,volume,Suttantapiṭaka,Khuddakanikāyo,Itivuttakapāḷi,Itivuttaka,KN 4
+s0505m_mul,volume,Suttantapiṭaka,Khuddakanikāyo,Suttanipātapāḷi,Suttanipāta,KN 5
+s0506m_mul,volume,Suttantapiṭaka,Khuddakanikāyo,Vimānavatthupāḷi,Vimānavatthu,KN 6
+s0507m_mul,volume,Suttantapiṭaka,Khuddakanikāyo,Petavatthupāḷi,Petavatthu,KN 7
+s0508m_mul,volume,Suttantapiṭaka,Khuddakanikāyo,Theragāthāpāḷi,Theragāthā,KN 8
+s0509m_mul,volume,Suttantapiṭaka,Khuddakanikāyo,Therīgāthāpāḷi,Therīgāthā,KN 9
+s0510m1_mul,volume,Suttantapiṭaka,Khuddakanikāyo,Therāpadānapāḷi,Apadāna vol. 1 (Therāpadāna),KN 10 part 1
+s0510m2_mul,volume,Suttantapiṭaka,Khuddakanikāyo,Therāpadānapāḷi,Apadāna vol. 2 (Therīapadāna),KN 10 part 2
+s0511m_mul,volume,Suttantapiṭaka,Khuddakanikāyo,Buddhavaṃsapāḷi,Buddhavaṃsa,KN 11
+s0512m_mul,volume,Suttantapiṭaka,Khuddakanikāyo,Cariyāpiṭakapāḷi,Cariyāpiṭaka,KN 12
+s0513m_mul,volume,Suttantapiṭaka,Khuddakanikāyo,Jātakapāḷi,Jātaka vol. 1,KN 13
+s0514m_mul,volume,Suttantapiṭaka,Khuddakanikāyo,Jātakapāḷi,Jātaka vol. 2,KN 14
+s0515m_mul,volume,Suttantapiṭaka,Khuddakanikāyo,Mahāniddesapāḷi,Mahāniddesa,KN 15
+s0516m_mul,volume,Suttantapiṭaka,Khuddakanikāyo,Cūḷaniddesapāḷi,Cūḷaniddesa,KN 16
+s0517m_mul,volume,Suttantapiṭaka,Khuddakanikāyo,Paṭisambhidāmaggapāḷi,Paṭisambhidāmagga,KN 17
+s0518m_nrf,volume,Suttantapiṭaka,Khuddakanikāyo,Milindapañhapāḷi,Milindapañha,KN 18 (semi-canonical in CST)
+s0519m_mul,volume,Suttantapiṭaka,Khuddakanikāyo,Nettippakaraṇapāḷi,Nettippakaraṇa,KN 19 (semi-canonical in CST)
+s0520m_nrf,volume,Suttantapiṭaka,Khuddakanikāyo,Peṭakopadesapāḷi,Peṭakopadesa,KN 20 (semi-canonical in CST)
+# ── Vinaya ────────────────────────────────────────────────────────────────────
+vin01m_mul,volume,Vinayapiṭaka,,Pārājikapāḷi,Vinaya — Suttavibhaṅga (Pārājika),Bhikkhu rules: Pārājika + Saṅghādisesa
+vin02m1_mul,volume,Vinayapiṭaka,,Pācittiyapāḷi,Vinaya — Suttavibhaṅga (Pācittiya),Bhikkhu Pācittiya + Bhikkhunī rules
+vin02m2_mul,volume,Vinayapiṭaka,,Mahāvaggapāḷi,Vinaya — Khandhaka (Mahāvagga),Khandhakas 1–10
+vin02m3_mul,volume,Vinayapiṭaka,,Cūḷavaggapāḷi,Vinaya — Khandhaka (Cūḷavagga),Khandhakas 11–22
+vin02m4_mul,volume,Vinayapiṭaka,,Parivārapāḷi,Vinaya — Parivāra,Summaries and analyses
+# ── Abhidhamma ────────────────────────────────────────────────────────────────
+abh01m_mul,volume,Abhidhammapiṭaka,,Dhammasaṅgaṇīpāḷi,Dhammasaṅgaṇī,Abh 1 — Enumeration of phenomena
+abh02m_mul,volume,Abhidhammapiṭaka,,Vibhaṅgapāḷi,Vibhaṅga,Abh 2 — Book of analysis
+abh03m1_mul,volume,Abhidhammapiṭaka,,Dhātukathāpāḷi,Dhātukathā,Abh 3 — Discourse on elements
+abh03m2_mul,volume,Abhidhammapiṭaka,,Puggalapaññattipāḷi,Puggalapaññatti,Abh 4 — Designation of human types
+abh03m3_mul,volume,Abhidhammapiṭaka,,Kathāvatthupāḷi,Kathāvatthu,Abh 5 — Points of controversy
+abh03m4_mul,volume,Abhidhammapiṭaka,,Yamakapāḷi (paṭhamo bhāgo),Yamaka vol. 1,Abh 6 part 1 — Book of pairs
+abh03m5_mul,volume,Abhidhammapiṭaka,,Yamakapāḷi (dutiyo bhāgo),Yamaka vol. 2,Abh 6 part 2
+abh03m6_mul,volume,Abhidhammapiṭaka,,Yamakapāḷi (tatiyo bhāgo),Yamaka vol. 3,Abh 6 part 3
+abh03m7_mul,volume,Abhidhammapiṭaka,,Paṭṭhānapāḷi,Paṭṭhāna vol. 1,Abh 7 part 1 — Conditional relations
+abh03m8_mul,volume,Abhidhammapiṭaka,,Paṭṭhānapāḷi,Paṭṭhāna vol. 2,Abh 7 part 2
+abh03m9_mul,volume,Abhidhammapiṭaka,,Paṭṭhānapāḷi,Paṭṭhāna vol. 3,Abh 7 part 3
+abh03m10_mul,volume,Abhidhammapiṭaka,,Paṭṭhānapāḷi,Paṭṭhāna vol. 4,Abh 7 part 4
+abh03m11_mul,volume,Abhidhammapiṭaka,,Paṭṭhānapāḷi,Paṭṭhāna vol. 5,Abh 7 part 5
+# ── Post-canonical / Para-canonical ──────────────────────────────────────────
+e0101n_mul,volume,Post-canonical,,Visuddhimaggo,Visuddhimagga vol. 1,Buddhaghosa's path manual — Sīla + Samādhi
+e0102n_mul,volume,Post-canonical,,Visuddhimaggo,Visuddhimagga vol. 2,Buddhaghosa's path manual — Paññā
+# ═══════════════════════════════════════════════════════════════════════════════
+# AṬṬHAKATHĀ (commentaries) — search_key uses _att suffix; file codes use 'a' not 'm'
+# Note: AN commentaries are consolidated (4 att files vs 11 mūla files).
+#       Jātaka commentary is split across 7 att files (s0513a1–4 + s0514a1–3).
+# ═══════════════════════════════════════════════════════════════════════════════
+# ── Aggregate aṭṭhakathā patterns ────────────────────────────────────────────
+s*_att,nikaya,Suttantapiṭaka,,All sutta aṭṭhakathā,All Sutta Commentaries (DN + MN + SN + AN + KN),
+s01*_att,nikaya,Suttantapiṭaka,Dīghanikāyo,Dīghanikāya-aṭṭhakathā,Dīgha Nikāya commentaries (all),Sumaṅgalavilāsinī
+s02*_att,nikaya,Suttantapiṭaka,Majjhimanikāyo,Majjhimanikāya-aṭṭhakathā,Majjhima Nikāya commentaries (all),Papañcasūdanī
+s03*_att,nikaya,Suttantapiṭaka,Saṃyuttanikāyo,Saṃyuttanikāya-aṭṭhakathā,Saṃyutta Nikāya commentaries (all),Sāratthappakāsinī
+s04*_att,nikaya,Suttantapiṭaka,Aṅguttaranikāyo,Aṅguttaranikāya-aṭṭhakathā,Aṅguttara Nikāya commentaries (all),Manorathapūraṇī
+s05*_att,nikaya,Suttantapiṭaka,Khuddakanikāyo,Khuddakanikāya-aṭṭhakathā,Khuddaka Nikāya commentaries (all),
+vin*_att,nikaya,Vinayapiṭaka,,Vinaya-aṭṭhakathā,Vinaya commentaries (all),Samantapāsādikā
+abh*_att,nikaya,Abhidhammapiṭaka,,Abhidhamma-aṭṭhakathā,Abhidhamma commentaries (all),
+# ── Dīgha Nikāya aṭṭhakathā (Sumaṅgalavilāsinī) ─────────────────────────────
+s0101a_att,volume,Suttantapiṭaka,Dīghanikāyo,Sīlakkhandhavaggaṭṭhakathā,DN commentary vol. 1,Commentary on DN 1–13
+s0102a_att,volume,Suttantapiṭaka,Dīghanikāyo,Mahāvaggaṭṭhakathā,DN commentary vol. 2,Commentary on DN 14–23
+s0103a_att,volume,Suttantapiṭaka,Dīghanikāyo,Pāthikavaggaṭṭhakathā,DN commentary vol. 3,Commentary on DN 24–34
+# ── Majjhima Nikāya aṭṭhakathā (Papañcasūdanī) ───────────────────────────────
+s0201a_att,volume,Suttantapiṭaka,Majjhimanikāyo,Mūlapaṇṇāsa-aṭṭhakathā,MN commentary vol. 1,Commentary on MN 1–50
+s0202a_att,volume,Suttantapiṭaka,Majjhimanikāyo,Majjhimapaṇṇāsa-aṭṭhakathā,MN commentary vol. 2,Commentary on MN 51–100
+s0203a_att,volume,Suttantapiṭaka,Majjhimanikāyo,Uparipaṇṇāsa-aṭṭhakathā,MN commentary vol. 3,Commentary on MN 101–152
+# ── Saṃyutta Nikāya aṭṭhakathā (Sāratthappakāsinī) ──────────────────────────
+s0301a_att,volume,Suttantapiṭaka,Saṃyuttanikāyo,Sagāthāvagga-aṭṭhakathā,SN commentary vol. 1,Commentary on SN 1–11
+s0302a_att,volume,Suttantapiṭaka,Saṃyuttanikāyo,Nidānavagga-aṭṭhakathā,SN commentary vol. 2,Commentary on SN 12–21
+s0303a_att,volume,Suttantapiṭaka,Saṃyuttanikāyo,Khandhavagga-aṭṭhakathā,SN commentary vol. 3,Commentary on SN 22–34
+s0304a_att,volume,Suttantapiṭaka,Saṃyuttanikāyo,Saḷāyatanavagga-aṭṭhakathā,SN commentary vol. 4,Commentary on SN 35–44
+s0305a_att,volume,Suttantapiṭaka,Saṃyuttanikāyo,Mahāvagga-aṭṭhakathā,SN commentary vol. 5,Commentary on SN 45–56
+# ── Aṅguttara Nikāya aṭṭhakathā (Manorathapūraṇī) ───────────────────────────
+# NOTE: 4 att files cover 11 mūla volumes; mūla nipāta ranges are approximate.
+s0401a_att,volume,Suttantapiṭaka,Aṅguttaranikāyo,Ekakanipāta-aṭṭhakathā,AN commentary vol. 1,Commentary on AN 1 (Ones)
+s0402a_att,volume,Suttantapiṭaka,Aṅguttaranikāyo,Dukanipāta-aṭṭhakathā,AN commentary vol. 2,Commentary on AN 2–4 (Twos–Fours)
+s0403a_att,volume,Suttantapiṭaka,Aṅguttaranikāyo,Pañcakanipāta-aṭṭhakathā,AN commentary vol. 3,Commentary on AN 5–7 (Fives–Sevens)
+s0404a_att,volume,Suttantapiṭaka,Aṅguttaranikāyo,Aṭṭhakanipāta-aṭṭhakathā,AN commentary vol. 4,Commentary on AN 8–11 (Eights–Elevens)
+# ── Khuddaka Nikāya aṭṭhakathā ───────────────────────────────────────────────
+s0501a_att,volume,Suttantapiṭaka,Khuddakanikāyo,Khuddakapāṭha-aṭṭhakathā,Khuddakapāṭha commentary,Paramatthajotikā I
+s0502a_att,volume,Suttantapiṭaka,Khuddakanikāyo,Dhammapada-aṭṭhakathā,Dhammapada commentary,Dhammapadaṭṭhakathā
+s0503a_att,volume,Suttantapiṭaka,Khuddakanikāyo,Udāna-aṭṭhakathā,Udāna commentary,Paramatthadīpanī I
+s0504a_att,volume,Suttantapiṭaka,Khuddakanikāyo,Itivuttaka-aṭṭhakathā,Itivuttaka commentary,Paramatthadīpanī II
+s0505a_att,volume,Suttantapiṭaka,Khuddakanikāyo,Suttanipāta-aṭṭhakathā,Suttanipāta commentary,Paramatthajotikā II
+s0506a_att,volume,Suttantapiṭaka,Khuddakanikāyo,Vimānavatthu-aṭṭhakathā,Vimānavatthu commentary,Paramatthadīpanī III
+s0507a_att,volume,Suttantapiṭaka,Khuddakanikāyo,Petavatthu-aṭṭhakathā,Petavatthu commentary,Paramatthadīpanī IV
+s0508a1_att,volume,Suttantapiṭaka,Khuddakanikāyo,Theragāthā-aṭṭhakathā,Theragāthā commentary vol. 1,Paramatthadīpanī V part 1
+s0508a2_att,volume,Suttantapiṭaka,Khuddakanikāyo,Theragāthā-aṭṭhakathā,Theragāthā commentary vol. 2,Paramatthadīpanī V part 2
+s0509a_att,volume,Suttantapiṭaka,Khuddakanikāyo,Therīgāthā-aṭṭhakathā,Therīgāthā commentary,Paramatthadīpanī VI
+s0510a_att,volume,Suttantapiṭaka,Khuddakanikāyo,Apadāna-aṭṭhakathā,Apadāna commentary,Visuddhajanavilāsinī
+s0511a_att,volume,Suttantapiṭaka,Khuddakanikāyo,Buddhavaṃsa-aṭṭhakathā,Buddhavaṃsa commentary,Madhuratthavilāsinī
+s0512a_att,volume,Suttantapiṭaka,Khuddakanikāyo,Cariyāpiṭaka-aṭṭhakathā,Cariyāpiṭaka commentary,Paramatthadīpanī VII
+s0513a1_att,volume,Suttantapiṭaka,Khuddakanikāyo,Jātaka-aṭṭhakathā,Jātaka commentary vol. 1,Jātakaṭṭhavaṇṇanā part 1
+s0513a2_att,volume,Suttantapiṭaka,Khuddakanikāyo,Jātaka-aṭṭhakathā,Jātaka commentary vol. 2,Jātakaṭṭhavaṇṇanā part 2
+s0513a3_att,volume,Suttantapiṭaka,Khuddakanikāyo,Jātaka-aṭṭhakathā,Jātaka commentary vol. 3,Jātakaṭṭhavaṇṇanā part 3
+s0513a4_att,volume,Suttantapiṭaka,Khuddakanikāyo,Jātaka-aṭṭhakathā,Jātaka commentary vol. 4,Jātakaṭṭhavaṇṇanā part 4
+s0514a1_att,volume,Suttantapiṭaka,Khuddakanikāyo,Jātaka-aṭṭhakathā,Jātaka commentary vol. 5,Jātakaṭṭhavaṇṇanā part 5
+s0514a2_att,volume,Suttantapiṭaka,Khuddakanikāyo,Jātaka-aṭṭhakathā,Jātaka commentary vol. 6,Jātakaṭṭhavaṇṇanā part 6
+s0514a3_att,volume,Suttantapiṭaka,Khuddakanikāyo,Jātaka-aṭṭhakathā,Jātaka commentary vol. 7,Jātakaṭṭhavaṇṇanā part 7
+s0515a_att,volume,Suttantapiṭaka,Khuddakanikāyo,Mahāniddesa-aṭṭhakathā,Mahāniddesa commentary,Saddhammapajjotikā I
+s0516a_att,volume,Suttantapiṭaka,Khuddakanikāyo,Cūḷaniddesa-aṭṭhakathā,Cūḷaniddesa commentary,Saddhammapajjotikā II
+s0517a_att,volume,Suttantapiṭaka,Khuddakanikāyo,Paṭisambhidāmagga-aṭṭhakathā,Paṭisambhidāmagga commentary,Saddhammappakāsinī
+s0519a_att,volume,Suttantapiṭaka,Khuddakanikāyo,Nettippakaraṇa-aṭṭhakathā,Nettippakaraṇa commentary,
+# ── Vinaya aṭṭhakathā (Samantapāsādikā) ─────────────────────────────────────
+vin01a_att,volume,Vinayapiṭaka,,Pārājikakaṇḍa-aṭṭhakathā (paṭhamo bhāgo),Vinaya commentary vol. 1,Samantapāsādikā — Pārājika
+vin02a1_att,volume,Vinayapiṭaka,,Pācittiya-aṭṭhakathā,Vinaya commentary vol. 2,Samantapāsādikā — Pācittiya
+vin02a2_att,volume,Vinayapiṭaka,,Mahāvagga-aṭṭhakathā,Vinaya commentary vol. 3,Samantapāsādikā — Mahāvagga
+vin02a3_att,volume,Vinayapiṭaka,,Cūḷavagga-aṭṭhakathā,Vinaya commentary vol. 4,Samantapāsādikā — Cūḷavagga
+vin02a4_att,volume,Vinayapiṭaka,,Parivāra-aṭṭhakathā,Vinaya commentary vol. 5,Samantapāsādikā — Parivāra
+# ── Abhidhamma aṭṭhakathā ────────────────────────────────────────────────────
+abh01a_att,volume,Abhidhammapiṭaka,,Dhammasaṅgaṇī-aṭṭhakathā,Dhammasaṅgaṇī commentary,Atthasālinī
+abh02a_att,volume,Abhidhammapiṭaka,,Vibhaṅga-aṭṭhakathā,Vibhaṅga commentary,Sammohavinodanī
+abh03a_att,volume,Abhidhammapiṭaka,,Pañcapakaraṇa-aṭṭhakathā,Five-books commentary,Pañcapakaraṇaṭṭhakathā — covers Abh 3–7
