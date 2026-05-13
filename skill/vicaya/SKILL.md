@@ -300,7 +300,7 @@ uv run tools/research_sources.py resolve-citation s0201m_mul 23
 
 The user's Calibre library is whole-library non-fiction (Buddhism, religion, psychology). The tag vocabulary is in `<repo>/data/calibre_tags.csv` (~2k tags).
 
-Pick up to 3 tags relevant to the question (e.g. `Abhidhamma`, `Buddhism`, `Vipassana`, `Meditation`). Tag names are case-sensitive and exact.
+Pick up to 3 tags relevant to the question (e.g. `Abhidhamma`, `Buddhism`, `Vipassana`, `Meditation`). Tag names are exact strings; matching is case- and diacritic-insensitive.
 
 ```bash
 uv run tools/research_sources.py search-calibre "<term>" --tags Buddhism --limit 20
@@ -309,6 +309,116 @@ uv run tools/research_sources.py search-calibre "<term>" --tags Buddhism --limit
 If FTS isn't ready (the helper handles this silently), you'll get metadata hits — book titles whose name/author/comments match. Still useful; note them as "potentially relevant reading" rather than quoting.
 
 If FTS *is* ready, snippets come back with each hit — quote them with book + author attribution.
+
+#### Calibre search guidelines (library shape, read before searching)
+
+The library currently holds **12,501 books**, **2,140 tags**, **6,042 author
+entries**, **607 series**, and **21 languages**. Searches frequently miss
+because the agent guesses the wrong tag, the wrong author form, or scopes too
+narrowly. The next several subsections fix this.
+
+**1. `calibredb --search` syntax cheat sheet.** The helper passes its
+expression straight to Calibre. The grammar is:
+
+| Form | Meaning |
+|---|---|
+| `nibbana` | free-text match across all fields |
+| `title:nibbana` | scope to title |
+| `authors:Analayo` | scope to authors |
+| `tags:Nibbana` | tag contains "Nibbana" (loose) — also catches `Parinibbana` |
+| `tags:"=Nibbana"` | tag equals "Nibbana" exactly (what the helper uses) |
+| `series:"Wheel Publication"` | scope to series |
+| `publisher:"Pali Text Society"` | scope to publisher |
+| `comments:jhana` | scope to the comments / description field |
+| `languages:eng` | scope to language code |
+| `A and B` / `A or B` / `not A` | boolean joins |
+| `"two words"` | quoted phrase |
+
+**2. Diacritics and case do not matter.** Calibre's metadata search is
+already case- and diacritic-insensitive. Verified live:
+`title:paticcasamuppada`, `title:Paticcasamuppada`, and
+`title:paṭiccasamuppāda` all return the same 13 hits. The helper still
+strips diacritics for safety, but **do not waste a second round trying the
+other form** — if `paticcasamuppada` returned 0, `paṭiccasamuppāda` will
+also return 0. (This refines Hard Rule 3 for Calibre specifically; the canon
+SQLite and the vault still demand exact diacritics.)
+
+**3. Tag matching: exact vs. loose.** The helper uses **exact match**
+(`tags:"=Nibbana"`) which returns 52 books. Loose match (`tags:Nibbana`)
+returns 60 — the extra 8 come from `Parinibbana` and the stray
+diacritic-form `Nibbāna`. Exact is the default because it's more precise.
+**To widen when results are thin:** pass multiple related tags to the helper
+(`--tags Nibbana Parinibbana Nibbida`), or drop tags entirely and rely on
+free-text + post-filter on the returned `tags` field.
+
+**4. Tag vocabulary clusters (the realistic shape).** The vocab is
+fragmented — there is no single canonical form for many concepts. Always
+consider the cluster, not just the first name that comes to mind.
+
+| Cluster | Tags to consider together |
+|---|---|
+| Pāḷi Canon meta | `Pali Canon`, `Pāli Canon`, `Pali Canon (Tipitaka)`, `Pali Canon (About)`, `Tipitaka`, `Canon` |
+| Nikāyas | `Digha Nikaya`, `Majjhima Nikaya`, `Samyutta Nikaya`, `Anguttara Nikaya`, `Khuddaka Nikaya`, `Nikayas` |
+| Other canons | `Chinese Canon (Tripitaka)`, `Tibetan Canon`, `Sanskrit Canon`, `Zen Canon`, `Extra-Canonical` |
+| Doctrinal core | `Anatta`, `Anapanasati`, `Satipatthana`, `Jhana`, `Vipassana`, `Mindfulness`, `Meditation`, `Rebirth`, `Death & Dying`, `Nibbana`, `Parinibbana`, `Doctrine` |
+| Theravāda traditions | `Theravada`, `Thai Forest Tradition`, `Sri Lankan Tradition`, `Myanmar Tradition`, `Early Buddhism` |
+| Non-Theravāda schools | `Tibetan Buddhism`, `Zen Buddhism`, `Mahayana`, `Madhyamaka`, `Mahayana Sutra` |
+| Language / philology | `Pali Text`, `Pali Grammar`, `Pali Literature`, `Sanskrit Text`, `English Translation`, `Commentary`, `Atthakatha`, `Sutta Studies` |
+| Adjacent fields | `Psychology`, `Philosophy`, `Phenomenology`, `Neuroscience`, `Cognitive Science`, `Consciousness`, `Comparative Studies`, `Comparative Religion` |
+| Noise — ignore | `!tagme` (621 books), `!name me` (230), `Readme!` (93), `Unknown` (in authors, 346) |
+
+Top tags by count (sanity check for "is this a real tag"): Academic 2085,
+Buddhism 957, English Translation 893, History 808, Psychology 668,
+Philosophy 631, Meditation 574, Pali Canon (Tipitaka) 552, Tibetan Buddhism
+538, Pali Text 514, dhamma talk 434, Doctrine 415, Mindfulness 390. The full
+list is in `data/calibre_tags.csv`.
+
+**5. Author naming conventions (strip the title).** The library mixes many
+honorific patterns: "Bhikkhu X" (58 entries), "X Bhikkhu" (25), "Ajahn X"
+(38), "X Sayadaw" (22), "Ven. X" (98), "Dr. X" (56). Top authors: Piya Tan
+(1,293), Bhikkhu Anālayo (410), Vipassana Research Institute (249), Pali
+Text Society (114), Anandajoti Bhikkhu (104), Bhikkhu Bodhi (79),
+Thanissaro Bhikkhu (76), Ajahn Brahmavamso (58), Ajahn Chah (49), Mahasi
+Sayadaw (45), Bhikkhu Sujato (31), Nyanaponika Thera (28).
+
+Rule: **search the distinguishing element, not the title.** Use
+`authors:Analayo`, not `authors:"Bhikkhu Analayo"`. Use `authors:Bodhi`, not
+`authors:"Bhikkhu Bodhi"`. (Case and diacritics still don't matter.)
+
+Corporate / canonical "authors" exist and are useful seed entries when the
+human author is unknown: `Samyutta Nikaya` (55 books listed under this
+"author"), `Pali Text Society` (114), `Vipassana Research Institute` (249),
+`84000` (36 — the Tibetan translation project), `Wikipedia` (69).
+
+**6. The `series:` field is unused but valuable.** 607 distinct series.
+When a topic implies a known imprint, scope with it. Useful series:
+
+- `A Very Short Introduction` (339) — Oxford pocket intros
+- `Vipassana Research Institute` (224)
+- `Wheel Publication` (134) — BPS short pamphlets
+- `Pali Text Society Editions` (110)
+- `Buddhist Studies Review` (68)
+- `BDK English Tripiṭaka Series` (60)
+- `Journal of the Pali Text Society` (49)
+- `Bodhi Leaves` (48)
+- `Kangyur` (36)
+- `Insight Journal` (34)
+
+The current helper does not expose `--series` as a flag, but the free-text
+helper invocation can include a series clause via `comments:` or by passing
+the series name as the query and post-filtering.
+
+**7. Search ladder — descend when hits are thin.** Don't give up after one
+search returning zero. Walk down these rungs in order:
+
+1. **Tag-scoped phrase.** `search-calibre "jhana" --tags Meditation` — narrow and high-precision.
+2. **Free-text phrase, no tags.** `search-calibre "jhana absorption"` — Calibre searches title/author/comments simultaneously.
+3. **Drop the tag restriction** if step 1 returned 0. The book may be tagged with a sibling concept (e.g. `Mindfulness` instead of `Meditation`).
+4. **Widen via synonym tag cluster** from the table above. Pass several related tags. E.g. for *Nibbāna* topics, pass `--tags Nibbana Parinibbana` together.
+5. **Known-author search.** If you know an authority on the topic (e.g. Bhikkhu Anālayo on early Buddhism, Bhikkhu Bodhi on the Nikāyas, Piya Tan on sutta translations), do an `authors:` scoped search.
+
+If all five rungs return nothing, the topic is genuinely absent from the
+library — note it as a gap in *Open Threads*, do not invent a citation.
 
 ### Phase 4a — Web search
 
@@ -341,6 +451,8 @@ To locate the relevant moment in a long talk, scan `segments` for keywords (Engl
 ### Phase 5 — Synthesis
 
 Draft the answer in your working notes. Cite as you go — never make a claim without a reference.
+
+**Before drafting, read the "Pāḷi/English presentation" rules in the Style notes section.** Those rules govern how every Pāḷi quote and every inline Pāḷi term is rendered in the final vault note. Apply them from the first draft so you don't have to retrofit on the final pass.
 
 **Recursive citation check.** As you draft, watch for sources that are load-bearing — a teacher, text, or sutta that the argument depends on but that hasn't been searched yet. If you find one, pause and loop back to Phase 2 or 3 for that specific entity before continuing. Up to two loop-backs per run; don't spiral beyond that. If after the loop-back the source still can't be found, note the gap honestly in Open Threads.
 
@@ -561,6 +673,83 @@ vault search next time.
 - Don't pad with summaries the user can derive themselves. Findings should be specific, with quotes.
 - Open Threads is for genuine open questions, not "more research could be done". Be honest.
 - The note is written for a reader — typically the user, weeks later — who wants information and sources. Not a workflow log.
+
+### Pāḷi/English presentation (vault note only)
+
+These rules apply to the final markdown note written into the vault. They
+do **not** apply to the terminal report — terminal output stays plain.
+
+**Rule P1 — Sentence/paragraph quotations: two blockquotes, one above the
+other.** When you quote a Pāḷi sentence or paragraph and its English
+translation, render each as its own markdown blockquote, separated by a
+blank line. This makes the provenance unambiguous: the reader sees source
+text first, then translation, both visually offset from the surrounding
+prose.
+
+```markdown
+> Cattārome, bhikkhave, āhārā bhūtānaṃ vā sattānaṃ ṭhitiyā…
+
+> Bhikkhus, there are these four foods for the sustenance of beings
+> already born…
+```
+
+**Rule P2 — Inline Pāḷi inside English prose: italics + bracketed gloss on
+first use.** Every Pāḷi word that appears in an English sentence is
+italicised. On its **first appearance per section**, follow it with the
+English gloss in round brackets; subsequent uses in the same section are
+italics only.
+
+```markdown
+The four *āhāra* (nutriments) sustain beings already born and assist those
+seeking rebirth. Three of the four *āhāra* are mental.
+```
+
+**Additional conventions:**
+
+- **Sutta names in italic Pāḷi, citation tag in roman.** Write
+  `*Apaṇṇakasutta*` for the title; write `MN60` for the reference tag. So
+  a full inline citation is: *Apaṇṇakasutta* (MN60).
+- **IAST fidelity.** Keep diacritics exactly as the canon SQLite returns
+  them. Do not normalise `ṃ` to `ṁ` or vice versa; do not strip macrons.
+- **Stem form vs. inflected form.** In prose, use the stem
+  (`dukkha`, `paṭiccasamuppāda`, `khandha`). Use inflected forms
+  (`dukkhaṃ`, `khandhā`) only inside a verbatim quote where the case ending
+  is what the canon says.
+- **English-loaned terms stay roman after first introduction.** Words that
+  have entered English Buddhist usage — Dhamma, Buddha, Nibbāna, sutta,
+  Sangha, Bhikkhu, Vinaya, Tipitaka — appear in roman type and need no
+  bracketed gloss. Diacritics are kept (so: Nibbāna, not Nibbana).
+  Distinguish capitalised proper-noun uses (the Dhamma = the teaching)
+  from common-noun *dhamma* (mental object, phenomenon), which stays
+  italicised because it carries a technical sense.
+- **Verse.** Preserve line breaks inside the blockquote — one Pāḷi pāda per
+  line, blank line, then the English with the same line break structure.
+
+**Worked example — single canon hit, rendered both ways:**
+
+Inline form (used in flowing analysis):
+
+```markdown
+The Buddha frames the four *āhāra* (nutriments) — *kabaḷīkārāhāra*
+(physical food), *phassāhāra* (contact), *manosañcetanāhāra* (mental
+volition), and *viññāṇāhāra* (consciousness) — as conditions for the
+continuity of beings.
+```
+
+Blockquote form (used when the canon text itself is the evidence):
+
+```markdown
+**MN9 Sammādiṭṭhisuttaṃ para 70:**
+
+> Cattārome, āvuso, āhārā bhūtānaṃ vā sattānaṃ ṭhitiyā sambhavesīnaṃ vā
+> anuggahāya. Katame cattāro? Kabaḷīkāro āhāro oḷāriko vā sukhumo vā,
+> phasso dutiyo, manosañcetanā tatiyā, viññāṇaṃ catutthaṃ.
+
+> Friend, there are these four foods for the sustenance of beings already
+> born and for the support of those seeking rebirth. What four? Physical
+> food, gross or subtle; second, contact; third, mental volition; fourth,
+> consciousness.
+```
 
 ## Self-improvement loop (mandatory)
 
