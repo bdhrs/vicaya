@@ -35,8 +35,8 @@ Hard-coded for this machine. If a path is missing or a tool isn't installed, sto
 
 All user-specific paths come from the project's `.env` file (see `.env.example` at the repo root). The helper module resolves them on import. Agents do not hard-code paths; use the helpers and CLI.
 
-- Vault: `$VICAYA_VAULT_PATH` (Obsidian CLI vault name: `$VICAYA_VAULT_NAME`)
-- Output folder in vault: `Research/`
+- Vault Root: `$VICAYA_VAULT_PATH` (This is the absolute path to the root directory of the vault).
+- Output folder in vault: `$VICAYA_VAULT_PATH/Research/`
 - Helper module: `<repo>/tools/research_sources.py`
 - Canon db: read-only SQLite at the path baked into the helper module.
 - Calibre library: path baked into the helper module. **Note: FTS indexing is in progress (14k books, takes days). Until then, Calibre search is metadata-only. The helper falls back automatically — don't try to force FTS.**
@@ -117,6 +117,8 @@ uv run tools/research_sources.py search-vault "<key terms>" --limit 20
 Pull up to 4 search variations (Pāḷi term, English gloss, related concept). Summarise the top hits in your own working notes — you'll cite the most relevant ones in the final note via `[[wiki-links]]`.
 
 **Perspective map.** Before moving to Phase 2, explicitly name the 2–5 competing positions or schools of thought the question touches. Examples: "Theravāda commentarial vs. Ñāṇavīra structural", "cessationist vs. realist readings of Nibbāna", "three-lives vs. momentary paṭiccasamuppāda". If the question is purely factual with no interpretive dispute, skip this step. Otherwise, tag subsequent evidence — canon hits, library sources, web sources — as supporting a named position. This ensures the final note covers all significant views, not just the first position the search surfaces.
+
+**Counter-perspective search.** For each position named in the perspective map, actively search for sources that support it — don't rely on the first position the keyword searches happen to surface. If a web or canon search returns only one school's voice, run a second search scoped to a known proponent of the opposing view (e.g. `authors:Analayo` for early-Buddhist readings, a specific scholar for the academic critique). Evidence gaps for any named position belong in Critical Gaps, not silent omission.
 
 ### Phase 2 — Canon search
 
@@ -556,9 +558,10 @@ web_refs:
 - [[Existing vault note 1]]
 - [[Existing vault note 2]]
 
-## Open Threads
-- <questions raised but not answered>
-- <follow-up research worth doing>
+## Critical Gaps
+- <weakest claim in this note and what source would close it>
+- <named perspective from the perspective map that lacked sufficient evidence>
+- <follow-up searches worth running>
 
 ---
 *Researched by <Model family + version> on YYYY-MM-DD.*
@@ -713,7 +716,7 @@ vault search next time.
 - **Target depth: ~12 pages (~3,500 words), measured by source coverage.** This is the length at which the user has reported finding the notes most useful. Reach it by surfacing more sources, not by writing more prose per source. If a draft is short, the right fix is: did I search for all relevant canon passages? did I exhaust the Calibre library? did I pull transcripts from the most relevant Dhamma talks? — not: did I write enough sentences about each position?
 - **Template is structure, not length.** The note template shows section headings and citation formats. It is not a short form to fill in one pass. The Evidence sections in particular should be as long as the sources warrant.
 - Quote Pāḷi in IAST as it appears in the canon db (don't transliterate).
-- Open Threads is for genuine open questions, not "more research could be done". Be honest.
+- Critical Gaps is for honest self-assessment: the weakest claim, which named perspective lacked sources, and the specific text or search that would close each gap. Not a catch-all for "more research could be done".
 - The note is written for a reader — typically the user, weeks later — who wants information and sources. Not a workflow log.
 
 ### Pāḷi/English presentation (vault note only)
