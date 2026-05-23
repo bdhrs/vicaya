@@ -163,6 +163,8 @@ The note template uses these tiers as section headings (see Phase 7). The Devil'
 
 Run these in order. Print a one-line status update before each phase so the user can follow along in their terminal.
 
+**Skipping a phase:** Any phase that has no meaningful bearing on the question may be skipped (e.g. Phase 2 canon search for a secular topic, Phase 4b YouTube for a narrow Abhidhamma classification question). When you skip a phase: (1) print a one-line terminal note stating which phase and why, and (2) add a row to the `## Angles Not Pursued` table in the vault note with the phase name and reason.
+
 ## Investigation angles
 
 A standing checklist of evidentiary lenses. For every research question, walk this
@@ -413,6 +415,8 @@ uv run tools/research_sources.py search-vault "<key terms>" --limit 20
 
 Pull up to 4 search variations (Pāḷi term, English gloss, related concept). Summarise the top hits in your own working notes — you'll cite the most relevant ones in the final note via `[[wiki-links]]`.
 
+**If `search-vault` returns 0 on terms you'd expect to find**, fall back to `rg "<term>" <vault-path>` — the helper has a known diacritic/index bug that can silently miss files `rg` finds.
+
 **Perspective map.** Before moving to Phase 2, explicitly name the 2–5 competing positions or schools of thought the question touches. Examples: "Theravāda commentarial vs. Ñāṇavīra structural", "cessationist vs. realist readings of Nibbāna", "three-lives vs. momentary paṭiccasamuppāda". If the question is purely factual with no interpretive dispute, skip this step. Otherwise, tag subsequent evidence — canon hits, library sources, web sources — as supporting a named position. This ensures the final note covers all significant views, not just the first position the search surfaces.
 
 **Counter-perspective search.** For each position named in the perspective map, actively search for sources that support it — don't rely on the first position the keyword searches happen to surface. If a web or canon search returns only one school's voice, run a second search scoped to a known proponent of the opposing view (e.g. `authors:Analayo` for early-Buddhist readings, a specific scholar for the academic critique). Evidence gaps for any named position belong in Critical Gaps, not silent omission.
@@ -647,6 +651,12 @@ If FTS isn't ready (the helper handles this silently), you'll get metadata hits 
 
 If FTS *is* ready, snippets come back with each hit — quote them with book + author attribution.
 
+**epub fallback.** When FTS is unavailable and a specific epub is worth searching directly, extract it:
+```bash
+unzip -o /path/to/book.epub -d /tmp/epub_extract && rg "<term>" /tmp/epub_extract/
+```
+The book's Calibre path is in the metadata returned by `search-calibre`. Search the extracted html files with `rg`; paraphrase or quote the relevant passage with book + author attribution.
+
 #### Calibre search guidelines (library shape, read before searching)
 
 The library currently holds **12,501 books**, **2,140 tags**, **6,042 author
@@ -784,7 +794,7 @@ uv run tools/research_sources.py search-youtube "apannaka sutta MN 60" --limit 2
 
 Each hit comes back with `tier ∈ {trusted, probationary}` (excluded channels are dropped server-side). Prefer trusted hits; treat probationary hits with appropriate skepticism. The allowlist lives at `data/youtube_channels.md` — promote/demote at the end of the run via the reflection template.
 
-For the most promising videos (up to 20), pull the transcript:
+For the most promising videos (up to 20), pull the transcript (skip if video titles are sufficient to confirm content is tangential or low-value for the question):
 
 ```bash
 uv run tools/research_sources.py fetch-transcript R0vhivplJuM
@@ -1119,9 +1129,9 @@ Only edits to `SKILL.md` or `tools/research_sources.py`. One line each, prefixed
 
 ### Section 3 — Distillation reminder (conditional)
 
-Count the files in `kamma/runs/`. If there are 10 or more, print one line:
+Count the files in `runs/`. If there are 10 or more, print one line:
 
-> **Skill distillation due** — `kamma/runs/` has <N> reflections. Read them back and promote any recurring lessons into SKILL.md Hard Rules or guidance sections.
+> **Skill distillation due** — `runs/` has <N> reflections. Read them back and promote any recurring lessons into SKILL.md Hard Rules or guidance sections.
 
 If fewer than 10, omit this section entirely.
 
@@ -1266,7 +1276,7 @@ exists. Empty reflections are allowed; missing ones are not.
 Before printing the final report, write a reflection to:
 
 ```
-<repo-root>/kamma/runs/<UTC-timestamp>.md
+<repo-root>/runs/<UTC-timestamp>.md
 ```
 
 Use the filename format `YYYYMMDD-HHMMSS.md` (UTC). Template:
