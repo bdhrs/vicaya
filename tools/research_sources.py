@@ -437,12 +437,15 @@ def _calibre_fts_available(library: Path) -> bool:
         N of TOTAL books files indexed
     Indexing is complete when N == TOTAL.
     """
-    result = subprocess.run(
-        ["calibredb", "fts_index", "status", "--library-path", str(library)],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
+    try:
+        result = subprocess.run(
+            ["calibredb", "fts_index", "status", "--library-path", str(library)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        return False
     if result.returncode != 0:
         return False
     out = result.stdout
@@ -501,7 +504,10 @@ def _calibre_fts_search(
     tag_search = _build_tag_search(tags)
     if tag_search:
         cmd.extend(["--restrict-to", f"search:{tag_search}"])
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        return []
     if result.returncode != 0 or not result.stdout.strip():
         return []
     try:
@@ -547,7 +553,10 @@ def _calibre_metadata_search(
         "--library-path",
         str(library),
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        return []
     if result.returncode != 0 or not result.stdout.strip():
         return []
     try:
@@ -772,7 +781,7 @@ def gemini_cross_check(prompt: str, timeout: int = 120) -> str:
     """
     try:
         result = subprocess.run(
-            ["gemini", "-p", prompt],
+            ["gemini", "--approval-mode", "plan", "-p", prompt],
             capture_output=True,
             text=True,
             timeout=timeout,
