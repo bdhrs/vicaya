@@ -278,6 +278,18 @@ Use the same slug you'll use for the vault note. Initialise with this structure:
 ## Phase 5 — Synthesis draft
 <full draft before any cross-check editing>
 
+## Bibliography (accumulating)
+### Primary Sources
+<add entries as sources are finalized>
+### Secondary Sources
+<sorted by author surname; add entries as sources are finalized>
+### Online Sources
+<add entries as sources are finalized>
+### Media Sources
+<add entries as sources are finalized>
+### Vault Sources Referenced
+<add entries as sources are finalized>
+
 ## Phase 6 — Cross-check raw output
 <paste raw cross-check output verbatim>
 
@@ -325,6 +337,120 @@ Every source used in the note belongs to one of four tiers. The tier determines 
 | **T4 — Modern teaching and popular sources** | Dhamma talks, recorded teachings, accessible books, YouTube transcripts | Supporting only. Cannot be load-bearing for doctrinal claims. Cite teacher + talk/book. |
 
 The note template uses these tiers as section headings (see Phase 7). The Devil's Advocate checklist question 5 checks that load-bearing claims rest on T1 or T2, not T4.
+
+## Bibliography
+
+Every Vicaya note ends with a `## Bibliography` section. This is the publication-ready
+reference list — distinct from footnotes (which are short inline locators) and from the
+YAML frontmatter (which is machine-readable metadata). The bibliography is human-readable
+and formatted for academic use.
+
+**System adopted: Chicago Notes-Bibliography (N-B).** This is the dominant style in
+academic Theravāda / Pāḷi Studies — used by JIABS, PTS publications, Oxford Journal of
+Buddhist Studies, and Wisdom / University of Hawaii Press Buddhist Studies monographs.
+Footnotes remain as short locators (unchanged); the bibliography provides the full,
+sorted, properly-formatted citation for every source cited.
+
+**Five subsections.** Emit a subsection only if it has at least one entry; omit empty
+subsections entirely.
+
+1. **Primary Sources** — Pāḷi canon and parallel Āgama texts
+2. **Secondary Sources** — library books and journal articles (sorted by author surname)
+3. **Online Sources** — web pages, SuttaCentral links
+4. **Media Sources** — YouTube talks and Dhamma recordings
+5. **Vault Sources Referenced** — internal Obsidian notes cited via wiki-link
+
+**AI research sessions are excluded.** The agent footer already records model identity
+and date; that is sufficient disclosure.
+
+### Format rules
+
+#### Primary sources (Pāḷi canon)
+
+No specific translator (CST direct access):
+```
+*Majjhima Nikāya* 60 (*Apaṇṇakasuttaṃ*). Chaṭṭha Saṅgāyana Tipiṭaka.
+  Accessed via tipitaka-translation-data.db (`s0201m_mul`).
+```
+
+With translator (EBC translation file):
+```
+*Majjhima Nikāya* 10 (*Satipaṭṭhānasuttaṃ*). Translated by Bhikkhu Sujato.
+  SuttaCentral, 2018. Accessed via EBC vault.
+```
+
+Chinese Āgama parallel:
+```
+*Madhyamāgama* 98 (*Zhongahanijing* T 26). Translated by Charles Patton.
+  Accessed via EBC vault, `ma-patton/ma98-patton.md`.
+```
+
+Commentary / sub-commentary:
+```
+Buddhaghosa. *Visuddhimagga* (Path of Purification). Chaṭṭha Saṅgāyana Tipiṭaka.
+  Accessed via tipitaka-translation-data.db (`e0101n_mul`, `e0102n_mul`).
+```
+
+#### Secondary sources (library books)
+
+Monograph:
+```
+Harvey, Peter. *The Selfless Mind: Personality, Consciousness and Nirvāṇa in Early
+  Buddhism*. Richmond: Curzon Press, 1995. (Calibre #6294)
+```
+
+Edited volume:
+```
+Williams, Paul, ed. *Buddhism: Volume IV — Abhidharma and Madhyamaka*. London:
+  Routledge, 2005. (Calibre #4937)
+```
+
+Chapter in edited volume:
+```
+Gethin, Rupert. "Bhavaṅga and Rebirth According to the Abhidhamma." In *The Buddhist
+  Forum, vol. III*, edited by T. Skorupski and U. Pagel, 11–35. London: SOAS, 1994.
+  (Calibre #10228)
+```
+
+Journal article (if available via Calibre or web):
+```
+Anālayo, Bhikkhu. "The Luminous Mind in Theravāda and Dharmaguptaka Discourses."
+  *Journal of the Oxford Centre for Buddhist Studies* 13 (2017): 10–51.
+  (Calibre #8904)
+```
+
+When publisher / year / page range are not available from the Calibre metadata, include
+what is available and omit the rest — do not guess or invent publication details.
+
+#### Online sources
+
+```
+Last, First (or Organisation). "Page Title." *Site Name*. Month Day, Year. URL.
+```
+
+Example:
+```
+Sujato, Bhikkhu. "The Nature of Nibbāna." *SuttaCentral*. Accessed May 25, 2026.
+  https://suttacentral.net/...
+```
+
+#### Media sources (YouTube / Dhamma talks)
+
+```
+Teacher/Channel. "Talk Title." *YouTube*. Month Day, Year. URL.
+  [Human captions | auto-captions — paraphrase only]
+```
+
+#### Vault sources referenced
+
+```
+[[Note Title]] — Vicaya research note, YYYY-MM-DD.
+```
+
+### Placement in the note
+
+The `## Bibliography` section goes after `## Critical Gaps` and before the `---` footer
+line. Footnote definitions (`[^id]: ...`) follow the footer, as now.
 
 ## Research phases (Phase 0 through 7)
 
@@ -1211,6 +1337,13 @@ Citation forms:
 
 The footnote definitions go at the bottom of the note (see Phase 7 template). Keep definitions short — they are locators, not evidence repeats. The full Pāḷi/English blockquotes belong in the Evidence sections.
 
+**Bibliography accumulation.** As you finalize each source for inclusion, append its
+full Chicago N-B entry to the scratchpad under `## Bibliography (accumulating)`. Do this
+*as you go*, not in one pass at Phase 7 — by the time you reach Phase 7 the bibliography
+should be complete. Organize entries into the five subsections as you write them; sort
+Secondary Sources alphabetically by author surname. See the `## Bibliography` section
+above for format rules.
+
 ### Phase 6 — Second-pass review (cross-check)
 
 Pipe your synthesis to a second model for an independent review:
@@ -1349,6 +1482,42 @@ Severity legend: `blocker` = central claim is unreliable without this; `gap` = a
 | `blocker` | <claim that rests on thin or secondary evidence only> | <specific search or source> |
 | `gap` | <named perspective from the perspective map with insufficient sources> | <where to look> |
 | `nit` | <minor omission or follow-up worth noting> | <suggested search> |
+
+## Bibliography
+
+Copy the accumulated bibliography from the scratchpad's `## Bibliography (accumulating)`
+block. Omit any subsection that has no entries. Sort Secondary Sources by author surname.
+
+### Primary Sources
+
+*Majjhima Nikāya* 60 (*Apaṇṇakasuttaṃ*). Chaṭṭha Saṅgāyana Tipiṭaka.
+  Accessed via tipitaka-translation-data.db (`s0201m_mul`).
+
+*Madhyamāgama* 98 (*Zhongahanijing* T 26). Translated by Charles Patton.
+  Accessed via EBC vault, `ma-patton/ma98-patton.md`.
+
+### Secondary Sources
+
+Harvey, Peter. *The Selfless Mind: Personality, Consciousness and Nirvāṇa in Early
+  Buddhism*. Richmond: Curzon Press, 1995. (Calibre #6294)
+
+Karunadasa, Y. *Theravāda Abhidhamma: Its Inquiry into the Nature of Conditioned
+  Reality*. Hong Kong: University of Hong Kong, 2010. (Calibre #7335)
+
+### Online Sources
+
+Sujato, Bhikkhu. "On the Nature of Nibbāna." *SuttaCentral*. Accessed YYYY-MM-DD.
+  https://suttacentral.net/...
+
+### Media Sources
+
+Ajahn Brahm. "Understanding Nibbāna." *Buddhist Society of Western Australia* (YouTube).
+  January 1, 2020. https://youtu.be/...
+  [Human captions]
+
+### Vault Sources Referenced
+
+[[Related Note Title]] — Vicaya research note, YYYY-MM-DD.
 
 ---
 *Researched by [Vicaya](https://github.com/bdhrs/vicaya) using <Model family + version> on YYYY-MM-DD HH:MM.*
