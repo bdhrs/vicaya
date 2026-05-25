@@ -29,6 +29,10 @@ These rules apply to every run, by every agent. They are part of the skill, not 
 - **Topic / question** (required): the research question, in the user's words.
 - **Optional references** the user passed in: URLs, vault note names, book titles, sutta refs. Treat these as authoritative seeds.
 
+### Question sanitization
+
+Before using the topic as the note's `topic:` field value, smooth it into a proper English sentence or question: complete grammar, correct punctuation, question mark where the phrasing calls for one. Remove any loaded or leading language — preconceived conclusions, partisan framing, or strong opinions should not be baked into the question itself. Keep the original scope and intent intact. The research body is where findings and positions are reported; the question just names the topic neutrally. Record the verbatim user input only in the run reflection's `question:` field.
+
 ## Setup — paths and tools
 
 Hard-coded for this machine. If a path is missing or a tool isn't installed, stop and tell the user; don't guess.
