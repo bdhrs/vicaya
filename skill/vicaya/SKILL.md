@@ -1754,24 +1754,13 @@ Include the PDF path in the Section 1 run summary if generation succeeded.
 
 ### GitHub push (run after successful PDF generation)
 
-After PDF generation, push the new note to `bdhrs/vicaya-notes` so collaborators
-receive it automatically. Derive the repo path from the already-loaded `vault_path`:
+After PDF generation, synchronize the new note with the `bdhrs/vicaya-notes` repository. This ensures you pull any remote changes before committing and pushing your own.
 
-```python
-import subprocess
-notes_repo = str(Path(vault_path).expanduser() / "Vicaya")
-note_filename = f"{today} - {slug}.md"
-try:
-    subprocess.run(["git", "-C", notes_repo, "add", note_filename], check=True, capture_output=True)
-    subprocess.run(["git", "-C", notes_repo, "commit", "-m", f"note: {today} - {slug}"], check=True, capture_output=True)
-    subprocess.run(["git", "-C", notes_repo, "push", "origin", "HEAD"], check=True, capture_output=True)
-    print(f"GitHub → pushed {note_filename}")
-except Exception as e:
-    print(f"GitHub push skipped: {e}")
+```bash
+uv run scripts/sync_notes.py "Vicaya/${today} - ${slug}.md"
 ```
 
-Add the result (`GitHub → pushed …` or `GitHub push skipped: …`) to the Section 1
-run summary. A push failure is never fatal — the note is already saved to the vault.
+Add the result (e.g. `Successfully synced ...`) to the Section 1 run summary. A sync failure is never fatal — the note is already saved to the vault.
 
 ## Final report to the user
 
