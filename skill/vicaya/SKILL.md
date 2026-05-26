@@ -1811,22 +1811,13 @@ After the note is written and the final report is shown, ask the user using `Ask
 
 **If Yes**, run:
 
-```python
-import subprocess
-notes_repo = str(Path(vault_path).expanduser() / "Vicaya")
-note_filename = f"{today} - {slug}.md"
-try:
-    subprocess.run(["git", "-C", notes_repo, "add", note_filename], check=True, capture_output=True)
-    subprocess.run(["git", "-C", notes_repo, "commit", "-m", f"note: {today} - {slug}"], check=True, capture_output=True)
-    subprocess.run(["git", "-C", notes_repo, "push", "origin", "HEAD"], check=True, capture_output=True)
-    print(f"GitHub → pushed {note_filename}")
-except Exception as e:
-    print(f"GitHub push failed: {e}")
+```bash
+uv run scripts/sync_notes.py "Vicaya/${today} - ${slug}.md"
 ```
 
 **If No**, leave the note uncommitted and tell the user it is saved to the vault only.
 
-A push failure is never fatal — the note is already saved to the vault.
+A sync failure is never fatal — the note is already saved to the vault.
 
 ## Final report to the user
 
