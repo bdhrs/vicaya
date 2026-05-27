@@ -48,7 +48,7 @@ Hard-coded for this machine. If a path is missing or a tool isn't installed, sto
 All user-specific paths come from the project's `.env` file (see `.env.example` at the repo root). The helper module resolves them on import. Agents do not hard-code paths; use the helpers and CLI.
 
 - Vault Root: `$VICAYA_VAULT_PATH` (This is the absolute path to the root directory of the vault).
-- Output folder in vault: `$VICAYA_VAULT_PATH/Vicaya/`
+- Output folder in vault: `$VICAYA_VAULT_PATH/Vicaya/` (this folder is its own git repo — commit notes after writing)
 - Helper module: `<repo>/tools/research_sources.py`
 - Canon db: read-only SQLite at the path baked into the helper module.
 - Calibre library: path baked into the helper module. FTS indexing may or may not be complete depending on when the library was last indexed (14k books takes days to index from scratch). The helper checks FTS status automatically and falls back to metadata search if indexing is incomplete — don't try to force FTS. When FTS is active, snippets are returned with hits; when metadata-only, you get titles/authors/comments. Both are useful; note which mode is active in the scratch.
