@@ -488,3 +488,99 @@ class TestSCSearch:
             assert isinstance(h, VaultHit)
             assert h.path.endswith(".json")
             assert "papañca" in h.snippet
+
+
+class TestScratchDossier:
+    """End-to-end of the scratch CLI: init, log, gate refusal, verify, resume."""
+
+    def test_init_creates_file_with_all_phase_sections(self, tmp_path, monkeypatch):
+        from tools.research_sources import (
+            _SCRATCH_PHASES,
+            scratch_init,
+        )
+        monkeypatch.setattr(
+            "tools.research_sources._SCRATCH_DIR", tmp_path
+        )
+        path = scratch_init("test-slug")
+        assert path.exists()
+        text = path.read_text(encoding="utf-8")
+        assert "Vicaya dossier — test-slug" in text
+        for _, title, _ in _SCRATCH_PHASES:
+            assert title in text
+
+    def test_log_appends_entry_under_named_phase(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_init, scratch_log
+        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        path = scratch_init("test-log")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        scratch_log("2", "search-canon", args=["pabhassara", "--limit", "1"],
+                    summary="2 hits in AN", hits=2)
+        text = path.read_text(encoding="utf-8")
+        assert "search-canon" in text
+        assert "pabhassara" in text
+        # entry must be inside the phase 2 section, not at end of file
+        canon_idx = text.index("## Phase 2 — Canon")
+        next_section_idx = text.index("## Phase 2.5")
+        assert canon_idx < text.index("search-canon") < next_section_idx
+
+    def test_gate_refuses_when_prior_gate_missing(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_gate, scratch_init
+        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        path = scratch_init("test-gate-refuse")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        # Try to gate phase 2 without first gating phase 0 or 1.
+        result = scratch_gate("2")
+        assert result["ok"] is False
+        assert result["missing_phase"] == "0"
+        assert "expected_evidence" in result
+        assert isinstance(result["expected_evidence"], list)
+        assert result["expected_evidence"]
+        # And it didn't write the phase 2 gate
+        assert "PHASE 2 EXIT GATE" not in path.read_text(encoding="utf-8")
+
+    def test_gate_appends_canonical_checklist_in_order(self, tmp_path, monkeypatch):
+        from tools.research_sources import (
+            _PHASE_INDEX,
+            scratch_gate,
+            scratch_init,
+        )
+        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        path = scratch_init("test-gate-ok")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        for phase in ("0", "1", "2"):
+            r = scratch_gate(phase)
+            assert r["ok"], r
+        text = path.read_text(encoding="utf-8")
+        for phase in ("0", "1", "2"):
+            assert f"PHASE {phase} EXIT GATE" in text
+            for item in _PHASE_INDEX[phase][2]:
+                assert item in text
+
+    def test_verify_reports_missing_with_expected_evidence(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_gate, scratch_init, scratch_verify
+        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        path = scratch_init("test-verify")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        scratch_gate("0")
+        # Skip 1; gate 2 should now refuse. Force-write phase 2 gate is blocked,
+        # so verify against an explicit through-phase to surface the gap.
+        result = scratch_verify(through="2")
+        assert result["ok"] is False
+        missing_phases = [m["phase"] for m in result["missing"]]
+        assert "1" in missing_phases
+        assert "2" in missing_phases
+        # Every missing entry must carry the canonical evidence list.
+        for m in result["missing"]:
+            assert m["expected_evidence"]
+
+    def test_resume_reports_last_gate_and_next_phase(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_gate, scratch_init, scratch_resume
+        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        path = scratch_init("test-resume")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        for phase in ("0", "1", "2"):
+            scratch_gate(phase)
+        result = scratch_resume("test-resume")
+        assert result["ok"]
+        assert result["last_gate"]["phase"] == "2"
+        assert result["next_phase"] == "2.5"

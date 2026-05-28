@@ -134,7 +134,6 @@ class CanonHit:
     paranum: str
     pali: str
     english: str
-    chinese: str = ""
 
 
 @dataclass
@@ -277,7 +276,7 @@ def _resolve_books(books: list[str] | None, db_path: Path) -> list[str]:
 def search_canon(
     query: str,
     books: list[str] | None = None,
-    lang: Literal["pali", "english", "chinese", "any"] = "pali",
+    lang: Literal["pali", "english", "any"] = "pali",
     limit: int = 20,
     db_path: Path | None = None,
 ) -> list[CanonHit]:
@@ -293,13 +292,11 @@ def search_canon(
         return []
 
     if lang == "any":
-        cols = ["pali_text", "english_translation", "chinese_translation"]
+        cols = ["pali_text", "english_translation"]
     elif lang == "pali":
         cols = ["pali_text"]
     elif lang == "english":
         cols = ["english_translation"]
-    elif lang == "chinese":
-        cols = ["chinese_translation"]
     else:
         raise ValueError(f"unknown lang: {lang}")
 
@@ -309,7 +306,7 @@ def search_canon(
         for table in tables:
             where = " OR ".join(f"{c} LIKE ?" for c in cols)
             sql = (
-                f"SELECT paranum, pali_text, english_translation, chinese_translation "
+                f"SELECT paranum, pali_text, english_translation "
                 f"FROM {table} WHERE {where} LIMIT ?"
             )
             remaining = limit - len(hits)
@@ -320,14 +317,13 @@ def search_canon(
                 rows = conn.execute(sql, params).fetchall()
             except sqlite3.OperationalError:
                 continue
-            for paranum, pali, english, chinese in rows:
+            for paranum, pali, english in rows:
                 hits.append(
                     CanonHit(
                         book_code=table,
                         paranum=str(paranum or ""),
                         pali=_strip_xml(pali or ""),
                         english=_strip_xml(english or ""),
-                        chinese=_strip_xml(chinese or ""),
                     )
                 )
                 if len(hits) >= limit:
@@ -1632,6 +1628,321 @@ def lookup_book(value: str) -> list[dict]:
     ]
 
 
+# ---------- Scratch dossier ----------
+#
+# Compaction defence: every helper call appends a structured entry to the run's
+# scratch file. Phase-end gates are hard-coded checklists; scratch-verify refuses
+# to advance past a missing gate. Agents never craft scratch markdown by hand.
+
+
+_SCRATCH_DIR = Path(__file__).resolve().parents[1] / "data" / "scratch"
+
+# (phase_id, title, expected_evidence)
+_SCRATCH_PHASES: list[tuple[str, str, list[str]]] = [
+    ("0", "Phase 0 — Request understanding", [
+        "question_polished recorded",
+        "scope_assumptions recorded",
+        "ambiguity_status set (clear|minor_uncertainty|unclear)",
+    ]),
+    ("1", "Phase 1 — Vault / EBC", [
+        "Angle triage recorded (applicable + not-applicable with reasons)",
+        "Vault hits list logged",
+        "Perspective map: 2–5 positions named (or 'no interpretive dispute')",
+        "Counter-perspective search targets logged",
+    ]),
+    ("2", "Phase 2 — Canon", [
+        "Mūla searches logged per applicable Nikāya/text class",
+        "Every hit has full pali + english + resolve-citation reference",
+        "0-hit queries logged with stems tried",
+        "Commentary/ṭīkā searched where doctrinal question",
+    ]),
+    ("2.5", "Phase 2.5 — SC Parallels", [
+        "sc-parallels called for each sutta-anchored citation",
+        "text_gaps logged explicitly",
+    ]),
+    ("3", "Phase 3 — Library", [
+        "calibre-check called at phase start",
+        "Tag-scoped searches per applicable angle",
+        "Author searches for named scholars in perspective map",
+        "0-hit queries logged",
+    ]),
+    ("3b", "Phase 3b — Sanskrit", [
+        "GRETIL searched where comparative-religion angle applies (or 'not applicable')",
+    ]),
+    ("4", "Phase 4 — Web", [
+        "Web sources fetched with date + URL + summary",
+        "Wisdomlib / SuttaCentral / 84000 checked where applicable",
+    ]),
+    ("4b", "Phase 4b — YouTube", [
+        "Trusted-tier channels queried where modern-teacher angle applies",
+        "Transcript segments logged with timestamps",
+        "is_auto flagged per transcript",
+    ]),
+    ("4c", "Phase 4c — WisdomLib", [
+        "Terms looked up with tradition + source labels",
+    ]),
+    ("5", "Phase 5 — Synthesis", [
+        "scratch-verify exit 0 confirmed before drafting",
+        "Draft pasted under '## Phase 5 — Synthesis draft'",
+    ]),
+    ("6", "Phase 6 — Cross-check", [
+        "Cross-check raw output pasted verbatim",
+        "Integrations logged with source attribution",
+    ]),
+    ("7", "Phase 7 — Note written", [
+        "Vault path recorded",
+        "PDF path or 'skipped' recorded",
+    ]),
+]
+
+_PHASE_INDEX = {pid: (i, title, evidence) for i, (pid, title, evidence) in enumerate(_SCRATCH_PHASES)}
+
+
+def _scratch_path(slug: str | None = None) -> Path:
+    """Resolve the scratch path. Env override > slug > error."""
+    env = os.environ.get("VICAYA_SCRATCH")
+    if env:
+        return Path(env)
+    if slug:
+        return _SCRATCH_DIR / f"{slug}.md"
+    raise ValueError("no scratch path: set VICAYA_SCRATCH or pass a slug")
+
+
+def scratch_init(slug: str) -> Path:
+    """Create the scratch file with header + section skeleton. Idempotent — refuses to overwrite."""
+    _SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
+    path = _SCRATCH_DIR / f"{slug}.md"
+    if path.exists():
+        return path
+    lines = [
+        f"# Vicaya dossier — {slug}",
+        "**Question original:** <fill in>",
+        "**Question polished:** <fill in>",
+        "**Scope assumptions:** <fill in>",
+        "**Ambiguity status:** <clear|minor_uncertainty|unclear>",
+        f"**Slug:** {slug}",
+        "**Vault note:** <set at Phase 7>",
+        "",
+        "## Phase log",
+        "",
+    ]
+    for _, title, _ in _SCRATCH_PHASES:
+        lines.append(f"## {title}")
+        lines.append("")
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return path
+
+
+def _phase_section_header(phase: str) -> str:
+    if phase not in _PHASE_INDEX:
+        raise ValueError(f"unknown phase {phase!r}; valid: {list(_PHASE_INDEX)}")
+    return f"## {_PHASE_INDEX[phase][1]}"
+
+
+def _append_under_phase(path: Path, phase: str, block: str) -> None:
+    """Append `block` immediately under the named phase's section heading."""
+    text = path.read_text(encoding="utf-8")
+    header = _phase_section_header(phase)
+    if header not in text:
+        text = text.rstrip() + f"\n\n{header}\n\n{block.rstrip()}\n"
+        path.write_text(text, encoding="utf-8")
+        return
+    # Insert at the end of the section (before the next "## " or EOF).
+    lines = text.splitlines(keepends=True)
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        out.append(lines[i])
+        if lines[i].rstrip() == header:
+            i += 1
+            # find end of this section
+            section_end = i
+            while section_end < len(lines) and not lines[section_end].startswith("## "):
+                section_end += 1
+            # copy section body, then append our block
+            out.extend(lines[i:section_end])
+            if out and not out[-1].endswith("\n"):
+                out.append("\n")
+            out.append(block.rstrip() + "\n\n")
+            i = section_end
+            continue
+        i += 1
+    path.write_text("".join(out), encoding="utf-8")
+
+
+def scratch_log(
+    phase: str,
+    tool: str,
+    args: list[str] | None = None,
+    summary: str | None = None,
+    results_file: Path | None = None,
+    hits: int | None = None,
+    scratch: Path | None = None,
+) -> Path:
+    """Append a single structured entry under the named phase."""
+    import datetime as _dt
+    path = scratch or _scratch_path()
+    if not path.exists():
+        raise FileNotFoundError(f"scratch not initialised: {path}; run scratch-init <slug>")
+    ts = _dt.datetime.now().isoformat(timespec="seconds")
+    body = [f"### {ts} · {tool}"]
+    if args:
+        body.append(f"- args: `{' '.join(args)}`")
+    if hits is not None:
+        body.append(f"- hits: {hits}")
+    if summary:
+        body.append(f"- summary: {summary}")
+    if results_file is not None and Path(results_file).exists():
+        body.append("- results:")
+        body.append("```json")
+        body.append(Path(results_file).read_text(encoding="utf-8").rstrip())
+        body.append("```")
+    _append_under_phase(path, phase, "\n".join(body))
+    return path
+
+
+def _gate_marker(phase: str) -> str:
+    return f"### PHASE {phase} EXIT GATE"
+
+
+def scratch_gate(phase: str, scratch: Path | None = None) -> dict:
+    """Append the canonical exit-gate checklist for `phase`.
+
+    Refuses if any earlier phase's gate is missing — returns {ok: False, missing: ...}
+    without writing.
+    """
+    import datetime as _dt
+    path = scratch or _scratch_path()
+    if not path.exists():
+        raise FileNotFoundError(f"scratch not initialised: {path}; run scratch-init <slug>")
+    if phase not in _PHASE_INDEX:
+        raise ValueError(f"unknown phase {phase!r}")
+    text = path.read_text(encoding="utf-8")
+    idx = _PHASE_INDEX[phase][0]
+    # Verify every prior phase has a gate.
+    for prev_id, prev_title, prev_expected in _SCRATCH_PHASES[:idx]:
+        if _gate_marker(prev_id) not in text:
+            return {
+                "ok": False,
+                "missing_phase": prev_id,
+                "missing_title": prev_title,
+                "expected_evidence": prev_expected,
+                "message": (
+                    f"cannot write Phase {phase} gate: Phase {prev_id} "
+                    f"({prev_title}) gate is missing"
+                ),
+            }
+    # Already gated?
+    if _gate_marker(phase) in text:
+        return {"ok": True, "phase": phase, "note": "gate already present; not duplicated"}
+    ts = _dt.datetime.now().isoformat(timespec="seconds")
+    _, title, evidence = _PHASE_INDEX[phase]
+    block_lines = [_gate_marker(phase), f"- timestamp: {ts}", f"- title: {title}"]
+    for item in evidence:
+        block_lines.append(f"- [ ] {item}")
+    _append_under_phase(path, phase, "\n".join(block_lines))
+    return {"ok": True, "phase": phase, "title": title}
+
+
+def scratch_verify(through: str | None = None, scratch: Path | None = None) -> dict:
+    """Verify that every phase up to `through` (or the highest gate written) has its gate.
+
+    Returns {ok, missing: [{phase, title, expected_evidence}]}.
+    """
+    path = scratch or _scratch_path()
+    if not path.exists():
+        return {"ok": False, "error": f"scratch not initialised: {path}"}
+    text = path.read_text(encoding="utf-8")
+    # Determine the boundary.
+    if through is not None:
+        if through not in _PHASE_INDEX:
+            return {"ok": False, "error": f"unknown phase {through!r}"}
+        upper = _PHASE_INDEX[through][0] + 1
+    else:
+        upper = 0
+        for i, (pid, _, _) in enumerate(_SCRATCH_PHASES):
+            if _gate_marker(pid) in text:
+                upper = i + 1
+    missing = []
+    for pid, title, expected in _SCRATCH_PHASES[:upper]:
+        if _gate_marker(pid) not in text:
+            missing.append({
+                "phase": pid,
+                "title": title,
+                "expected_evidence": expected,
+            })
+    return {"ok": not missing, "checked_through": upper, "missing": missing}
+
+
+def scratch_resume(slug: str | None = None, scratch: Path | None = None) -> dict:
+    """Print the last gate written and suggest the next phase."""
+    path = scratch or _scratch_path(slug)
+    if not path.exists():
+        return {"ok": False, "error": f"scratch not found: {path}"}
+    text = path.read_text(encoding="utf-8")
+    last = None
+    next_phase = _SCRATCH_PHASES[0][0]
+    for i, (pid, title, _) in enumerate(_SCRATCH_PHASES):
+        if _gate_marker(pid) in text:
+            last = {"phase": pid, "title": title}
+            if i + 1 < len(_SCRATCH_PHASES):
+                next_phase = _SCRATCH_PHASES[i + 1][0]
+            else:
+                next_phase = None
+    return {"ok": True, "path": str(path), "last_gate": last, "next_phase": next_phase}
+
+
+def _maybe_autolog(cmd: str, argv: list[str], result_obj) -> None:
+    """If VICAYA_SCRATCH is set, append a one-entry log for this helper invocation.
+
+    Phase is read from VICAYA_PHASE (default '?'). Failures are swallowed —
+    auto-logging must never break a search.
+    """
+    if not os.environ.get("VICAYA_SCRATCH"):
+        return
+    if cmd in {"scratch-init", "scratch-log", "scratch-gate",
+               "scratch-verify", "scratch-resume", "lookup-book"}:
+        return
+    try:
+        import datetime as _dt
+        import json as _json
+        from dataclasses import asdict as _asdict, is_dataclass as _is_dc
+        path = Path(os.environ["VICAYA_SCRATCH"])
+        if not path.exists():
+            return
+        phase = os.environ.get("VICAYA_PHASE", "?")
+        ts = _dt.datetime.now().isoformat(timespec="seconds")
+        hits: int | None = None
+        if isinstance(result_obj, list):
+            hits = len(result_obj)
+        body = [f"### {ts} · {cmd}"]
+        if argv:
+            body.append(f"- args: `{' '.join(argv)}`")
+        if hits is not None:
+            body.append(f"- hits: {hits}")
+
+        def _default(o):
+            if _is_dc(o):
+                return _asdict(o)
+            return str(o)
+        try:
+            payload = _json.dumps(result_obj, ensure_ascii=False, indent=2, default=_default)
+            body.append("- results:")
+            body.append("```json")
+            body.append(payload)
+            body.append("```")
+        except Exception:
+            pass
+        if phase in _PHASE_INDEX:
+            _append_under_phase(path, phase, "\n".join(body))
+        else:
+            # Unknown phase: append at end of file.
+            with open(path, "a", encoding="utf-8") as fh:
+                fh.write("\n" + "\n".join(body) + "\n")
+    except Exception:
+        return
+
+
 # ---------- CLI ----------
 #
 # Thin argparse wrapper so agents can call helpers without `python -c` quoting hell.
@@ -1674,7 +1985,7 @@ def _cli() -> int:
     pc.add_argument("query")
     pc.add_argument("--books", nargs="*", default=None,
                     help="Book specifiers, e.g. 's*_mul' '*_att'. Default: sutta mūla.")
-    pc.add_argument("--lang", choices=["pali", "english", "chinese", "any"], default="pali")
+    pc.add_argument("--lang", choices=["pali", "english", "any"], default="pali")
     pc.add_argument("--limit", type=int, default=20)
 
     pr = sub.add_parser("resolve-citation")
@@ -1748,24 +2059,67 @@ def _cli() -> int:
                       help="Root-text language: pli, lzh (Chinese Āgamas), san, pra, en, misc.")
     pscs.add_argument("--limit", type=int, default=20)
 
+    psi = sub.add_parser("scratch-init",
+                         help="Create the scratch dossier file for a run.")
+    psi.add_argument("slug")
+
+    psl = sub.add_parser("scratch-log",
+                         help="Append a manual entry to the scratch dossier under a phase.")
+    psl.add_argument("phase", help="Phase id: 0, 1, 2, 2.5, 3, 3b, 4, 4b, 4c, 5, 6, 7")
+    psl.add_argument("tool", help="Tool/source name (free text).")
+    psl.add_argument("rest", nargs="*", help="Free-form args / query string (logged verbatim).")
+    psl.add_argument("--summary", default=None)
+    psl.add_argument("--results", default=None, type=Path,
+                     help="Path to a JSON file whose contents will be embedded verbatim.")
+    psl.add_argument("--hits", default=None, type=int)
+
+    psg = sub.add_parser("scratch-gate",
+                         help="Append the canonical exit-gate checklist for a phase.")
+    psg.add_argument("phase")
+
+    psv = sub.add_parser("scratch-verify",
+                         help="Verify every prior phase has its exit gate. Exits 1 on failure.")
+    psv.add_argument("--through", default=None,
+                     help="Check gates through this phase id; default = highest gate written.")
+
+    psr = sub.add_parser("scratch-resume",
+                         help="Print the last gate written and the suggested next phase.")
+    psr.add_argument("slug", nargs="?", default=None,
+                     help="Slug for the scratch file; omit if VICAYA_SCRATCH is set.")
+
     args = p.parse_args()
 
+    result_for_autolog = None
+    autolog_argv: list[str] = []
+
     if args.cmd == "search-vault":
-        _dump(search_vault(args.query, folder=args.folder, limit=args.limit))
+        result_for_autolog = search_vault(args.query, folder=args.folder, limit=args.limit)
+        autolog_argv = [args.query] + (["--folder", args.folder] if args.folder else []) + ["--limit", str(args.limit)]
+        _dump(result_for_autolog)
     elif args.cmd == "search-canon":
-        _dump(search_canon(args.query, books=args.books, lang=args.lang, limit=args.limit))
+        result_for_autolog = search_canon(args.query, books=args.books, lang=args.lang, limit=args.limit)
+        autolog_argv = [args.query] + (["--books"] + list(args.books) if args.books else []) + ["--lang", args.lang, "--limit", str(args.limit)]
+        _dump(result_for_autolog)
     elif args.cmd == "resolve-citation":
-        _dump(resolve_citation(args.book_code, args.paranum))
+        result_for_autolog = resolve_citation(args.book_code, args.paranum)
+        autolog_argv = [args.book_code, str(args.paranum)]
+        _dump(result_for_autolog)
     elif args.cmd == "search-calibre":
-        _dump(search_calibre(args.query, tags=args.tags, limit=args.limit))
+        result_for_autolog = search_calibre(args.query, tags=args.tags, limit=args.limit)
+        autolog_argv = [args.query] + (["--tags"] + list(args.tags) if args.tags else []) + ["--limit", str(args.limit)]
+        _dump(result_for_autolog)
     elif args.cmd == "search-youtube":
         channels = {} if args.no_filter else None
-        _dump(search_youtube(args.query, channels=channels, limit=args.limit))
+        result_for_autolog = search_youtube(args.query, channels=channels, limit=args.limit)
+        autolog_argv = [args.query, "--limit", str(args.limit)]
+        _dump(result_for_autolog)
     elif args.cmd == "fetch-transcript":
         tr = fetch_youtube_transcript(args.video_id, languages=tuple(args.lang))
         if tr is None:
             print("error: no transcript available", file=sys.stderr)
             return 1
+        result_for_autolog = tr
+        autolog_argv = [args.video_id, "--lang"] + list(args.lang)
         _dump(tr)
     elif args.cmd == "lookup-book":
         _dump(lookup_book(args.value))
@@ -1775,6 +2129,8 @@ def _cli() -> int:
             print("error: empty prompt on stdin", file=sys.stderr)
             return 1
         text = gemini_cross_check(prompt, timeout=args.timeout)
+        result_for_autolog = {"output": text}
+        autolog_argv = ["<stdin>"]
         sys.stdout.write(text + "\n")
     elif args.cmd == "cross-check":
         prompt = sys.stdin.read()
@@ -1782,25 +2138,67 @@ def _cli() -> int:
             print("error: empty prompt on stdin", file=sys.stderr)
             return 1
         text = cross_check(prompt, timeout=args.timeout)
+        result_for_autolog = {"output": text}
+        autolog_argv = ["<stdin>"]
         sys.stdout.write(text + "\n")
     elif args.cmd == "get-ebc-overview":
         result = get_ebc_overview(args.code)
         if result is None:
             print(f"error: no EBC overview for {args.code!r}", file=sys.stderr)
             return 1
+        result_for_autolog = result
+        autolog_argv = [args.code]
         _dump(result)
     elif args.cmd == "search-ebc":
-        _dump(search_ebc(args.query, folder=args.folder, limit=args.limit))
+        result_for_autolog = search_ebc(args.query, folder=args.folder, limit=args.limit)
+        autolog_argv = [args.query] + (["--folder", args.folder] if args.folder else []) + ["--limit", str(args.limit)]
+        _dump(result_for_autolog)
     elif args.cmd == "search-sanskrit":
-        _dump(search_sanskrit(args.query, folder=args.folder, limit=args.limit))
+        result_for_autolog = search_sanskrit(args.query, folder=args.folder, limit=args.limit)
+        autolog_argv = [args.query] + (["--folder", args.folder] if args.folder else []) + ["--limit", str(args.limit)]
+        _dump(result_for_autolog)
     elif args.cmd == "calibre-check":
         ok, msg = calibre_library_available()
-        _dump({"ok": ok, "message": msg})
+        result_for_autolog = {"ok": ok, "message": msg}
+        autolog_argv = []
+        _dump(result_for_autolog)
+        _maybe_autolog(args.cmd, autolog_argv, result_for_autolog)
         return 0 if ok else 1
     elif args.cmd == "sc-parallels":
-        _dump(sc_parallels(args.citation, include_text=not args.no_text))
+        result_for_autolog = sc_parallels(args.citation, include_text=not args.no_text)
+        autolog_argv = [args.citation] + (["--no-text"] if args.no_text else [])
+        _dump(result_for_autolog)
     elif args.cmd == "sc-search":
-        _dump(sc_search(args.query, lang=args.lang, limit=args.limit))
+        result_for_autolog = sc_search(args.query, lang=args.lang, limit=args.limit)
+        autolog_argv = [args.query, "--lang", args.lang, "--limit", str(args.limit)]
+        _dump(result_for_autolog)
+    elif args.cmd == "scratch-init":
+        path = scratch_init(args.slug)
+        _dump({"ok": True, "path": str(path), "slug": args.slug})
+    elif args.cmd == "scratch-log":
+        path = scratch_log(
+            args.phase,
+            args.tool,
+            args=args.rest or None,
+            summary=args.summary,
+            results_file=args.results,
+            hits=args.hits,
+        )
+        _dump({"ok": True, "path": str(path), "phase": args.phase, "tool": args.tool})
+    elif args.cmd == "scratch-gate":
+        result = scratch_gate(args.phase)
+        _dump(result)
+        return 0 if result.get("ok") else 1
+    elif args.cmd == "scratch-verify":
+        result = scratch_verify(through=args.through)
+        _dump(result)
+        return 0 if result.get("ok") else 1
+    elif args.cmd == "scratch-resume":
+        result = scratch_resume(slug=args.slug)
+        _dump(result)
+        return 0 if result.get("ok") else 1
+
+    _maybe_autolog(args.cmd, autolog_argv, result_for_autolog)
     return 0
 
 

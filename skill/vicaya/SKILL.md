@@ -7,6 +7,17 @@ description: Run a structured Pāḷi/Buddhist research session across the user'
 
 Run a multi-phase research session across the user's local + web sources and write a single structured note into their Obsidian vault.
 
+## Critical execution rules
+
+Four structural commands carry the run. Everything else is reference.
+
+1. **Phase 0:** `scratch-init <slug>` and `export VICAYA_SCRATCH=…` + `export VICAYA_PHASE=0`. Every helper call from now on auto-logs to scratch.
+2. **Each phase boundary:** end the prior phase with `scratch-gate <prev-phase>`, then `export VICAYA_PHASE=<new-phase>` **before** any helper call in the new phase (otherwise auto-log attributes entries to the old phase). The gate refuses if earlier gates are missing and prints the exact evidence still needed.
+3. **Start of Phase 5:** `scratch-verify`. Exit 0 = proceed to synthesis. Exit 1 = backfill the named phase first; do not draft.
+4. **End of Phase 7:** `scratch-gate 7`. The run is not complete without it.
+
+If context compaction fires at any point, `scratch-resume <slug>` prints the last gate and the next phase — no findings are lost.
+
 ## Hard rules (read first — these are not preferences)
 
 These rules apply to every run, by every agent. They are part of the skill, not stored in any agent's private memory.
@@ -72,7 +83,7 @@ Subcommands (each prints JSON to stdout):
 | Subcommand | Args | Notes |
 |---|---|---|
 | `search-vault QUERY` | `--folder PATH` `--limit N` | Obsidian vault full-text search |
-| `search-canon QUERY` | `--books PAT...` `--lang pali\|english\|chinese\|any` `--limit N` | Default books: sutta mūla (`s*_mul`) |
+| `search-canon QUERY` | `--books PAT...` `--lang pali\|english\|any` `--limit N` | Default books: sutta mūla (`s*_mul`) |
 | `resolve-citation BOOK_CODE PARANUM` | — | Returns `Citation` JSON |
 | `search-calibre QUERY` | `--tags T...` `--limit N` | Diacritics stripped automatically |
 | `lookup-book VALUE` | — | Translate any CST book identifier into the others (filename, table, Pāḷi title, gui code, DPD code) |
@@ -91,7 +102,7 @@ Parse the JSON with `jq` or read it as a file. Only fall back to `uv run python 
 Every helper returns dataclasses serialised to JSON by the CLI. Field names are exact — guessing them has caused crashes in prior runs.
 
 - **VaultHit**: `path` (str), `snippet` (str), `line` (int | null)
-- **CanonHit**: `book_code` (str, e.g. `s0201m_mul`), `paranum` (str), `pali` (str), `english` (str), `chinese` (str). **No `snippet` field** — quote from `pali` / `english` directly. XML/TEI markup is stripped automatically; text is plain UTF-8.
+- **CanonHit**: `book_code` (str, e.g. `s0201m_mul`), `paranum` (str), `pali` (str), `english` (str). **No `snippet` field** — quote from `pali` / `english` directly. XML/TEI markup is stripped automatically; text is plain UTF-8.
 - **Citation**: `machine` (e.g. `s0201m_mul:23`), `human` (e.g. `MN60 Apaṇṇakasuttaṃ para 97`), `pitaka`, `text_type`, `paranum`.
 - **CalibreHit**: `book_id` (int), `title` (str), `authors` (str), `tags` (list[str]), `location` (str), `snippet` (str — populated only when FTS is ready).
 - **YouTubeHit**: `video_id` (str), `title` (str), `channel` (str), `channel_id` (str), `duration` (float | null, seconds), `url` (str), `tier` (str — `trusted` | `probationary`; `excluded` never appears here, those are filtered out).
@@ -229,119 +240,51 @@ uv run tools/research_sources.py search-ebc "pārājika" \
 
 ## Research scratchpad
 
-Context compaction can erase findings mid-run — including between Phase 7 write,
-PDF generation, and reflection. The scratch file is the only reliable defence.
+**Model: scratch = comprehensive dossier. Vault = curated distillation.** The
+scratch file is the only reliable defence against context compaction. If the
+entire thread is lost mid-run, the scratch file must contain enough to rebuild
+the dossier without re-running any expensive search.
 
-**Model: scratch = comprehensive dossier. Vault = curated distillation.**
-The scratch file holds *everything found* — full Pāḷi + English quotes, complete
-library excerpts, full web summaries, transcript segments with timestamps, every
-query tried (including 0-hit ones), cross-check raw output, phase completion log.
-The vault note is a curated subset: what earns its place, cited and attributed.
-This separation means: (a) recovery after compaction is "read the scratch and
-continue"; (b) future related runs can grep scratch files for already-harvested
-sources; (c) the vault stays clean — only *complete* notes are ever written there.
-
-**At the start of every run**, create the scratch file inside the repo's
-`data/scratch/` folder (gitignored, so it persists across reboots and is
-never committed):
+**The helper owns the scratch format.** Never hand-craft scratch markdown.
+Five subcommands cover every interaction:
 
 ```bash
-SCRATCH="<repo-root>/data/scratch/$(date +%Y%m%d)_<slug>.md"
+# 1. At Phase 0 start — create the file
+uv run tools/research_sources.py scratch-init <slug>
+export VICAYA_SCRATCH="$(pwd)/data/scratch/<slug>.md"
+
+# 2. While searching — auto-log fires for every helper call when VICAYA_SCRATCH is set
+export VICAYA_PHASE=2     # update at every phase boundary
+uv run tools/research_sources.py search-canon "anatta" --books "s*_mul"
+# (full Pāḷi + English of every hit lands in scratch automatically)
+
+# 3. For manual entries (web fetches, Read-tool excerpts you want to cite)
+uv run tools/research_sources.py scratch-log 2 web "https://..." --summary "..."
+
+# 4. At each phase end — appends the canonical exit-gate checklist
+uv run tools/research_sources.py scratch-gate 2
+# Refuses if any earlier phase's gate is missing and prints the missing evidence list.
+
+# 5. Before synthesis (Phase 5) — refuse to draft until all prior gates exist
+uv run tools/research_sources.py scratch-verify    # exit 0 = proceed, 1 = backfill first
+
+# Resume after compaction
+uv run tools/research_sources.py scratch-resume <slug>
 ```
 
-Use the same slug you'll use for the vault note. Initialise with this structure:
+**Auto-logging is on whenever `VICAYA_SCRATCH` and `VICAYA_PHASE` are exported.**
+Every `search-*`, `sc-*`, `get-ebc-overview`, `fetch-transcript`, `cross-check`,
+and `gemini-cross-check` call appends a full JSON-results block to the named
+phase. Forgetting to log is structurally impossible.
 
-```markdown
-# Vicaya dossier — YYYY-MM-DD
-**Question original:** <verbatim user request>
-**Question polished:** <clean research question used in the final note>
-**Scope assumptions:** <inferred textual scope, interpretive scope, depth, practical angle, and seed sources>
-**Ambiguity status:** <clear|minor_uncertainty|unclear>
-**Slug:** <slug>
-**Vault note:** (path set at Phase 7 start)
+**Iron rule:** a phase cannot be left without calling `scratch-gate <phase>`.
+`scratch-verify` is the enforcement mechanism at Phase 5 start — it exits 1 and
+prints the missing gate plus its expected evidence list, so backfilling is
+mechanical, not interpretive.
 
-## Phase log
-- Phase 0 start: <ts>
-
-## Angle triage
-<filled in Phase 1>
-
-## Perspective map
-<filled in Phase 1>
-
-## Phase 1 — Vault / EBC
-<append all hits>
-
-## Phase 2 — Canon
-<append every hit: full pali + english, paranum, resolve-citation output>
-
-## Phase 2.5 — SC Parallels
-<append sc-parallels output per sutta; text_gaps logged explicitly>
-
-## Phase 3 — Library
-<append every hit: book_id, title, authors, full snippet or extracted excerpt>
-
-## Phase 3b — Sanskrit
-<append GRETIL hits if applicable>
-
-## Phase 4 — Web
-<append every source: full summary, URL, date>
-
-## Phase 4b — YouTube
-<append: video_id, title, channel, tier, relevant transcript segments with timestamps>
-
-## Phase 4c — WisdomLib
-<append: terms looked up, URLs fetched, key definitions with tradition + source labels>
-
-## Phase 5 — Synthesis draft
-<full draft before any cross-check editing>
-
-## Bibliography (accumulating)
-### Primary Sources
-<add entries as sources are finalized>
-### Secondary Sources
-<sorted by author surname; add entries as sources are finalized>
-### Online Sources
-<add entries as sources are finalized>
-### Media Sources
-<add entries as sources are finalized>
-### Vault Sources Referenced
-<add entries as sources are finalized>
-
-## Phase 6 — Cross-check raw output
-<paste raw cross-check output verbatim>
-
-## Phase 6 — Integrations
-<what was integrated from cross-check, with source>
-
-## Considered but excluded
-<sources looked at and dropped: reason (redundant / lower tier / off-topic / unreliable)>
-
-## Phase 7 — Note written
-- Path: <vault path>
-- PDF: <pdf path or "skipped">
-
-## Reflection written
-- Path: <runs/ path or "skipped">
-```
-
-Keep `$SCRATCH` in your working context so subsequent phases can append to it.
-
-**⚠️ IRON RULE — a phase is not complete until its scratchpad block is written.** Do not move to the next phase until the append is done. This rule covers every phase including Phase 7 (note write), PDF generation, and reflection — the full sequence is one compaction-safe unit. If context compaction can hit between any two of these steps, each step must record its completion in the Phase log before the next step begins.
-
-**At the start of Phase 5**, read the full scratch file before drafting:
-
-```bash
-cat "$SCRATCH"
-```
-
-This is the compaction rescue step — even if your context was compressed,
-the full dossier is in that file. Missing file: proceed from context, do not abort.
-
-**After Phase 7** (vault note written, PDF attempted, reflection started), leave the
-scratch file in place. It accumulates in `data/scratch/` as a permanent research
-dossier — gitignored, never committed. Future runs on related topics should grep
-`data/scratch/` for already-harvested sources before starting fresh queries.
+Scratch files accumulate in `data/scratch/` (gitignored). Future runs on
+related topics should grep them for already-harvested sources before starting
+fresh queries.
 
 ## Evidence tiers
 
@@ -819,7 +762,7 @@ For thematic (non-sutta-anchored) questions, `grep -F "<theme>" "$VICAYA_EBC_VAU
 
 **Counter-perspective search.** For each position named in the perspective map, actively search for sources that support it — don't rely on the first position the keyword searches happen to surface. If a web or canon search returns only one school's voice, run a second search scoped to a known proponent of the opposing view (e.g. `authors:Analayo` for early-Buddhist readings, a specific scholar for the academic critique). Evidence gaps for any named position belong in Critical Gaps, not silent omission.
 
-→ **Scratch** — append Phase 1 results: angle triage (applicable + not-applicable with reasons), vault hit list, perspective map positions, counter-perspective targets.
+→ **Phase 1 exit:** `uv run tools/research_sources.py scratch-gate 1`. Auto-log has already captured the helper calls; the gate writes the canonical checklist (angle triage, vault hits, perspective map, counter-perspective targets) — tick the boxes once each is true.
 
 ### Phase 2 — Canon search
 
@@ -831,10 +774,10 @@ to `--books`.
 
 **Each book code is also the exact SQLite table name in the canon database.** For example,
 the Paṭisambhidāmagga mūla is stored in a table named `s0517m_mul`, with columns
-`paranum`, `pali`, `english`, `chinese`. The `search-canon` helper queries these tables
+`paranum`, `pali`, `english`. The `search-canon` helper queries these tables
 directly using the codes you pass to `--books`. This means you can also query the database
 directly via `sqlite3` if you need ordered paragraph access (e.g. `SELECT paranum, pali,
-english, chinese FROM s0517m_mul ORDER BY CAST(paranum AS INTEGER) LIMIT 5`).
+english FROM s0517m_mul ORDER BY CAST(paranum AS INTEGER) LIMIT 5`).
 
 #### Aggregate patterns
 
@@ -991,8 +934,7 @@ Returns `CanonHit` objects. Read `pali` and `english` fields directly — there 
   "book_code": "s0517m_mul",
   "paranum": "1",
   "pali": "Sotāvadhāne paññā sutamaye ñāṇaṃ.",
-  "english": "In attentive hearing, wisdom is knowledge born of hearing.",
-  "chinese": "于专注听闻的智慧，是闻所成智。"
+  "english": "In attentive hearing, wisdom is knowledge born of hearing."
 }
 ```
 
@@ -1061,7 +1003,7 @@ Table-name suffixes: `_mul` = mūla, `_att` = aṭṭhakathā, `_tik` = ṭīkā
 
 **Diacritics in direct SQL.** The canon db stores NFC UTF-8 with native Pāḷi diacritics. Direct SQL `LIKE` must use the real characters (`ñ`, `ā`, `ṭ`, etc.). Example: `WHERE pali_text LIKE '%papañca%'` → hits correctly. `WHERE pali_text LIKE '%papanca%'` → 0 hits. The ASCII-stripping rule applies *only* to Calibre; never strip diacritics for canon SQL.
 
-→ **Scratch** — append Phase 2 results: queries run, all human refs resolved, any empty-result gaps.
+→ **Phase 2 exit:** `scratch-gate 2`.
 
 #### EBC parallel-evidence pull
 
@@ -1073,7 +1015,7 @@ For every sutta cited from the Pāḷi canon in Phase 2, pull the matching paral
 
 Pāḷi names in EBC use exact diacritics, same as the canon db. The overview-card paths are absolute — copy them directly into `Read`. If a named parallel has no file (rare), note it as a known gap rather than silently dropping the parallel.
 
-→ **Scratch** — append the EBC pulls: parallel codes consulted, files read, any missing parallels logged as gaps.
+→ **EBC pulls:** auto-log already captures the helper calls. For `Read`s of EBC translation files that you cite, run `scratch-log 2 read <path> --summary "<one line>"` so the dossier still has them.
 
 ### Phase 2.5 — SuttaCentral offline parallel search
 
@@ -1105,7 +1047,7 @@ primary source; a published English translation must accompany any quotation
 a passage, paraphrase and label "(no published translation available)". Machine-translated
 Chinese is a reading aid for the agent only — never quote it as a translation.
 
-→ **Scratch** — append Phase 2.5 results: sc-parallels output per sutta, any text gaps logged.
+→ **Phase 2.5 exit:** `scratch-gate 2.5`.
 
 ### Phase 3 — Library search
 
@@ -1275,7 +1217,7 @@ search returning zero. Walk down these rungs in order:
 If all five rungs return nothing, the topic is genuinely absent from the
 library — note it as a gap in *Open Threads*, do not invent a citation.
 
-→ **Scratch** — append Phase 3 results: Calibre hits (book_id, title, author), any FTS snippets, gaps noted.
+→ **Phase 3 exit:** `scratch-gate 3`.
 
 ### Phase 3b — Sanskrit source search
 
@@ -1312,7 +1254,7 @@ gretil.sub.uni-goettingen.de/gretil/
 
 Returns `[]` silently if the corpus is not installed — skip without error.
 
-→ **Scratch** — append Phase 3b results: queries tried, hit count, text names found, any IAST passages worth quoting.
+→ **Phase 3b exit:** `scratch-gate 3b`.
 
 ### Phase 4a — Web search
 
@@ -1327,7 +1269,7 @@ Use `WebSearch` (and `WebFetch` to read the most promising results). Use as many
 - Older Thanissaro + other translators: `accesstoinsight.org/tipitaka/`
 - When no web mirror is available, quote directly from the canon DB using `search-canon` + `resolve-citation`.
 
-→ **Scratch** — append Phase 4a results: URLs fetched, key quotes retrieved, any blocked/failed fetches.
+→ **Phase 4 exit:** `scratch-gate 4`. For each web fetch, run `scratch-log 4 web <url> --summary "<one line>"` since `WebFetch` isn't a helper subcommand and won't auto-log.
 
 ### Phase 4b — YouTube search
 
@@ -1349,7 +1291,7 @@ Transcripts are cached under `data/youtube_cache/<video_id>.json` — subsequent
 
 To locate the relevant moment in a long talk, scan `segments` for keywords (English glosses or the auto-caption form of the Pāḷi term) and cite the `start` timestamp.
 
-→ **Scratch** — append Phase 4b results: video IDs fetched, transcript summaries (is_auto flag, key timestamps), any tier-rejected channels.
+→ **Phase 4b exit:** `scratch-gate 4b`.
 
 ### Phase 4c — WisdomLib
 
@@ -1384,9 +1326,11 @@ When a term has both a Pāḷi form and a Sanskrit IAST form, fetch **both** —
 [wisdomlib.org — <Term>](https://www.wisdomlib.org/definition/<term-ascii>) — retrieved YYYY-MM-DD
 ```
 
-→ **Scratch** — append Phase 4c results: terms fetched, URLs, key definitions with tradition + source labels, any 404s or empty pages.
+→ **Phase 4c exit:** `scratch-gate 4c`. WisdomLib fetches go via `WebFetch`, so log each one with `scratch-log 4c wisdomlib <url> --summary "<term + tradition>"`.
 
 ### Phase 5 — Synthesis
+
+**Phase 5 entry gate:** run `uv run tools/research_sources.py scratch-verify`. If it exits non-zero, the output names the missing phase gate and its expected evidence — backfill that work first, then re-run verify. Do not draft until verify exits 0.
 
 **Read the scratch file before drafting.** Run `cat "$SCRATCH"` to recover the full list of findings from all prior phases. This is the compaction rescue step — if your context was compressed, everything you found is still in that file.
 
@@ -1438,6 +1382,8 @@ should be complete. Organize entries into the five subsections as you write them
 Secondary Sources alphabetically by author surname. See the `## Bibliography` section
 above for format rules.
 
+→ **Phase 5 exit:** `scratch-gate 5` once the draft is in scratch and the Devil's Advocate answers are recorded.
+
 ### Phase 6 — Second-pass review (cross-check)
 
 Pipe your synthesis to a second model for an independent review:
@@ -1474,6 +1420,8 @@ The `cross-check` helper POSTs to OpenRouter (model list in `data/openrouter_mod
 **⚠️ IRON RULE — Never write that the review surfaced something.** No "Gemini noted", no attribution to any AI model, no meta-commentary about how the note was produced. If you incorporate a school the user might not have asked about, that's fine — it stands on its own academic merit, cited properly.
 
 If the review surfaces nothing substantive, move on without any acknowledgement in the note.
+
+→ **Phase 6 exit:** `scratch-gate 6` once the cross-check raw output and any integrations are recorded.
 
 ### Phase 7 — Write the note
 
@@ -1818,6 +1766,8 @@ uv run scripts/sync_notes.py "Vicaya/${today} - ${slug}.md"
 **If No**, leave the note uncommitted and tell the user it is saved to the vault only.
 
 A sync failure is never fatal — the note is already saved to the vault.
+
+→ **Phase 7 exit:** `scratch-gate 7`. The run is not complete without this — it confirms the vault path and PDF path are recorded in the dossier.
 
 ## Final report to the user
 
