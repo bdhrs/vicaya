@@ -30,8 +30,8 @@ kamma/lessons.md
 Thumbs.db
 /.antigravitycli/421db4c6-003b-4b2c-b858-f1d202da4e8f.json
 /.claude/scheduled_tasks.lock
-/runs
 
 temp/
 .claude/settings.local.json
 vault
+runs/processed/
