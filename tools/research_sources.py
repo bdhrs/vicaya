@@ -17,6 +17,7 @@ import fcntl
 import fnmatch
 import json
 import os
+import re as _re
 import sqlite3
 import subprocess
 import unicodedata
@@ -36,11 +37,9 @@ def _strip_diacritics(s: str) -> str:
     )
 
 
-import re as _re_top
-
 # CST text columns carry inline TEI/XML markup (<hi rend="...">, <pb/>, <note>, etc.)
 # Strip all tags, decode common entities, and collapse whitespace before returning hits.
-_XML_TAG_RE = _re_top.compile(r"<[^>]+>")
+_XML_TAG_RE = _re.compile(r"<[^>]+>")
 _XML_ENTITY_MAP = {"&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&apos;": "'"}
 
 
@@ -50,7 +49,7 @@ def _strip_xml(s: str) -> str:
     out = _XML_TAG_RE.sub("", s)
     for k, v in _XML_ENTITY_MAP.items():
         out = out.replace(k, v)
-    return _re_top.sub(r"\s+", " ", out).strip()
+    return _re.sub(r"\s+", " ", out).strip()
 
 
 # ---------- Configuration ----------
@@ -332,8 +331,6 @@ def search_canon(
 
 
 # ---------- Citation resolution ----------
-
-import re as _re
 
 
 def _book_code_parts(book_code: str) -> tuple[str, str]:
@@ -1203,7 +1200,7 @@ def search_sanskrit(
 # `sc_parallels` always reports what parallels.json says; text retrieval is
 # best-effort and explicitly flags missing texts in `text_gaps`.
 
-_SC_REF_RE = _re_top.compile(r"^([a-z-]+)(\d+(?:\.\d+)?)?")
+_SC_REF_RE = _re.compile(r"^([a-z-]+)(\d+(?:\.\d+)?)?")
 
 
 @dataclass
@@ -1423,7 +1420,7 @@ def gemini_cross_check(prompt: str, timeout: int = 120) -> str:
     if result.returncode != 0:
         lines = result.stderr.strip().splitlines()
         # Prefer the human-readable message line if present
-        msg_line = next((l.strip() for l in lines if l.strip().startswith("message:")), None)
+        msg_line = next((ln.strip() for ln in lines if ln.strip().startswith("message:")), None)
         reason = msg_line or (lines[-1].strip() if lines else "non-zero exit")
         return f"# ERROR: {reason}"
     return result.stdout.strip()
@@ -1484,6 +1481,122 @@ For each item, either fix the synthesis or note "no issue":
 """
 
 
+# ---------- Citation verification ----------
+#
+# Cross-checkers (Phase 6 AI reviewers) sometimes fabricate sutta references or
+# misread them. verify_citation queries the sutta_info table in dpd.db to confirm
+# a human reference exists. Existence only — no claim about whether the cited
+# content matches what the model said about it (that is Phase 2 work).
+
+
+_CITATION_RE = _re.compile(
+    r"\b(DN|MN|SN|AN|SNP|Snp?|Dhp|Ud|Iti|Thag|Thig|Vv|Pv|Bv|Ja|Mil)"
+    r"\s?(\d+(?:\.\d+)?(?:-\d+)?)\b",
+    _re.IGNORECASE,
+)
+
+
+def _normalise_citation(ref: str) -> list[str]:
+    """Return one or more canonical sc_code candidates for an input ref.
+
+    Scholarly convention:
+      - `SN` (all caps)      → Saṃyutta Nikāya only.
+      - `Sn` / `sn` / `sN`   → ambiguous: Saṃyutta or Suttanipāta. Return both.
+      - `Snp` / `SNP` / etc. → Suttanipāta only (any case, since the `p` disambiguates).
+    Other prefixes are uppercased verbatim.
+    """
+    s = "".join(ref.split())
+    m = _CITATION_RE.match(s)
+    if not m:
+        return [s.upper()]
+    prefix, tail = m.group(1), m.group(2)
+    lo = prefix.lower()
+    if prefix == "SN":
+        return [f"SN{tail}"]
+    if lo == "sn":
+        return [f"SN{tail}", f"SNP{tail}"]
+    return [f"{lo.upper()}{tail}"]
+
+
+def verify_citation(ref: str, dpd_db: Path | None = None) -> dict:
+    """Confirm that `ref` (a human sutta reference) exists in dpd.db sutta_info.
+
+    Returns {ref, normalised, exists, matches: [...]}. Each match has the
+    fields {sc_code, cst_code, sc_eng_sutta, dpd_sutta, cst_file}. Multiple
+    matches when the ref is ambiguous (e.g. "Sn 4.8" → both SN and SNP).
+    Existence-only — does NOT claim the content matches the reviewer's gloss.
+    """
+    db_path = dpd_db or DEFAULT_DPD_DB
+    if db_path is None or not db_path.exists():
+        return {"ref": ref, "normalised": [], "exists": False,
+                "matches": [], "error": "dpd.db not available"}
+    candidates = _normalise_citation(ref)
+    # Query across all five coding systems present in sutta_info:
+    # sc_code (SuttaCentral), cst_code (CST Pāḷi), dpd_code (DPD — sometimes
+    # book-range like DN1-13, sometimes sutta-code), dpr_code (Digital Pali
+    # Reader), bjt_sutta_code (Buddha Jayanthi). A ref may resolve under any.
+    sql = (
+        "SELECT sc_code, cst_code, dpd_code, dpr_code, bjt_sutta_code, "
+        "       sc_eng_sutta, dpd_sutta, cst_file "
+        "FROM sutta_info "
+        "WHERE sc_code = ? OR cst_code = ? OR dpd_code = ? "
+        "   OR dpr_code = ? OR bjt_sutta_code = ?"
+    )
+    matches: list[dict] = []
+    seen: set[tuple] = set()
+    try:
+        with sqlite3.connect(db_path) as conn:
+            for cand in candidates:
+                for row in conn.execute(sql, (cand, cand, cand, cand, cand)):
+                    key = (row[0], row[1])
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    matches.append({
+                        "sc_code": row[0],
+                        "cst_code": row[1],
+                        "dpd_code": row[2],
+                        "dpr_code": row[3],
+                        "bjt_sutta_code": row[4],
+                        "sc_eng_sutta": row[5],
+                        "dpd_sutta": row[6],
+                        "cst_file": row[7],
+                    })
+    except sqlite3.Error as e:
+        return {"ref": ref, "normalised": candidates, "exists": False,
+                "matches": [], "error": str(e)}
+    return {
+        "ref": ref,
+        "normalised": candidates,
+        "exists": bool(matches),
+        "matches": matches,
+    }
+
+
+def annotate_citations(text: str, dpd_db: Path | None = None) -> str:
+    """Stamp every Pāḷi sutta citation in `text` with [VERIFIED] or [REJECTED].
+
+    The label is existence-only — `[VERIFIED]` means the citation exists in
+    sutta_info, NOT that the reviewer's content claim about it is correct.
+    Pāḷi-quote verification is separate (deferred Phase 2 work).
+    """
+    cache: dict[str, bool] = {}
+
+    def _stamp(m: _re.Match) -> str:
+        raw = m.group(0)
+        if raw in cache:
+            label = "[VERIFIED]" if cache[raw] else "[REJECTED — not in sutta_info]"
+            return f"{raw} {label}"
+        result = verify_citation(raw, dpd_db=dpd_db)
+        exists = result.get("exists", False)
+        cache[raw] = exists
+        if exists:
+            return f"{raw} [VERIFIED]"
+        return f"{raw} [REJECTED — not in sutta_info]"
+
+    return _CITATION_RE.sub(_stamp, text)
+
+
 def cross_check(prompt: str, timeout: int = 180) -> str:
     """Cross-check `prompt` via OpenRouter's model chain.
 
@@ -1520,7 +1633,9 @@ def cross_check(prompt: str, timeout: int = 180) -> str:
         text = (payload["choices"][0]["message"]["content"] or "").strip()
     except Exception:
         return _SELF_REVIEW_SENTINEL
-    return text or _SELF_REVIEW_SENTINEL
+    if not text:
+        return _SELF_REVIEW_SENTINEL
+    return annotate_citations(text)
 
 
 # ---------- CST book translator (sibling dpd-db) ----------
@@ -1562,7 +1677,7 @@ def _load_cst_translator():
         shim_tools = types.ModuleType("tools")
         shim_tools.__path__ = []
         shim_paths = types.ModuleType("tools.paths")
-        shim_paths.ProjectPaths = lambda *a, **kw: None  # never called
+        setattr(shim_paths, "ProjectPaths", lambda *a, **kw: None)  # never called
         sys.modules["tools"] = shim_tools
         sys.modules["tools.paths"] = shim_paths
         try:
@@ -1686,12 +1801,14 @@ _SCRATCH_PHASES: list[tuple[str, str, list[str]]] = [
         "Draft pasted under '## Phase 5 — Synthesis draft'",
     ]),
     ("6", "Phase 6 — Cross-check", [
-        "Cross-check raw output pasted verbatim",
+        "Cross-check raw output pasted verbatim (citations pre-annotated)",
+        "Every [REJECTED] claim dropped — not integrated",
         "Integrations logged with source attribution",
     ]),
     ("7", "Phase 7 — Note written", [
-        "Vault path recorded",
+        "Vault path recorded (sets the path for the [REJECTED] hard gate)",
         "PDF path or 'skipped' recorded",
+        "Zero [REJECTED] tags anywhere in the vault note (enforced by gate)",
     ]),
 ]
 
@@ -1835,6 +1952,32 @@ def scratch_gate(phase: str, scratch: Path | None = None) -> dict:
     # Already gated?
     if _gate_marker(phase) in text:
         return {"ok": True, "phase": phase, "note": "gate already present; not duplicated"}
+    # Phase 7 hard gate: scan the vault note for [REJECTED] tags.
+    if phase == "7":
+        vault_match = _re.search(r"\*\*Vault note:\*\*\s*(.+)", text)
+        if vault_match:
+            raw = vault_match.group(1).strip()
+            if raw and not raw.startswith("<"):
+                vault_path = Path(raw)
+                if vault_path.exists():
+                    note_text = vault_path.read_text(encoding="utf-8")
+                    if "[REJECTED" in note_text:
+                        offending = [
+                            line.strip() for line in note_text.splitlines()
+                            if "[REJECTED" in line
+                        ][:5]
+                        return {
+                            "ok": False,
+                            "phase": "7",
+                            "reason": "vault note contains [REJECTED] tags",
+                            "vault_note": str(vault_path),
+                            "offending_lines": offending,
+                            "message": (
+                                "Phase 7 gate refused: the vault note contains "
+                                "[REJECTED] citation tags. Remove those claims and "
+                                "the inline tags before gating."
+                            ),
+                        }
     ts = _dt.datetime.now().isoformat(timespec="seconds")
     _, title, evidence = _PHASE_INDEX[phase]
     block_lines = [_gate_marker(phase), f"- timestamp: {ts}", f"- title: {title}"]
@@ -1922,7 +2065,7 @@ def _maybe_autolog(cmd: str, argv: list[str], result_obj) -> None:
             body.append(f"- hits: {hits}")
 
         def _default(o):
-            if _is_dc(o):
+            if _is_dc(o) and not isinstance(o, type):
                 return _asdict(o)
             return str(o)
         try:
@@ -1961,7 +2104,7 @@ def _dump(obj) -> None:
     from dataclasses import asdict, is_dataclass
 
     def _default(o):
-        if is_dataclass(o):
+        if is_dataclass(o) and not isinstance(o, type):
             return asdict(o)
         raise TypeError(f"not serialisable: {type(o)}")
 
@@ -2041,9 +2184,9 @@ def _cli() -> int:
                      help="Restrict to a subfolder of the GRETIL corpus (e.g. '1_veda').")
     pss.add_argument("--limit", type=int, default=20)
 
-    pca = sub.add_parser("calibre-check",
-                         help="Probe the Calibre library; reports ok or the specific failure "
-                              "(e.g. locked by GUI or another agent). Use as a Phase 3 preflight.")
+    sub.add_parser("calibre-check",
+                   help="Probe the Calibre library; reports ok or the specific failure "
+                        "(e.g. locked by GUI or another agent). Use as a Phase 3 preflight.")
 
     psp = sub.add_parser("sc-parallels",
                          help="SuttaCentral offline archive: list parallels for a citation "
@@ -2086,6 +2229,10 @@ def _cli() -> int:
                          help="Print the last gate written and the suggested next phase.")
     psr.add_argument("slug", nargs="?", default=None,
                      help="Slug for the scratch file; omit if VICAYA_SCRATCH is set.")
+
+    pvc = sub.add_parser("verify-citation",
+                         help="Confirm a human sutta reference exists in dpd.db sutta_info.")
+    pvc.add_argument("ref", help='Reference, e.g. "SN 46.42", "MN60", "Sn 4.8".')
 
     args = p.parse_args()
 
@@ -2197,6 +2344,10 @@ def _cli() -> int:
         result = scratch_resume(slug=args.slug)
         _dump(result)
         return 0 if result.get("ok") else 1
+    elif args.cmd == "verify-citation":
+        result = verify_citation(args.ref)
+        _dump(result)
+        return 0 if result.get("exists") else 1
 
     _maybe_autolog(args.cmd, autolog_argv, result_for_autolog)
     return 0

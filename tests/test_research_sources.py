@@ -584,3 +584,105 @@ class TestScratchDossier:
         assert result["ok"]
         assert result["last_gate"]["phase"] == "2"
         assert result["next_phase"] == "2.5"
+
+    def test_phase_7_gate_refuses_when_vault_note_has_rejected(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_gate, scratch_init
+        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        path = scratch_init("test-rejected-gate")
+        # Point the scratch file at a vault note containing a [REJECTED] tag.
+        vault = tmp_path / "fake_note.md"
+        vault.write_text(
+            "# Note\n\nThe reviewer cited MN999 [REJECTED — not in sutta_info].\n",
+            encoding="utf-8",
+        )
+        text = path.read_text(encoding="utf-8").replace(
+            "**Vault note:** <set at Phase 7>",
+            f"**Vault note:** {vault}",
+        )
+        path.write_text(text, encoding="utf-8")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        for phase in ("0", "1", "2", "2.5", "3", "3b", "4", "4b", "4c", "5", "6"):
+            r = scratch_gate(phase)
+            assert r["ok"], (phase, r)
+        result = scratch_gate("7")
+        assert result["ok"] is False
+        assert "[REJECTED]" in result["reason"] or "REJECTED" in result["reason"]
+        assert result["offending_lines"]
+
+
+@canon_available
+class TestVerifyCitation:
+    """verify_citation queries dpd.db sutta_info (existence-only)."""
+
+    def test_real_ref_is_verified(self):
+        from tools.research_sources import verify_citation
+        r = verify_citation("MN60")
+        assert r["exists"]
+        assert any(m["sc_code"] == "MN60" for m in r["matches"])
+
+    def test_real_ref_with_space_normalises(self):
+        from tools.research_sources import verify_citation
+        r = verify_citation("SN 46.42")
+        assert r["exists"]
+        assert r["normalised"] == ["SN46.42"]
+
+    def test_fabricated_ref_is_rejected(self):
+        from tools.research_sources import verify_citation
+        r = verify_citation("MN999")
+        assert r["exists"] is False
+        assert r["matches"] == []
+
+    def test_sn_prefix_yields_two_candidates(self):
+        from tools.research_sources import verify_citation
+        r = verify_citation("Sn 4.8")
+        # Both SN4.8 (Saṃyutta) and SNP4.8 (Suttanipāta) are real
+        assert set(r["normalised"]) == {"SN4.8", "SNP4.8"}
+        assert len(r["matches"]) >= 1
+
+    def test_resolves_via_dpd_code_or_dpr_code(self):
+        # dpd.db carries multiple coding systems. A book-range dpd_code like
+        # DN1-13 should resolve. So should dpr_code (Digital Pali Reader),
+        # which usually matches sc_code in format.
+        from tools.research_sources import verify_citation
+        r = verify_citation("DN1-13")
+        assert r["exists"], r
+        # And the row carries cross-system codes in the match.
+        m = r["matches"][0]
+        assert "dpd_code" in m
+        assert "dpr_code" in m
+        assert "bjt_sutta_code" in m
+
+    def test_case_aware_sn_disambiguation(self):
+        # Scholarly convention:
+        #   `SN` (all caps)       → Saṃyutta only
+        #   `Sn` / `sn` / `sN`    → ambiguous (Saṃyutta or Suttanipāta)
+        #   `Snp` / `SNP` / `snp` → Suttanipāta only (the `p` disambiguates)
+        # Reviewer caught: lowercase `sn 4.8` previously fell through to upper-only
+        # via `s.upper()`, missing the ambiguity path. Mixed-case `Sn 4.8` did
+        # trigger it. They should behave identically.
+        from tools.research_sources import _normalise_citation
+        assert _normalise_citation("SN 4.8") == ["SN4.8"]
+        assert set(_normalise_citation("Sn 4.8")) == {"SN4.8", "SNP4.8"}
+        assert set(_normalise_citation("sn 4.8")) == {"SN4.8", "SNP4.8"}
+        assert _normalise_citation("snp 4.8") == ["SNP4.8"]
+        assert _normalise_citation("Snp 4.8") == ["SNP4.8"]
+        assert _normalise_citation("SNP 4.8") == ["SNP4.8"]
+
+
+@canon_available
+class TestAnnotateCitations:
+    def test_stamps_each_citation_inline(self):
+        from tools.research_sources import annotate_citations
+        text = "Compare MN60 with SN46.42 and MN999."
+        out = annotate_citations(text)
+        assert "MN60 [VERIFIED]" in out
+        assert "SN46.42 [VERIFIED]" in out
+        assert "MN999 [REJECTED" in out
+
+    def test_no_sutta_name_in_verified_label(self):
+        # Per review feedback: existence-only label, no content-level implication.
+        from tools.research_sources import annotate_citations
+        out = annotate_citations("See MN60.")
+        # The label must not embed the English sutta name "Unfailing"
+        assert "Unfailing" not in out
+        assert "MN60 [VERIFIED]" in out

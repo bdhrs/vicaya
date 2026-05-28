@@ -87,7 +87,8 @@ Subcommands (each prints JSON to stdout):
 | `resolve-citation BOOK_CODE PARANUM` | — | Returns `Citation` JSON |
 | `search-calibre QUERY` | `--tags T...` `--limit N` | Diacritics stripped automatically |
 | `lookup-book VALUE` | — | Translate any CST book identifier into the others (filename, table, Pāḷi title, gui code, DPD code) |
-| `cross-check` | `--timeout N`; **prompt on stdin** | OpenRouter model chain (see `data/openrouter_models.json`) → `# SELF_REVIEW:` sentinel on failure. Use this in Phase 6. |
+| `cross-check` | `--timeout N`; **prompt on stdin** | OpenRouter model chain (see `data/openrouter_models.json`) → `# SELF_REVIEW:` sentinel on failure. Output is post-processed: every sutta citation is stamped `[VERIFIED]` or `[REJECTED — not in sutta_info]`. Use this in Phase 6. |
+| `verify-citation REF` | — | Confirm a human sutta reference (`MN60`, `SN 46.42`, `Sn 4.8`) exists in `dpd.db sutta_info`. Exits 1 if not. Existence-only; says nothing about content claims. |
 | `gemini-cross-check` | `--timeout N`; **prompt on stdin** | Legacy direct gemini call. Not used in Phase 6; kept for ad-hoc use if you want a second opinion from a different provider. |
 | `get-ebc-overview SUTTA_CODE` | — | Parsed EBC overview card: PTS ref, titles, themes, training, formula, **named Āgama parallels**, partial parallels. Accepts `MN10`, `mn 10`, `mn-10`, `DN22`, `MA98`, etc. Returns `EBCOverview` JSON or exits 1 if missing. |
 | `search-ebc QUERY` | `--folder PATH` `--limit N` | Fixed-string grep across the EBC vault (markdown only). Returns `VaultHit`s. `--folder` accepts a subdir like `+Suttas/Overviews Suttas/MN` or `+Vinaya/Patimokkha/bmc1`. |
@@ -1412,7 +1413,9 @@ uv run tools/research_sources.py cross-check < /tmp/cross_check_prompt.txt > /tm
 
 The `cross-check` helper POSTs to OpenRouter (model list in `data/openrouter_models.json` — edit freely, read at runtime). OpenRouter routes server-side via `models: [...]`: the first reachable model wins, subsequent entries cover outages / rate-limits. On any failure (no key, all models down, network error) the helper returns the `# SELF_REVIEW:` sentinel. **If `/tmp/cross_check_review.txt` begins with `# SELF_REVIEW:`**, no external provider was reachable. In that case, run the embedded five-point checklist on your own synthesis: read each numbered item, audit your synthesis against it, and apply fixes the same way you would for an external review. Do not write anything in the note acknowledging the self-review fallback; it is still subject to the IRON RULE below. The terminal report in Phase 7 records `cross-check: self-review` instead of a model name.
 
-**Silently integrate** anything substantive. If the review surfaces:
+**Citation pre-annotation.** Every sutta reference in the helper's output arrives already labelled `[VERIFIED]` or `[REJECTED — not in sutta_info]` (existence check against `dpd.db sutta_info`). The label is existence-only: `[VERIFIED]` means the citation is a real sutta, **not** that the reviewer's content claim about it is correct. Pāḷi-quote misreads (e.g. `asantasanto` confused with `asanta`) and conceptual conflations are *not* caught by this — those still need scholarly judgement during integration. **Drop every `[REJECTED]` claim entirely; do not paraphrase, do not retain.** A `[REJECTED]` tag anywhere in the final vault note will cause `scratch-gate 7` to refuse, so they must be excised cleanly.
+
+**Silently integrate** anything substantive that is `[VERIFIED]` (or a content claim with no citation that you can substantiate elsewhere). If the review surfaces:
 - A missed school / lineage / teacher → research the primary or secondary sources for it and incorporate with proper citations (canon, library, web). If you can't substantiate it, drop it.
 - A factual correction → verify against a primary or secondary source you can cite, then incorporate.
 - An alternative interpretation → add it as a position in the note, cited to whoever actually holds it.
