@@ -1968,6 +1968,8 @@ duration_min: <approximate>
 Be terse. Three bullets per section max. If a section is empty, write "nothing" — don't
 delete the heading. These files are the input to periodic skill-tuning passes.
 
+Then run `uv run scripts/sync_run_report.py` to publish the latest `runs/*.md` report.
+
 After writing the reflection, apply any concrete `Channel tuning` decisions directly to
 `data/youtube_channels.md`. Promotions and demotions are how the channel allowlist gets
 richer over time; without this step the file goes stale.
