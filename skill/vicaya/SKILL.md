@@ -62,6 +62,7 @@ All user-specific paths come from the project's `.env` file (see `.env.example` 
 - Output folder in vault: `$VICAYA_VAULT_PATH/Vicaya/` (this folder is its own git repo — publish notes only after user approval via `scripts/sync_notes.py`)
 - Helper module: `<repo>/tools/research_sources.py`
 - Canon db: read-only SQLite at the path baked into the helper module.
+- DPD dictionary db: read-only SQLite at `$VICAYA_DPD_DB` — Pāḷi word meanings, grammar, roots, and inflected-form resolution. See the **DPD dictionary database** section below for the two lookup paths.
 - Calibre library: path baked into the helper module. FTS indexing may or may not be complete depending on when the library was last indexed (14k books takes days to index from scratch). The helper checks FTS status automatically and falls back to metadata search if indexing is incomplete — don't try to force FTS. When FTS is active, snippets are returned with hits; when metadata-only, you get titles/authors/comments. Both are useful; note which mode is active in the scratch.
 - Cross-check uses an OpenRouter model chain (see Phase 6; current lead `deepseek/deepseek-v4-flash` — paid but ~$0.0001/call). Requires `OPENROUTER_API_KEY` in env / `.env`, or an OpenRouter key in `~/.local/share/opencode/auth.json`. When unavailable the helper returns a `# SELF_REVIEW:` sentinel and the agent runs the checklist on its own synthesis.
 - **Book code → source XML map**: `/home/bodhirasa/MyFiles/3_Active/dpd-db/tools/pali_text_files.py` maps every canon book code (e.g. `s0201m_mul`) to its source XML file in the DPD database. Consult this when you need to know which raw XML file a given book code corresponds to, or when debugging why a search returns no results for a book you expect to exist.
@@ -135,6 +136,80 @@ Returns a JSON list of `{cst_filename, cst_table, cst_book_name, gui_book_code,
 dpd_book_code}`. Empty list on no match. The embedded book-code map below is
 still the primary reference for picking `--books` patterns; `lookup-book` is
 for one-off translations during a run.
+
+## DPD dictionary database (`dpd.db`)
+
+The Digital Pāḷi Dictionary database — a separate SQLite file from the canon db.
+Use it to look up the **meaning, grammar, and root** of any Pāḷi word, and to
+resolve an **inflected or compound form** found in the canon back to its
+dictionary entry. The skill already uses one of its tables (`sutta_info`) behind
+`verify-citation`; this section covers the dictionary proper.
+
+**Location.** Path is in `$VICAYA_DPD_DB` (e.g. `~/MyFiles/3_Active/dpd-db/dpd.db`).
+Read-only, ~2 GB. If the variable is unset, tell the user to add
+`VICAYA_DPD_DB=~/path/to/dpd-db/dpd.db` to `.env` (see `.env.example`) — don't
+guess the path.
+
+**Access.** Query it directly with `sqlite3`, exactly as the canon db is queried
+above. The dpd-db repo ships a full SQLAlchemy model layer (`db/models.py`), but
+that is for building/editing the dictionary and pins you to that repo's
+environment; for read-only lookups raw SQL is simpler and the table/column schema
+is stable. Resolve the JSON columns in Python (`json.loads`) when you need them.
+
+**Spelling.** Exact Pāḷi diacritics with the `ṃ` niggahita (never `ṁ`), same as
+the canon db. Search verbatim.
+
+### Way 1 — headword lookup (`dpd_headwords`)
+
+You know a dictionary word and want its meaning, grammar, and derivation. Query
+`lemma_1`, which is **sense-numbered** (`dukkha 1`, `dukkha 2`, …), so match with
+`LIKE 'word%'` to get every sense:
+
+```bash
+sqlite3 "$VICAYA_DPD_DB" \
+  "SELECT lemma_1, pos, grammar, plus_case, meaning_1, meaning_lit, construction, root_key
+   FROM dpd_headwords WHERE lemma_1 LIKE 'dukkha%' LIMIT 10;"
+```
+
+Useful columns: `lemma_1` (headword + sense number), `pos` (part of speech),
+`grammar`, `plus_case` (case governed), `meaning_1` (primary gloss),
+`meaning_lit` (literal), `meaning_2` (alternative gloss), `construction` (morph
+breakdown, e.g. `√dukkh + a`), `root_key` (links to `dpd_roots`), `sanskrit`,
+`example_1` + `sutta_1` (an attested canonical usage).
+
+### Way 2 — inflected / compound form lookup (`lookup`)
+
+You have an inflected or compound form from the canon and don't know its
+dictionary form. Look the exact form up in `lookup`; it returns a JSON array of
+`dpd_headwords.id` values plus a grammatical analysis:
+
+```bash
+sqlite3 "$VICAYA_DPD_DB" \
+  "SELECT headwords, grammar, deconstructor, roots FROM lookup WHERE lookup_key='dukkhassa';"
+# headwords  -> [32875, 32876, 32877, 32878]   (ids into dpd_headwords)
+# grammar    -> [["dukkha","adj","masc dat sg"], ...]   (each id's inflection reading)
+# deconstructor -> compound splits, e.g. ["sabbaṃ + ca"] (empty for simple words)
+# roots      -> candidate roots when relevant
+```
+
+Then resolve the ids against `dpd_headwords` to get the actual entries:
+
+```bash
+sqlite3 "$VICAYA_DPD_DB" \
+  "SELECT id, lemma_1, pos, meaning_1 FROM dpd_headwords WHERE id IN (32875,32876,32877,32878);"
+```
+
+`headwords`, `grammar`, `deconstructor`, and `roots` are JSON strings — parse with
+`json.loads` to get the id list before the `IN (...)` query.
+
+### Other tables
+
+The two lookups above cover almost every need. The rest are there if a question
+calls for them: `dpd_roots` and `family_root` for a term's verbal root and
+word-family (etymology); `bold_definitions` to find where the aṭṭhakathā glosses
+a term in bold; `sutta_info` for cross-coding a sutta across CST/SC/PTS/DPD (also
+behind `verify-citation`); plus `family_word`/`family_compound`/`family_idiom`/
+`family_set` and `inflection_templates` for finer morphological work.
 
 ## EBC vault (Early Buddhist Connections)
 
@@ -923,6 +998,8 @@ Infer the canon scope from the question. Examples:
 | khandha | `khandh` |
 
 When in doubt, drop one more character than you think you need — substring match means no false positives from truncating too far, only more hits.
+
+To go the other way — turn an inflected form back into its dictionary stem, case, and number — look the exact form up in the DPD `lookup` table (see the **DPD dictionary database** section).
 
 ```bash
 uv run tools/research_sources.py search-canon "<Pāḷi stem>" --books "s*_mul" --lang pali --limit 20
