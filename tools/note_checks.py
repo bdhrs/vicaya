@@ -23,12 +23,18 @@ REQUIRED_SECTIONS = (
     "## Bibliography",
 )
 
+# Absence of these is a warning, not an error: they are content-dependent,
+# so a thematic/secular question or a custom note format may legitimately
+# omit them. All other required sections remain hard errors.
+SOFT_SECTIONS = frozenset({"## Canon Evidence (T1)"})
+
 
 @dataclass(frozen=True)
 class ValidationIssue:
     code: str
     message: str
     line: int
+    severity: str = "error"
 
 
 class FrontmatterFields(TypedDict):
@@ -185,6 +191,7 @@ def _validate_body(
                     "missing-section",
                     f"required section missing: {heading}",
                     1 + line_offset,
+                    "warning" if heading in SOFT_SECTIONS else "error",
                 )
             )
 

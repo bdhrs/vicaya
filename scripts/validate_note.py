@@ -39,9 +39,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{note_arg}: error: {exc}")
         return 2
 
+    errors = [issue for issue in issues if issue.severity == "error"]
     for issue in issues:
-        print(f"{note_path}:{issue.line}: {issue.code}: {issue.message}")
-    return 1 if issues else 0
+        print(f"{note_path}:{issue.line}: {issue.severity}: {issue.code}: {issue.message}")
+    return 1 if errors else 0
 
 
 if __name__ == "__main__":

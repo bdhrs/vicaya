@@ -1793,12 +1793,6 @@ obsidian vault=Obsidian create \
 After writing the note — whether via the Obsidian CLI or the disk fallback — validate
 the final note shape and generate a PDF copy.
 
-**Custom-format runs still need `## Findings`.** When the user supplies a bespoke note
-structure (e.g. a two-section "what the suttas say / don't say" reference), keep an
-orienting `## Findings` summary section — `validate_note.py` hard-checks for it and will
-fail the note without it. The summary is useful regardless: it lets the reader grasp the
-answer before the evidence entries.
-
 ```bash
 uv run scripts/validate_note.py "Vicaya/${TODAY} - ${SLUG}.md"
 uv run scripts/generate_note_pdf.py "Vicaya/${TODAY} - ${SLUG}.md"
