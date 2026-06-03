@@ -8,6 +8,7 @@ the suite stays green on a machine that doesn't have everything wired up yet.
 from __future__ import annotations
 
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -665,23 +666,48 @@ class TestScratchDossier:
 
 
 class TestCalibreCheckHonesty:
-    """calibre-check must agree with the real search path, not a cheap probe."""
+    """calibre-check must use a fast reachability probe, not FTS snippets."""
 
-    def test_available_when_search_succeeds(self, monkeypatch, tmp_path):
+    def test_available_when_fast_probe_succeeds(self, monkeypatch, tmp_path):
         import tools.research_sources as rs
+        seen = {}
+
+        def _capture(cmd, *, timeout, retries=3):
+            seen["cmd"] = cmd
+            seen["timeout"] = timeout
+            seen["retries"] = retries
+            return subprocess.CompletedProcess(cmd, 0, stdout="[]", stderr="")
+
         monkeypatch.setattr(rs, "DEFAULT_CALIBRE_LIBRARY", tmp_path)
-        monkeypatch.setattr(rs, "search_calibre", lambda *a, **k: [])
+        monkeypatch.setattr(rs, "search_calibre", lambda *a, **k: pytest.fail("used FTS search"))
+        monkeypatch.setattr(rs, "_run_calibre", _capture)
         ok, msg = rs.calibre_library_available()
         assert ok and msg == "ok"
+        assert seen["cmd"] == [
+            "calibredb",
+            "list",
+            "--search",
+            "*",
+            "--fields",
+            "id",
+            "--for-machine",
+            "--limit",
+            "1",
+            "--library-path",
+            str(tmp_path),
+        ]
+        assert seen["timeout"] == 15
+        assert seen["retries"] == 1
 
-    def test_unavailable_when_search_raises_lock(self, monkeypatch, tmp_path):
+    def test_unavailable_when_fast_probe_raises_lock(self, monkeypatch, tmp_path):
         import tools.research_sources as rs
 
         def _locked(*a, **k):
             raise rs.CalibreUnavailable("database is locked")
 
         monkeypatch.setattr(rs, "DEFAULT_CALIBRE_LIBRARY", tmp_path)
-        monkeypatch.setattr(rs, "search_calibre", _locked)
+        monkeypatch.setattr(rs, "search_calibre", lambda *a, **k: pytest.fail("used FTS search"))
+        monkeypatch.setattr(rs, "_run_calibre", _locked)
         ok, msg = rs.calibre_library_available()
         assert ok is False
         assert "locked" in msg
@@ -690,15 +716,80 @@ class TestCalibreCheckHonesty:
         import tools.research_sources as rs
         seen = {}
 
-        def _capture(query, **kwargs):
-            seen.update(kwargs)
-            return []
+        def _capture(cmd, *, timeout, retries=3):
+            seen["timeout"] = timeout
+            seen["retries"] = retries
+            return subprocess.CompletedProcess(cmd, 0, stdout="[]", stderr="")
 
         monkeypatch.setattr(rs, "DEFAULT_CALIBRE_LIBRARY", tmp_path)
-        monkeypatch.setattr(rs, "search_calibre", _capture)
+        monkeypatch.setattr(rs, "_run_calibre", _capture)
         rs.calibre_library_available()
         # Probe must not inherit the 120s search window — it fails fast.
-        assert seen.get("timeout") == 15
+        assert seen == {"timeout": 15, "retries": 1}
+
+
+class TestCalibreFtsFallback:
+    def test_search_falls_back_to_metadata_when_fts_times_out(self, monkeypatch, tmp_path, capsys):
+        import tools.research_sources as rs
+
+        metadata_hits = [
+            rs.CalibreHit(
+                book_id=42,
+                title="Metadata result",
+                authors="Author",
+                tags=["Buddhism"],
+                location="42",
+                snippet="metadata comments are not FTS snippets",
+            )
+        ]
+        seen = {}
+
+        def _timeout(query, tags, library, limit, *, timeout):
+            seen["fts"] = (query, tags, library, limit, timeout)
+            raise subprocess.TimeoutExpired(["calibredb", "fts_search"], timeout)
+
+        def _metadata(query, tags, library, limit, *, timeout):
+            seen["metadata"] = (query, tags, library, limit, timeout)
+            return metadata_hits
+
+        monkeypatch.setattr(rs, "DEFAULT_CALIBRE_LIBRARY", tmp_path)
+        monkeypatch.setattr(rs, "_calibre_fts_available", lambda library: True)
+        monkeypatch.setattr(rs, "_calibre_fts_search", _timeout)
+        monkeypatch.setattr(rs, "_calibre_metadata_search", _metadata)
+
+        hits = rs.search_calibre("dhamma", tags=["Buddhism"], limit=5)
+
+        assert hits == [
+            rs.CalibreHit(
+                book_id=42,
+                title="Metadata result",
+                authors="Author",
+                tags=["Buddhism"],
+                location="42",
+                snippet="",
+            )
+        ]
+        assert seen["fts"] == ("dhamma", ["Buddhism"], tmp_path, 5, 20)
+        assert seen["metadata"] == ("dhamma", ["Buddhism"], tmp_path, 5, 60)
+        assert "FTS timed out" in capsys.readouterr().err
+
+    def test_search_keeps_calibre_unavailable_errors(self, monkeypatch, tmp_path):
+        import tools.research_sources as rs
+
+        def _locked(*a, **k):
+            raise rs.CalibreUnavailable("database is locked")
+
+        monkeypatch.setattr(rs, "DEFAULT_CALIBRE_LIBRARY", tmp_path)
+        monkeypatch.setattr(rs, "_calibre_fts_available", lambda library: True)
+        monkeypatch.setattr(rs, "_calibre_fts_search", _locked)
+        monkeypatch.setattr(
+            rs,
+            "_calibre_metadata_search",
+            lambda *a, **k: pytest.fail("fell back on a lock error"),
+        )
+
+        with pytest.raises(rs.CalibreUnavailable, match="locked"):
+            rs.search_calibre("dhamma")
 
 
 @canon_available

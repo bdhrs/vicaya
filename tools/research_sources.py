@@ -487,6 +487,7 @@ _CALIBRE_LOCK_HINTS = (
 )
 
 _CALIBRE_LOCK_FILE = Path("/tmp/vicaya-calibre.lock")
+_CALIBRE_FTS_TIMEOUT = 20
 
 
 def _is_calibre_lock_error(stderr: str) -> bool:
@@ -548,7 +549,7 @@ def _calibre_serialize(warn_after: float = 30.0, give_up_after: float = 120.0):
 
 
 def _run_calibre(
-    cmd: list[str], timeout: int, retries: int = 3
+    cmd: list[str], timeout: int, retries: int = 3, *, raise_timeout: bool = False
 ) -> subprocess.CompletedProcess:
     """Run a calibredb command with retry/backoff on lock-style failures.
 
@@ -566,6 +567,8 @@ def _run_calibre(
             except FileNotFoundError as e:
                 raise CalibreUnavailable(f"calibredb not found: {e}") from e
             except subprocess.TimeoutExpired as e:
+                if raise_timeout:
+                    raise
                 last_err = f"timeout after {timeout}s"
                 if attempt + 1 < retries:
                     time.sleep(delay)
@@ -585,20 +588,32 @@ def _run_calibre(
 
 
 def calibre_library_available(library: Path | None = None) -> tuple[bool, str]:
-    """Probe the Calibre library by running a real (tiny) search.
+    """Probe Calibre reachability without invoking FTS snippet search.
 
     Returns (ok, message). `ok=False` means a search would fail right now —
-    typically because the GUI or another agent holds the lock. Exercises the
-    exact path `search-calibre` uses, so this verdict cannot disagree with the
-    real query (the bug where the cheap `list` probe said "ok" while FTS died).
+    typically because the GUI or another agent holds the lock. `ok=True` means
+    the library is reachable, not that FTS snippets are available: a broken or
+    timed-out FTS index degrades gracefully to metadata search in
+    `search_calibre`, so the probe deliberately does not exercise FTS.
     """
     library = library or DEFAULT_CALIBRE_LIBRARY
     if library is None or not library.exists():
         return False, f"library path not set or missing: {library}"
     try:
-        # Short timeout: a held lock makes calibredb hang, so the full 120s
-        # search window would make this probe useless. Fail fast instead.
-        search_calibre("dhamma", library=library, limit=1, timeout=15)
+        cmd = [
+            "calibredb",
+            "list",
+            "--search",
+            "*",
+            "--fields",
+            "id",
+            "--for-machine",
+            "--limit",
+            "1",
+            "--library-path",
+            str(library),
+        ]
+        _run_calibre(cmd, timeout=15, retries=1)
         return True, "ok"
     except CalibreUnavailable as e:
         return False, str(e)
@@ -645,7 +660,8 @@ def search_calibre(
     """Search the Calibre library.
 
     If `tags` is given, scope to books with any of those tags (OR).
-    If FTS is enabled, run a full-text search; otherwise fall back to metadata search.
+    If FTS is enabled, run a full-text search; if that exceeds the bounded
+    FTS budget, fall back to metadata search without snippets.
 
     Diacritics are stripped from the query — the Calibre library uses ASCII Pāḷi.
     `timeout` overrides the per-call subprocess budget (used by the fast preflight
@@ -658,9 +674,25 @@ def search_calibre(
     if library is None or not library.exists():
         return []
     query = _strip_diacritics(query)
+    metadata_timeout = timeout or 60
     if _calibre_fts_available(library):
-        return _calibre_fts_search(query, tags, library, limit, timeout=timeout or 120)
-    return _calibre_metadata_search(query, tags, library, limit, timeout=timeout or 60)
+        try:
+            return _calibre_fts_search(
+                query, tags, library, limit, timeout=timeout or _CALIBRE_FTS_TIMEOUT
+            )
+        except subprocess.TimeoutExpired:
+            import sys
+
+            print(
+                "[vicaya] Calibre FTS timed out; returned metadata hits without snippets",
+                file=sys.stderr,
+            )
+            return _calibre_hits_without_snippets(
+                _calibre_metadata_search(
+                    query, tags, library, limit, timeout=metadata_timeout
+                )
+            )
+    return _calibre_metadata_search(query, tags, library, limit, timeout=metadata_timeout)
 
 
 def _build_tag_search(tags: list[str] | None) -> str:
@@ -668,6 +700,20 @@ def _build_tag_search(tags: list[str] | None) -> str:
         return ""
     # 'tags:"=Buddhism" or tags:"=Pali"' style — exact match on tag name.
     return " or ".join(f'tags:"={t}"' for t in tags)
+
+
+def _calibre_hits_without_snippets(hits: list[CalibreHit]) -> list[CalibreHit]:
+    return [
+        CalibreHit(
+            book_id=hit.book_id,
+            title=hit.title,
+            authors=hit.authors,
+            tags=list(hit.tags),
+            location=hit.location,
+            snippet="",
+        )
+        for hit in hits
+    ]
 
 
 def _calibre_fts_search(
@@ -686,7 +732,7 @@ def _calibre_fts_search(
     tag_search = _build_tag_search(tags)
     if tag_search:
         cmd.extend(["--restrict-to", f"search:{tag_search}"])
-    result = _run_calibre(cmd, timeout=timeout)
+    result = _run_calibre(cmd, timeout=timeout, retries=3, raise_timeout=True)
     if not result.stdout.strip():
         return []
     try:
