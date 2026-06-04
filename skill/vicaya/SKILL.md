@@ -14,7 +14,7 @@ Four structural commands carry the run. Everything else is reference.
 1. **Phase 0:** `scratch-init <slug>` (add `--class thematic` for non-sutta-anchored questions). This records the shared active scratch path so later helper calls auto-log to it in a single-session run. For parallel runs, pin the run with `export VICAYA_SCRATCH=…`/`VICAYA_PHASE=…`.
 2. **Each phase boundary:** end the prior phase with `scratch-gate <prev-phase>`. The gate auto-advances the active phase, so the next phase's helper calls log correctly without any manual step. It refuses if earlier gates are missing and prints the exact evidence still needed. Thematic runs auto-skip the Phase 2.5 (SC-parallels) and 3b (Sanskrit) gates.
 3. **Start of Phase 5:** `scratch-verify`. Exit 0 = proceed to synthesis. Exit 1 = backfill the named phase first; do not draft.
-4. **End of Phase 7:** `scratch-gate 7`, then publish the run report with `uv run scripts/sync_run_report.py`. The run is not complete without both.
+4. **End of Phase 7:** `scratch-gate 7`, then publish the saved note with `uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"`; after writing the reflection, publish the run report with `uv run scripts/sync_run_report.py`. The run is not complete until the gate passes and both sync commands have been attempted.
 
 If context compaction fires at any point, `scratch-resume <slug>` explicitly selects that run, reattaches the active scratch state, and prints the last gate and next phase — no findings are lost.
 
@@ -59,7 +59,7 @@ Hard-coded for this machine. If a path is missing or a tool isn't installed, sto
 All user-specific paths come from the project's `.env` file (see `.env.example` at the repo root). The helper module resolves them on import. Agents do not hard-code paths; use the helpers and CLI.
 
 - Vault Root: `$VICAYA_VAULT_PATH` (This is the absolute path to the root directory of the vault).
-- Output folder in vault: `$VICAYA_VAULT_PATH/Vicaya/` (this folder is its own git repo — publish notes only after user approval via `scripts/sync_notes.py`)
+- Output folder in vault: `$VICAYA_VAULT_PATH/Vicaya/` (this folder is its own git repo — publish notes only through the pre-approved `scripts/sync_notes.py` path after Phase 7 validation/gating)
 - Helper module: `<repo>/tools/research_sources.py`
 - Canon db: read-only SQLite at the path baked into the helper module.
 - DPD dictionary db: read-only SQLite at `$VICAYA_DPD_DB` — Pāḷi word meanings, grammar, roots, and inflected-form resolution. See the **DPD dictionary database** section below for the two lookup paths.
@@ -1807,26 +1807,25 @@ uv run scripts/generate_note_pdf.py "Vicaya/${TODAY} - ${SLUG}.md"
 successfully with a skip message. Include the PDF path in the Section 1 run summary if
 generation succeeded.
 
-### GitHub push (user-triggered)
+### GitHub note sync (pre-approved)
 
-After the note is written and the final report is shown, ask the user using `AskUserQuestion`:
-"Should I push this note to GitHub (`bdhrs/vicaya-notes`)?" with options **Yes** / **No**.
-
-**If Yes**, run:
+After the note is written, validated, PDF generated, and `scratch-gate 7` passes, run:
 
 ```bash
 uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"
 ```
 
-`scripts/sync_notes.py` is a pre-approved publishing script for the notes repo only.
-It may pull, commit, and push inside `$VICAYA_VAULT_PATH/Vicaya/`, but only after
-the user approves publishing the note.
+`scripts/sync_notes.py` is the pre-approved publishing script for the notes repo
+only. It loads `.env`, targets `$VICAYA_VAULT_PATH/Vicaya/`, may pull, stage the
+named note, commit it if needed, and push it to `bdhrs/vicaya-notes`.
 
-**If No**, leave the note uncommitted and tell the user it is saved to the vault only.
+Do not ask a yes/no approval question for this step. Do not run arbitrary
+`git`, publishing, deployment, sync, delete, or overwrite commands outside this
+approved script path.
 
 A sync failure is never fatal — the note is already saved to the vault.
 
-→ **Phase 7 exit:** `scratch-gate 7`, then `uv run scripts/sync_run_report.py`. The run is not complete without both — the gate confirms the vault path and PDF path are recorded in the dossier, and the sync publishes the latest `runs/*.md` report. `scripts/sync_run_report.py` is a pre-approved run-report publishing script and may pull, commit, and push Vicaya run reports in this project repo. New or materially modified scripts are not automatically pre-approved for git, publishing, deployment, sync, delete, or overwrite operations.
+→ **Phase 7 exit:** after validation/PDF generation, run `scratch-gate 7`, then `uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"`; after writing the reflection, run `uv run scripts/sync_run_report.py`. The run is not complete until the gate passes and both sync commands have been attempted — the gate confirms the vault path and PDF path are recorded in the dossier, note sync publishes the saved note, and run-report sync publishes the latest `runs/*.md` report. `scripts/sync_run_report.py` is a pre-approved run-report publishing script and may pull, commit, and push Vicaya run reports in this project repo. New or materially modified scripts are not automatically pre-approved for git, publishing, deployment, sync, delete, or overwrite operations.
 
 ## Final report to the user
 
