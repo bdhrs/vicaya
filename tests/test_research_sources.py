@@ -594,6 +594,56 @@ class TestScratchDossier:
         assert result["last_gate"]["phase"] == "2"
         assert result["next_phase"] == "2.5"
 
+    def test_resume_slug_ignores_stale_active_state(self, tmp_path, monkeypatch):
+        from tools.research_sources import _write_state, scratch_init, scratch_resume
+        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        stale_path = scratch_init("stale-run")
+        selected_path = scratch_init("selected-run")
+        _write_state(stale_path, "0")
+
+        result = scratch_resume("selected-run")
+
+        assert result["ok"]
+        assert result["path"] == str(selected_path)
+
+    def test_resume_updates_active_state_to_selected_scratch(self, tmp_path, monkeypatch):
+        from tools.research_sources import (
+            _read_state,
+            _write_state,
+            scratch_gate,
+            scratch_init,
+            scratch_resume,
+        )
+        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        stale_path = scratch_init("stale-active")
+        selected_path = scratch_init("selected-active")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(selected_path))
+        scratch_gate("0")
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        _write_state(stale_path, "0")
+
+        result = scratch_resume("selected-active")
+
+        assert result["ok"]
+        assert result["next_phase"] == "1"
+        assert _read_state() == {"scratch": str(selected_path), "phase": "1"}
+
+    def test_resume_thematic_run_reattaches_next_worked_phase(self, tmp_path, monkeypatch):
+        from tools.research_sources import _read_state, scratch_gate, scratch_init, scratch_resume
+        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        path = scratch_init("thematic-resume", run_class="thematic")
+        for phase in ("0", "1", "2"):
+            assert scratch_gate(phase)["ok"]
+
+        result = scratch_resume("thematic-resume")
+
+        assert result["ok"]
+        assert result["next_phase"] == "3"
+        assert _read_state() == {"scratch": str(path), "phase": "3"}
+
     def test_phase_7_gate_refuses_when_vault_note_has_rejected(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_gate, scratch_init
         monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
@@ -663,6 +713,31 @@ class TestScratchDossier:
         assert _read_state()["phase"] == "0"
         scratch_gate("0")
         assert _read_state()["phase"] == "1"
+
+    def test_autolog_uses_env_scratch_over_active_state(self, tmp_path, monkeypatch):
+        from tools.research_sources import _maybe_autolog, _write_state, scratch_init
+        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        stale_path = scratch_init("autolog-stale")
+        selected_path = scratch_init("autolog-selected")
+        _write_state(stale_path, "0")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(selected_path))
+        monkeypatch.setenv("VICAYA_PHASE", "1")
+
+        _maybe_autolog("search-vault", ["dukkha"], [])
+
+        assert "search-vault" in selected_path.read_text(encoding="utf-8")
+        assert "search-vault" not in stale_path.read_text(encoding="utf-8")
+
+    def test_autolog_uses_active_state_without_env(self, tmp_path, monkeypatch):
+        from tools.research_sources import _maybe_autolog, scratch_init
+        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        monkeypatch.delenv("VICAYA_PHASE", raising=False)
+        path = scratch_init("autolog-active")
+
+        _maybe_autolog("search-vault", ["dukkha"], [])
+
+        assert "search-vault" in path.read_text(encoding="utf-8")
 
 
 class TestCalibreCheckHonesty:

@@ -1809,14 +1809,19 @@ def _read_state() -> dict:
         return {}
 
 
-def _write_state(scratch=None, phase=None) -> None:
+_STATE_PHASE_UNSET = object()
+
+
+def _write_state(scratch=None, phase=_STATE_PHASE_UNSET) -> None:
     """Persist the active scratch path / phase so they survive between shell calls."""
     try:
         _SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
         state = _read_state()
         if scratch is not None:
             state["scratch"] = str(scratch)
-        if phase is not None:
+        if phase is None:
+            state.pop("phase", None)
+        elif phase is not _STATE_PHASE_UNSET:
             state["phase"] = str(phase)
         (_SCRATCH_DIR / ".active").write_text(json.dumps(state), encoding="utf-8")
     except Exception:
@@ -1886,16 +1891,26 @@ _SCRATCH_PHASES: list[tuple[str, str, list[str]]] = [
 _PHASE_INDEX = {pid: (i, title, evidence) for i, (pid, title, evidence) in enumerate(_SCRATCH_PHASES)}
 
 
+def _next_worked_phase(text: str, idx: int) -> str | None:
+    nxt = idx + 1
+    if _run_class(text) == "thematic":
+        while nxt < len(_SCRATCH_PHASES) and _SCRATCH_PHASES[nxt][0] in _AUTO_SKIP_PHASES:
+            nxt += 1
+    if nxt < len(_SCRATCH_PHASES):
+        return _SCRATCH_PHASES[nxt][0]
+    return None
+
+
 def _scratch_path(slug: str | None = None) -> Path:
-    """Resolve the scratch path. Env override > active-state file > slug > error."""
+    """Resolve the scratch path. Explicit slug > env override > active-state file > error."""
+    if slug:
+        return _SCRATCH_DIR / f"{slug}.md"
     env = os.environ.get("VICAYA_SCRATCH")
     if env:
         return Path(env)
     state = _read_state().get("scratch")
     if state:
         return Path(state)
-    if slug:
-        return _SCRATCH_DIR / f"{slug}.md"
     raise ValueError("no scratch path: set VICAYA_SCRATCH, run scratch-init, or pass a slug")
 
 
@@ -2081,12 +2096,9 @@ def scratch_gate(phase: str, scratch: Path | None = None) -> dict:
     # Advance the active phase so the next phase's searches auto-log correctly
     # without the agent re-exporting VICAYA_PHASE. Thematic runs skip over the
     # auto-skipped phases so logs land on the next phase actually worked.
-    nxt = idx + 1
-    if _run_class(text) == "thematic":
-        while nxt < len(_SCRATCH_PHASES) and _SCRATCH_PHASES[nxt][0] in _AUTO_SKIP_PHASES:
-            nxt += 1
-    if nxt < len(_SCRATCH_PHASES):
-        _write_state(phase=_SCRATCH_PHASES[nxt][0])
+    next_phase = _next_worked_phase(text, idx)
+    if next_phase is not None:
+        _write_state(phase=next_phase)
     return {"ok": True, "phase": phase, "title": title}
 
 
@@ -2131,10 +2143,8 @@ def scratch_resume(slug: str | None = None, scratch: Path | None = None) -> dict
     for i, (pid, title, _) in enumerate(_SCRATCH_PHASES):
         if _gate_marker(pid) in text:
             last = {"phase": pid, "title": title}
-            if i + 1 < len(_SCRATCH_PHASES):
-                next_phase = _SCRATCH_PHASES[i + 1][0]
-            else:
-                next_phase = None
+            next_phase = _next_worked_phase(text, i)
+    _write_state(path, next_phase)
     return {"ok": True, "path": str(path), "last_gate": last, "next_phase": next_phase}
 
 
