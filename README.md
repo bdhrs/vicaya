@@ -9,8 +9,10 @@ citations, has a second model review the draft, and saves a single Markdown
 note into your vault under `Vicaya/`. Notes link back to existing notes
 on related topics, so the vault accumulates as a connected body of work.
 
-The skill is invoked as `/vicaya <your question>` inside Claude Code (or any
-agent that reads a Markdown skill file).
+The main skill is invoked as `/vicaya <your question>` inside Claude Code (or
+any agent that reads a Markdown skill file). For lower-context staged runs, use
+the sibling skills `vicaya-0-scope`, `vicaya-1-gather`,
+`vicaya-2-synthesize-review`, and `vicaya-3-complete`.
 
 ## Sources
 
@@ -33,9 +35,11 @@ Each source is optional — if the tool or path isn't configured it is silently 
 2. Install whichever of these you want to use: `obsidian` CLI, `calibredb`
    (Calibre 9+), `yt-dlp`, `sqlite3`, `gemini` CLI.
 3. `uv sync` to install Python dependencies.
-4. Symlink the skill folder into your agents' skills directories. Using
+4. Symlink the main skill folder into your agents' skills directories. Using
    symlinks ensures that changes made in this repository are immediately
-   reflected in all agents.
+   reflected in all agents. If you use staged runs, symlink the staged sibling
+   folders too: `vicaya-0-scope`, `vicaya-1-gather`,
+   `vicaya-2-synthesize-review`, and `vicaya-3-complete`.
 
    **Gemini CLI / OpenCode:**
    ```bash
@@ -246,8 +250,11 @@ but you did find a `dpd.db` in step 2, go back and fill in that path.
 
 ### 5 — Symlink the skill
 
-To make the skill available across all your agents while keeping it in sync
-with this repository, create symlinks in the following locations:
+To make the main skill available across all your agents while keeping it in
+sync with this repository, create symlinks in the following locations. If you
+use staged runs, create matching symlinks for `skill/vicaya-0-scope`,
+`skill/vicaya-1-gather`, `skill/vicaya-2-synthesize-review`, and
+`skill/vicaya-3-complete`.
 
 **For Gemini CLI and OpenCode (shared central directory):**
 
@@ -301,6 +308,7 @@ vicaya/
 │   ├── calibre_tags.csv         # tag vocabulary
 │   ├── youtube_channels.md      # YouTube channel allowlist
 │   └── youtube_cache/           # cached transcripts (gitignored)
-├── skill/vicaya/                # the skill prompt
+├── skill/vicaya/                # the main skill prompt
+├── skill/vicaya-*/              # staged skill routers
 └── kamma/                       # design history
 ```

@@ -7,6 +7,11 @@ description: Run a structured Pāḷi/Buddhist research session across the user'
 
 Run a multi-phase research session across the user's local + web sources and write a single structured note into their Obsidian vault.
 
+For lower-context staged runs, use `vicaya-0-scope`, `vicaya-1-gather`,
+`vicaya-2-synthesize-review`, and `vicaya-3-complete`; those staged skills are
+section routers that read exact sections from this file. This file remains the
+canonical one-goal `/vicaya` workflow and the only behavioral source of truth.
+
 ## Critical execution rules
 
 Four structural commands carry the run. Everything else is reference.
@@ -15,6 +20,10 @@ Four structural commands carry the run. Everything else is reference.
 2. **Each phase boundary:** end the prior phase with `scratch-gate <prev-phase>`. The gate auto-advances the active phase, so the next phase's helper calls log correctly without any manual step. It refuses if earlier gates are missing and prints the exact evidence still needed. Thematic runs auto-skip the Phase 2.5 (SC-parallels) and 3b (Sanskrit) gates.
 3. **Start of Phase 5:** `scratch-verify`. Exit 0 = proceed to synthesis. Exit 1 = backfill the named phase first; do not draft.
 4. **End of Phase 7:** `scratch-gate 7`, then publish the run report with `uv run scripts/sync_run_report.py`. The run is not complete without both.
+
+Scratch-mutating commands must be run sequentially. Do not parallelize
+`scratch-init`, `scratch-log`, or `scratch-gate`; concurrent scratch writes can
+overwrite a just-appended gate or log entry.
 
 If context compaction fires at any point, `scratch-resume <slug>` prints the last gate and the next phase — no findings are lost.
 

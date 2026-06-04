@@ -22,6 +22,14 @@
 - `yt-dlp` 2024.04.09 cannot fetch captions; `youtube-transcript-api` is used instead.
 - No vector RAG. Local corpora are structured enough that SQL + tag search + vault search
   is more precise than embeddings.
+- Maintenance coupling: `skill/vicaya/SKILL.md` is the canonical full-run
+  skill. Edits to it must check the staged sibling skills
+  (`skill/vicaya-0-scope`, `skill/vicaya-1-gather`,
+  `skill/vicaya-2-synthesize-review`, `skill/vicaya-3-complete`) for affected
+  route lists, stage boundaries, handoff labels, and bounded context-break
+  guards. Edits to any staged sibling must verify exact routing back to
+  `skill/vicaya/SKILL.md` and must not silently fork canonical workflow
+  behavior.
 
 ## Resources
 - Canon DB: `<dpd-db>/resources/tipitaka_translation_db/tipitaka-translation-data.db`

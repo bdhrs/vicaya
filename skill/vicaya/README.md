@@ -11,6 +11,11 @@ into your Obsidian vault.
 /vicaya <your question>
 ```
 
+For lower-context staged runs, use the sibling skills `vicaya-0-scope`,
+`vicaya-1-gather`, `vicaya-2-synthesize-review`, and `vicaya-3-complete`. They
+route back to exact sections in `SKILL.md`; `SKILL.md` remains the behavioral
+source of truth.
+
 Examples:
 ```
 /vicaya what does the Buddha mean by "the dart" in MN 105?
@@ -99,6 +104,7 @@ vicaya/
 │   ├── calibre_tags.csv         # tag vocabulary
 │   ├── youtube_channels.md      # channel allowlist (trusted / probationary / excluded)
 │   └── youtube_cache/           # cached transcripts (gitignored)
-├── skill/vicaya/              # this skill
+├── skill/vicaya/                # this main skill
+├── skill/vicaya-*/              # staged skill routers
 └── kamma/                       # design history
 ```
