@@ -77,15 +77,10 @@ The next source block is the first listed block whose gate or source-block check
 
 Default extensive-run source blocks are:
 
-- Phase 1 vault/EBC context, angle triage, and perspective map, then stop after the Phase 1 gate.
-- Phase 2 root-canon mūla/sutta research, then hard stop at a scratch-logged Phase 2 in-progress checkpoint if commentary/ṭīkā research is still required. Do not write the Phase 2 gate until all canonical Phase 2 obligations are complete.
-- Phase 2 canonical exegesis/commentary research when applicable, including aṭṭhakathā, ṭīkā, Abhidhamma, Visuddhimagga, and DPD gloss checks required by the scoped question, then stop after the Phase 2 gate.
-- Phase 2.5 SuttaCentral/offline parallel research when applicable, then stop after the Phase 2.5 gate.
-- Phase 3 library research, then stop after the Phase 3 gate.
-- Phase 3b Sanskrit source research when applicable, then stop after the Phase 3b gate.
-- Phase 4a web research, then stop after the Phase 4 gate.
-- Phase 4b YouTube research when applicable, then stop after the Phase 4b gate.
-- Phase 4c WisdomLib research, then stop after the Phase 4c gate and hand off to `vicaya-2-synthesize-review`.
+- Phase 1 vault/EBC context, angle triage, and perspective map, plus Phase 2 root-canon mūla/sutta research; write the Phase 1 gate, then hard stop at a scratch-logged Phase 2 in-progress checkpoint if commentary/ṭīkā research is still required. Do not write the Phase 2 gate until all canonical Phase 2 obligations are complete.
+- Phase 2 canonical exegesis/commentary research when applicable, including aṭṭhakathā, ṭīkā, Abhidhamma, Visuddhimagga, and DPD gloss checks required by the scoped question, plus Phase 2.5 SuttaCentral/offline parallel research when applicable; stop after the Phase 2.5 gate when applicable, otherwise stop after the Phase 2 gate.
+- Phase 3 library research plus Phase 3b Sanskrit source research when applicable; stop after the Phase 3b gate when applicable, otherwise stop after the Phase 3 gate.
+- Phase 4a web research, Phase 4b YouTube research when applicable, and Phase 4c WisdomLib research; stop after the Phase 4c gate and hand off to `vicaya-2-synthesize-review`.
 
 If the scoped run did not require Phase 2.5, Phase 3b, or Phase 4b, skip those phases only when the routed canonical scratch/gate instructions allow the skip.
 

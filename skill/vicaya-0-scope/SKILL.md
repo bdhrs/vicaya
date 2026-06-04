@@ -59,15 +59,10 @@ If the run is extensive, use the routed canonical scratch logging mechanism to r
 
 For extensive Stage 1 gathering, record this split shape unless the scoped question clearly calls for a simpler one:
 
-- Phase 1 vault/EBC context, angle triage, and perspective map, then stop after the Phase 1 gate.
-- Phase 2 root-canon mūla/sutta research, then hard stop at a scratch-logged Phase 2 in-progress checkpoint if commentary/ṭīkā research is still required. Do not write the Phase 2 gate until all canonical Phase 2 obligations are complete.
-- Phase 2 canonical exegesis/commentary research when applicable, including aṭṭhakathā, ṭīkā, Abhidhamma, Visuddhimagga, and DPD gloss checks required by the scoped question, then stop after the Phase 2 gate.
-- Phase 2.5 SuttaCentral/offline parallel research when applicable, then stop after the Phase 2.5 gate.
-- Phase 3 library research, then stop after the Phase 3 gate.
-- Phase 3b Sanskrit source research when applicable, then stop after the Phase 3b gate.
-- Phase 4a web research, then stop after the Phase 4 gate.
-- Phase 4b YouTube research when applicable, then stop after the Phase 4b gate.
-- Phase 4c WisdomLib research, then stop after the Phase 4c gate.
+- Phase 1 vault/EBC context, angle triage, and perspective map, plus Phase 2 root-canon mūla/sutta research; write the Phase 1 gate, then hard stop at a scratch-logged Phase 2 in-progress checkpoint if commentary/ṭīkā research is still required. Do not write the Phase 2 gate until all canonical Phase 2 obligations are complete.
+- Phase 2 canonical exegesis/commentary research when applicable, including aṭṭhakathā, ṭīkā, Abhidhamma, Visuddhimagga, and DPD gloss checks required by the scoped question, plus Phase 2.5 SuttaCentral/offline parallel research when applicable; stop after the Phase 2.5 gate when applicable, otherwise stop after the Phase 2 gate.
+- Phase 3 library research plus Phase 3b Sanskrit source research when applicable; stop after the Phase 3b gate when applicable, otherwise stop after the Phase 3 gate.
+- Phase 4a web research, Phase 4b YouTube research when applicable, and Phase 4c WisdomLib research; stop after the Phase 4c gate.
 
 For extensive Stage 2 synthesis/review, record this split shape unless the scoped question clearly calls for a simpler one:
 

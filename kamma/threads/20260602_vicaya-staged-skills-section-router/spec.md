@@ -362,15 +362,19 @@ same scratch slug. A recorded context plan is binding for staged mode and
 overrides model-tier recommendations unless the user explicitly opts out before
 Stage 1 begins and that opt-out is recorded in scratch.
 
-For extensive Stage 1 gathering, the default context plan must prefer narrow
-source-block hard stops over broad multi-phase passes. Stage 1 source blocks
-should separate vault/context setup, root-canon mūla/sutta research,
-canonical exegesis/commentary research, library research, web research, YouTube
-research, and WisdomLib research where those blocks apply to the scoped
-question. Every `vicaya-1-gather` invocation under a recorded
-`stage-1-context-plan` must run exactly one next source block and then
-hard-stop again; a prior hard stop is only a handoff checkpoint, not evidence
-that the whole Stage 1 plan has already been satisfied.
+For extensive Stage 1 gathering, the default context plan must prefer grouped
+cost-control source-block hard stops over per-source micro-sessions. Stage 1
+source blocks should default to four bundled sessions where applicable:
+
+- Phase 1 vault/context setup plus root-canon mūla/sutta research;
+- canonical exegesis/commentary research plus Phase 2.5 parallel research;
+- library research plus Sanskrit source research;
+- web, YouTube, and WisdomLib research.
+
+Every `vicaya-1-gather` invocation under a recorded `stage-1-context-plan`
+must run exactly one next grouped source block and then hard-stop again; a
+prior hard stop is only a handoff checkpoint, not evidence that the whole Stage
+1 plan has already been satisfied.
 
 Stage 1 may hard-stop inside Phase 2 after root-canon mūla/sutta research when
 commentary/ṭīkā research remains. That stop must be recorded as a concise
@@ -420,8 +424,8 @@ The context plan and guards may:
 - use the canonical scratch logging mechanism routed from
   `../vicaya/SKILL.md` to record context plans, opt-outs, and mid-stage
   handoffs.
-- use a scratch-logged Stage 1 source-block checkpoint inside Phase 2 when a
-  source-class split is needed before the canonical Phase 2 gate.
+- use a scratch-logged Stage 1 grouped source-block checkpoint inside Phase 2
+  when a source-class split is needed before the canonical Phase 2 gate.
 - use a scratch-local Phase 7 draft file for section-by-section final-note
   drafting, with scratch-logged path and section status.
 
@@ -487,9 +491,10 @@ The thread is done when:
 - Review confirms there are no behavioral additions, omissions, or summaries in
   the staged files, except for the bounded binding context-budget plan and
   context-break guards allowed by the user-revision section above.
-- Review confirms extensive `vicaya-1-gather` runs use one source-block hard
-  stop per invocation and do not treat a prior hard stop as completion of the
-  whole Stage 1 plan.
+- Review confirms extensive `vicaya-1-gather` runs use one grouped source-block
+  hard stop per invocation, default to no more than four Stage 1 gathering
+  invocations where all blocks apply, and do not treat a prior hard stop as
+  completion of the whole Stage 1 plan.
 - Review confirms extensive `vicaya-3-complete` runs use a scratch-local
   Phase 7 draft file for section-by-section note writing and never write an
   incomplete draft to the vault.

@@ -929,19 +929,56 @@ binding context-plan and context-break guard exceptions.
   - -> verify: `rg -n "mandatory three-run|Run 1|Run 2|Run 3|context seems comfortable" skill/vicaya-0-scope/SKILL.md skill/vicaya-3-complete/SKILL.md kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md` shows the three-run Stage 3 split and no adaptive Stage 3 continuation wording.
   - -> verify: `git diff --check -- skill/vicaya-0-scope/SKILL.md skill/vicaya-3-complete/SKILL.md kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md` passes.
 
+## Phase 9.13 - User revision: Stage 1 four-bundle cost control
+
+- [x] Unite extensive Stage 1 source-block hard stops into four cost-controlled
+  bundles.
+  - The user clarified that the reason for staged mode is research cost control,
+    and the previous nine-block Stage 1 split created too many separate
+    sessions.
+  - Update `skill/vicaya-0-scope/SKILL.md` and
+    `skill/vicaya-1-gather/SKILL.md` so the default extensive Stage 1 context
+    plan uses these bundled invocations:
+    1. Phase 1 vault/EBC context, angle triage, and perspective map plus Phase
+       2 root-canon mūla/sutta research;
+    2. Phase 2 commentary/exegesis plus Phase 2.5 SuttaCentral/offline
+       parallels when applicable;
+    3. Phase 3 library plus Phase 3b Sanskrit sources when applicable;
+    4. Phase 4a web, Phase 4b YouTube when applicable, and Phase 4c WisdomLib.
+  - Preserve the Phase 2 in-progress checkpoint rule: the first bundle may stop
+    after root-canon mūla/sutta research when commentary/ṭīkā work remains, and
+    Phase 2 may be gated only after all canonical Phase 2 obligations are
+    complete.
+  - Do not edit `skill/vicaya/SKILL.md`.
+  - Do not change canonical phase gates, helper behavior, evidence
+    requirements, source requirements, synthesis/review requirements, Phase 7
+    requirements, final-report requirements, validation, PDF, run-report sync,
+    or self-improvement requirements.
+  - Existing scratch files with older Stage 1 notes do not need broad rewriting;
+    patch only an in-progress scratch if the older note would force an
+    unnecessary extra resume boundary before the next grouped block can
+    complete.
+  - Patched `data/scratch/vicikiccha-hindrance-vs-fetter.md` with a
+    `stage-1-four-bundle-phase-9.13-supersedes` note because its old Phase 4
+    wording would otherwise split Phase 4a, Phase 4b, and Phase 4c into
+    separate future resumes.
+  - -> verify: `rg -n "grouped|four|Phase 1 vault/EBC context.*root-canon|commentary.*Phase 2.5|Phase 3 library.*Phase 3b|Phase 4a web.*Phase 4b.*Phase 4c" skill/vicaya-0-scope/SKILL.md skill/vicaya-1-gather/SKILL.md kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md` shows the four-bundle Stage 1 split.
+  - -> verify: `rg -n "stage-1-four-bundle-phase-9.13-supersedes|Phase 4a web plus Phase 4b YouTube.*Phase 4c WisdomLib" data/scratch/vicikiccha-hindrance-vs-fetter.md` shows the targeted scratch supersession.
+  - -> verify: `git diff --check -- skill/vicaya-0-scope/SKILL.md skill/vicaya-1-gather/SKILL.md kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md kamma/threads/20260602_vicaya-staged-skills-section-router/handoff.md data/scratch/vicikiccha-hindrance-vs-fetter.md` passes.
+
 ## Phase 10 - Finalize only after clean review
 
 - [ ] Run `/kamma:4-finalize` only after review passes.
   - Because Phase 9.5 changed `vicaya-0-scope` after the existing review, first
     rerun review and confirm it accepts the bounded binding context-budget plan
     and context-break guard exceptions from Phases 9.5, 9.6, 9.7, 9.8, 9.9,
-    9.10, and 9.12.
+    9.10, 9.12, and 9.13.
   - Do not finalize if the failed staged attempt was removed by broad Git
     reversal instead of explicit deletion/overwrite in this thread.
   - Do not finalize if any staged skill still summarizes canonical behavior.
   - Do not finalize if any staged skill differs from the routed section-router
     design except for the bounded context-budget controls documented in Phases
-    9.5, 9.6, 9.7, 9.8, 9.9, 9.10, and 9.12.
+    9.5, 9.6, 9.7, 9.8, 9.9, 9.10, 9.12, and 9.13.
   - Do not finalize if any staged skill lacks the out-of-scope handoff guard or
     permits running phases outside its owned scope.
   - Do not finalize if this thread changed `skill/vicaya/SKILL.md` anywhere
