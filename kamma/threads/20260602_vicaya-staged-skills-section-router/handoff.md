@@ -1,8 +1,9 @@
 # Handoff - vicaya-staged-skills-section-router
 
 Session saved on 2026-06-04 after live staged-skill testing, Stage 3
-three-run context-control revisions, and Stage 1 four-bundle cost-control
-revisions.
+three-run context-control revisions, Stage 1 four-bundle cost-control
+revisions, and a post-merge route-anchor fix after merging `main` into
+`sub-skills`.
 
 ## Latest User Direction
 
@@ -33,8 +34,66 @@ The staged workflow is currently in live testing. The user may return in the
 next session with additions, issues, or behavior reports from running the new
 staged skills before the thread is reviewed/finalized.
 
-Most recent user direction: reduce extensive Stage 1 gathering sessions by
-uniting source blocks into four cost-control bundles.
+Most recent user direction: after the `main` merge, audit whether anything
+important to this thread was overwritten; then apply the minimal approved fix
+for the one stale route anchor, update this handoff, suggest a commit message,
+and restart in fresh context.
+
+## Post-Merge Audit And Fix - 2026-06-04
+
+The merge commit was `1a51a90` (`Merge branch 'main' into sub-skills`). It
+introduced intentional `main` changes to the canonical Vicaya skill from the
+archived `parallel-scratch-state`, `notes-push`, and `calibre-ro-sqlite`
+threads. The staged skill files themselves were not overwritten by the merge.
+
+One relevant breakage was found: `main` renamed the canonical Phase 7 heading
+from `### GitHub push (user-triggered)` to
+`### GitHub note sync (pre-approved)`, but `vicaya-3-complete` and this
+thread's route-list docs still pointed at the old heading. That would make
+Stage 3 stop because it cannot find every listed routed canonical section.
+
+Applied minimal approved fix:
+
+- `skill/vicaya-3-complete/SKILL.md`: Stage 3 route list now uses
+  `### GitHub note sync (pre-approved)`.
+- `kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md`: Stage
+  3 required route list now uses the same heading.
+- `kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md`: Phase
+  6 literal router list now uses the same heading.
+- `skill/vicaya/SKILL.md` was not edited for this fix.
+
+Verification after the fix:
+
+- `rg -n "GitHub push \(user-triggered\)" skill/vicaya-3-complete/SKILL.md
+  kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md
+  kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md` returned
+  no matches.
+- A route-anchor audit confirmed all four staged route lists resolve to real
+  non-fenced canonical headings in `skill/vicaya/SKILL.md`.
+- `rg -n "GitHub note sync \(pre-approved\)" ...` shows the canonical heading
+  and the three updated route-list references.
+- `git diff --check -- skill/vicaya-3-complete/SKILL.md
+  kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md
+  kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md` passed.
+
+Current tracked dirty files after this handoff update should be:
+
+- `skill/vicaya-3-complete/SKILL.md`
+- `kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md`
+- `kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md`
+- `kamma/threads/20260602_vicaya-staged-skills-section-router/handoff.md`
+
+Suggested commit message:
+
+```text
+docs(vicaya): align staged completion route with note sync heading
+```
+
+Restart prompt for the next session:
+
+```text
+Continue @kamma/threads/20260602_vicaya-staged-skills-section-router. Read handoff.md first. The post-main-merge stale Stage 3 route anchor has been fixed to `### GitHub note sync (pre-approved)` in the router, spec, and plan. Recheck `git status --short`, then run a fresh /kamma:3-review for this thread when ready. Do not reintroduce the monolithic Phase 5 deferred-draft hunk; that was intentionally reverted.
+```
 
 ## Current State Snapshot
 

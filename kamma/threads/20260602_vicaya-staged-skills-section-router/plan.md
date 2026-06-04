@@ -443,7 +443,7 @@ the target file.
     - `### Frontmatter rules (agents get these wrong — read carefully)`
     - `### Correct frontmatter example (reference this when writing)`
     - `### PDF generation (run after every successful vault write)`
-    - `### GitHub push (user-triggered)`
+    - `### GitHub note sync (pre-approved)`
     - `## Final report to the user`
     - `## When something fails`
     - `## When Obsidian isn't running`
