@@ -76,13 +76,11 @@ For extensive Stage 2 synthesis/review, record this split shape unless the scope
 
 For very large dossiers, record that `vicaya-2-synthesize-review` must first write a compact Phase 5 synthesis plan to scratch and stop before drafting, then resume in fresh context to complete Phase 5.
 
-For extensive Stage 3 completion, record this split shape unless the scoped question clearly calls for a simpler one:
+For extensive Stage 3 completion, record this mandatory three-run split shape unless the scoped question clearly calls for a simpler one:
 
-- Create a Phase 7 writer brief and scratch-local draft file plan. Use a draft path under `data/scratch/`, normally `data/scratch/<scratch-slug>.phase7-draft.md`. Record the draft path, outline, section order, and source allocation in scratch.
-- Write the final note into that draft file section by section. Save the draft file after each section and log concise section status in scratch. Continue across sections while context remains healthy; if context pressure rises, hard stop after the current saved section and resume with the same scratch slug and draft path.
-- When the draft file contains the complete note, run a completion audit against the routed canonical Phase 7/frontmatter/style requirements, then stop before any vault write if context pressure requires it.
-- Write only the complete audited draft to the vault, validate, generate the PDF, run the Phase 7 gate, and sync the run report.
-- If context pressure still requires it, refresh context before the final user report and self-improvement loop.
+- Run 1: create a Phase 7 writer brief and scratch-local draft file plan. Use a draft path under `data/scratch/`, normally `data/scratch/<scratch-slug>.phase7-draft.md`. Record the draft path, vault-note title, filename slug, outline, section order, source allocation, target frontmatter refs, and section status in scratch. Write only the `## Question` and `## Findings` sections into the draft file, then hard stop.
+- Run 2: resume the same draft file. Write the remaining evidence and support sections into the draft file, confirm frontmatter `canon_refs` with the routed canonical citation requirements, run a completion audit against the routed canonical Phase 7/frontmatter/bibliography/style requirements, and hard stop before any vault write.
+- Run 3: write only the complete audited draft to the vault, validate, generate the PDF, run the Phase 7 gate, sync the note and run report, complete the final user report, and run the self-improvement loop.
 
 Record that `vicaya-3-complete` must never write a partial or draft note to the vault. Partial section drafts are allowed only in the scratch-local draft file, never in the vault.
 

@@ -392,6 +392,24 @@ the vault note. The vault must receive only the complete audited note after all
 sections are finished and checked against the routed canonical Phase 7,
 frontmatter, bibliography, and style requirements.
 
+After live testing showed that adaptive "continue while context remains healthy"
+wording can still push Stage 3 completion to the edge of context, extensive
+Stage 3 completion must default to a mandatory three-run split:
+
+- Run 1: create the Phase 7 writer brief and scratch-local draft file, record
+  title/slug/outline/source allocation/frontmatter targets, write only
+  `## Question` and `## Findings`, then hard stop.
+- Run 2: write the remaining evidence and support sections, confirm
+  frontmatter `canon_refs`, audit the complete draft against routed canonical
+  Phase 7/frontmatter/bibliography/style requirements, then hard stop before
+  any vault write.
+- Run 3: write only the complete audited draft to the vault, validate, generate
+  PDF, run the Phase 7 gate, sync the note and run report, complete the final
+  user report, and run the self-improvement loop.
+
+Under this default split, Stage 3 must not continue from one run group into the
+next merely because context seems comfortable.
+
 The context plan and guards may:
 
 - record no split for ordinary runs;

@@ -68,13 +68,11 @@ If no Stage 3 context plan exists, or if a `context-plan-opt-out` exists and the
 
 If a Stage 3 context plan exists, it is binding for this staged run and overrides any model-tier recommendation. Run only the next planned completion pass, then hard stop at the relevant safe boundary and hand off with the same scratch slug. Do not merge, skip, or continue into the next planned pass because context seems comfortable.
 
-Default extensive-run passes are:
+Default extensive-run passes are mandatory three-run passes. Each invocation performs only the next pass below, then hard stops even if context seems comfortable.
 
-- Create or resume a scratch-local Phase 7 draft file under `data/scratch/`, normally `data/scratch/<scratch-slug>.phase7-draft.md`. Record the draft path, final-note outline, section order, source allocation, and current section status in scratch using the routed canonical scratch logging mechanism. This draft file is a Phase 7 scratch artifact, not the vault note.
-- Write the final note into the draft file section by section. Save the draft file after each section and log concise section status in scratch. Continue across sections while context remains healthy; if context pressure rises, hard stop after the current saved section and tell the user to refresh context and rerun `vicaya-3-complete` with the same scratch slug and draft path.
-- When the draft file contains the complete note, audit it against the routed canonical Phase 7, frontmatter, bibliography, and style requirements. Hard stop before any vault write if context pressure requires it.
-- Write only the complete audited draft to the vault, validate, generate the PDF, run the Phase 7 gate, and sync the run report.
-- If context pressure still requires it after the run report is synced, hard stop and tell the user to refresh context and rerun `vicaya-3-complete` with the same scratch slug for the final user report and self-improvement loop.
+- Run 1: create or resume a scratch-local Phase 7 draft file under `data/scratch/`, normally `data/scratch/<scratch-slug>.phase7-draft.md`. Record the draft path, vault-note title, filename slug, final-note outline, section order, source allocation, target frontmatter refs, and current section status in scratch using the routed canonical scratch logging mechanism. Write only the `## Question` and `## Findings` sections into the draft file, save it, log concise section status, and hard stop.
+- Run 2: resume the same draft file. Write the remaining evidence and support sections into the draft file: Canon Evidence, Commentary Evidence, Scholarly Sources, Web Evidence, Teacher Talks and Accessible Sources, Related Notes, Sources Investigated Not Used, Angles Not Pursued, Critical Gaps, Bibliography, footer, and footnote definitions. Confirm frontmatter `canon_refs` with the routed canonical citation requirements. Audit the complete draft against the routed canonical Phase 7, frontmatter, bibliography, and style requirements, save it, log the audit status, and hard stop before any vault write.
+- Run 3: write only the complete audited draft to the vault, validate, generate the PDF, run the Phase 7 gate, sync the note and run report, complete the final user report, and run the self-improvement loop.
 
 Never write a partial or draft note to the vault. Partial section drafts are allowed only in the scratch-local draft file. The vault must receive only the complete audited note.
 

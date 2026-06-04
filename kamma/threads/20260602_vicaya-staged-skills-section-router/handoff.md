@@ -1,14 +1,16 @@
 # Handoff - vicaya-staged-skills-section-router
 
-Session saved on 2026-06-04 after live staged-skill testing and context-control
-revisions.
+Session saved on 2026-06-04 after live staged-skill testing and Stage 3
+three-run context-control revisions.
 
 ## Latest User Direction
 
-The user asked to save the current history in this handoff and will start the
-next session with the next issue. Do not proactively continue research,
-review, finalize, or implement adjacent changes unless the next user message
-asks for it.
+The user completed a live research run and asked to tighten extensive
+`vicaya-3-complete` execution to a default three-run split. They also stated
+that the monolithic `skill/vicaya/SKILL.md` Phase 5 "Deferred-draft pattern"
+self-improvement hunk was intentionally reverted because the staged sub-skills
+already cover that protection. Do not reintroduce that main-skill hunk unless
+the user explicitly asks.
 
 When the user is ready to review/finalize this Kamma thread, continue with:
 
@@ -17,7 +19,7 @@ When the user is ready to review/finalize this Kamma thread, continue with:
 ```
 
 Do not finalize before a fresh review. The prior review predates the user
-revisions in Phases 9.5-9.10.
+revisions in Phases 9.5-9.12.
 
 The stale `review.md` from the earlier pass has been intentionally deleted so
 the next agent must run a fresh `/kamma:3-review`.
@@ -26,19 +28,25 @@ The staged workflow is currently in live testing. The user may return in the
 next session with additions, issues, or behavior reports from running the new
 staged skills before the thread is reviewed/finalized.
 
+Most recent user direction: save the current session in this handoff; the user
+will restart with the next issue.
+
 ## Current State Snapshot
 
-- Phase 9.10 in `plan.md` is complete: Stage 3 now uses a scratch-local
-  Phase 7 draft file instead of one-pass final-note rendering.
-- `skill/vicaya/SKILL.md` was not edited in the Stage 3 draft-file session.
-  It is still dirty from earlier staged-router work in this thread.
-- Current live research scratch:
-  `data/scratch/moha-amoha-avijja-vijja.md`.
-- Pinned resume state for that run: last gate `6`, next phase `7`.
-- Stage 3 draft file to create/resume:
-  `data/scratch/moha-amoha-avijja-vijja.phase7-draft.md`.
-- The draft file is a scratch-local artifact only. The vault must receive only
-  the complete audited note.
+- Phase 9.12 in `plan.md` is complete: extensive Stage 3 completion now uses
+  mandatory three-run passes rather than adaptive "continue while context is
+  healthy" wording.
+- `skill/vicaya/SKILL.md` currently has no diff from this Stage 3 change.
+- Current staged-skill edits are limited to `skill/vicaya-0-scope/SKILL.md`
+  and `skill/vicaya-3-complete/SKILL.md`, plus this thread's `spec.md`,
+  `plan.md`, and `handoff.md`.
+- Existing extensive runs started before Phase 9.12 were patched with
+  superseding Phase 0 Stage 3 context-plan notes so they test the new three-run
+  `vicaya-3-complete` behavior:
+  - `data/scratch/papanca-canon-usage.md`
+  - `data/scratch/vicikiccha-hindrance-vs-fetter.md`
+- The scratch-local Phase 7 draft file remains a completion artifact only. The
+  vault must receive only the complete audited note.
 
 ## What Changed This Session
 
@@ -49,6 +57,17 @@ staged skills before the thread is reviewed/finalized.
   remaining research.
 - Replaced one-pass Stage 3 final-note rendering with a scratch-local Phase 7
   draft-file workflow for section-by-section note writing.
+- Tightened extensive Stage 3 completion to mandatory three-run passes:
+  1. writer brief plus `## Question` and `## Findings`;
+  2. remaining evidence/support sections plus frontmatter canon-ref
+     confirmation and completion audit;
+  3. vault write, validation, PDF, Phase 7 gate, note/run-report sync, final
+     report, and self-improvement loop.
+- Patched two pre-existing extensive scratch dossiers with a later
+  `stage-3-context-plan phase-9.12-supersedes` entry, so their older
+  render-complete-note-in-one-pass Stage 3 plans are superseded:
+  - `data/scratch/papanca-canon-usage.md`
+  - `data/scratch/vicikiccha-hindrance-vs-fetter.md`
 - Kept `skill/vicaya/SKILL.md` unchanged during this session. The canonical
   analytical workflow still owns research behavior.
 - Added/updated bounded context-management instructions in:
@@ -77,7 +96,8 @@ Files touched by these latest live-test revisions include:
 - `kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md`
 - `kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md`
 - `kamma/threads/20260602_vicaya-staged-skills-section-router/handoff.md`
-- `data/scratch/moha-amoha-avijja-vijja.md`
+- `data/scratch/papanca-canon-usage.md`
+- `data/scratch/vicikiccha-hindrance-vs-fetter.md`
 
 ## Current Staged Semantics
 
@@ -100,24 +120,57 @@ Later staged skills must not re-decide whether the planned split is optional:
   next planned synthesis/review pass, then hard stop at the planned gate or
   safe Phase 5 handoff point.
 - `vicaya-3-complete`: if `stage-3-context-plan` exists, run only the next
-  planned completion pass, then hard stop at the safe completion boundary.
-  For large final notes, it uses a scratch-local draft file under
-  `data/scratch/`, saves each section there, and logs only concise section
-  status in the main scratch. The vault receives only the complete audited
-  note.
+  planned completion pass, then hard stop at the safe completion boundary. For
+  extensive notes, the default planned split is exactly three runs:
+  1. writer brief plus `## Question` and `## Findings`;
+  2. remaining evidence/support sections plus frontmatter canon-ref
+     confirmation and completion audit, stopping before vault write;
+  3. vault write, validation, PDF, Phase 7 gate, note/run-report sync, final
+     report, and self-improvement loop. The vault receives only the complete
+     audited note.
 
 Model-tier recommendations do not override a recorded context plan.
 
-## Live Research Scratch Patched
+## Existing Runs Patched For Phase 9.12
 
-The current research run is:
+Two existing extensive runs were started before the mandatory three-run Stage 3
+implementation. They already had older `stage-3-context-plan` entries. I added
+newer Phase 0 context-plan entries using the scratch helper:
+
+- `data/scratch/papanca-canon-usage.md`, line 38:
+  `stage-3-context-plan phase-9.12-supersedes`
+- `data/scratch/vicikiccha-hindrance-vs-fetter.md`, line 66:
+  `stage-3-context-plan phase-9.12-supersedes`
+
+Those entries explicitly tell `vicaya-3-complete` to use the Phase 9.12
+mandatory three-run split and not the older render-complete-note-in-one-pass
+plan.
+
+Verified resume state after patching:
+
+```json
+{
+  "papanca-canon-usage": {
+    "last_gate": {"phase": "3b", "title": "Phase 3b — Sanskrit"},
+    "next_phase": "4"
+  },
+  "vicikiccha-hindrance-vs-fetter": {
+    "last_gate": {"phase": "2.5", "title": "Phase 2.5 — SC Parallels"},
+    "next_phase": "3"
+  }
+}
+```
+
+## Prior Live Research Scratch Patch
+
+Earlier live testing patched this run:
 
 ```text
 data/scratch/moha-amoha-avijja-vijja.md
 ```
 
-It has completed Phase 0 through Phase 6. Phase 7 has not written a vault note
-yet. Pinned `scratch-resume` reports:
+At that time it had completed Phase 0 through Phase 6 and was ready for
+Phase 7:
 
 ```json
 {
@@ -161,29 +214,27 @@ Pin the scratch path because `.active` may point to another run:
 VICAYA_SCRATCH=/Users/deva/Documents/dps/vicaya/data/scratch/moha-amoha-avijja-vijja.md
 ```
 
-That completion session should create or resume
-`data/scratch/moha-amoha-avijja-vijja.phase7-draft.md`, write sections into it,
-log section status in the main scratch, and stop only at a saved section boundary
-if context pressure rises.
+Those live-run instructions are historical. The current Stage 3 default is the
+Phase 9.12 mandatory three-run split documented above and in `plan.md`.
 
 ## Validation Run
 
 Checks run during this session:
 
-- `rg` checks confirmed the active staged skill files contain binding hard-stop
-  wording and `context-plan-opt-out` handling.
-- `rg` checks confirmed Stage 1, Stage 2, and Stage 3 context guards are present.
-- `rg -n "[ \t]$"` over staged skill files, README, project docs, and thread
-  spec/plan found no trailing whitespace.
-- `git diff --check -- skill/vicaya/README.md kamma/project.md
+- `rg` checks confirmed the active staged skill files contain the Phase 9.12
+  mandatory three-run Stage 3 split.
+- `git diff --check -- skill/vicaya-0-scope/SKILL.md
+  skill/vicaya-3-complete/SKILL.md
   kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md
   kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md` passed.
-- `UV_CACHE_DIR=/private/tmp/uv-cache VICAYA_SCRATCH=/Users/deva/Documents/dps/vicaya/data/scratch/moha-amoha-avijja-vijja.md uv run tools/research_sources.py scratch-resume moha-amoha-avijja-vijja`
-  confirmed the run is at next phase `7`.
-
-Note: staged skill directories are currently untracked in this worktree, so
-`git diff --check` does not cover those files. I used direct whitespace checks
-for them.
+- `git diff -- skill/vicaya/SKILL.md` returned no diff, confirming the
+  monolithic-skill Phase 5 self-improvement hunk is not present.
+- `rg` confirmed `phase-9.12-supersedes` entries were written to
+  `data/scratch/papanca-canon-usage.md` and
+  `data/scratch/vicikiccha-hindrance-vs-fetter.md`.
+- `scratch-resume` confirmed the two patched scratch files retained their
+  original resume state: `papanca-canon-usage` next phase `4`, and
+  `vicikiccha-hindrance-vs-fetter` next phase `3`.
 
 ## Failed Attempts / Workarounds
 
@@ -201,6 +252,10 @@ VICAYA_SCRATCH=/Users/deva/Documents/dps/vicaya/data/scratch/moha-amoha-avijja-v
 
 - Account for any user-reported issues from the live staged-skill test run
   before review/finalization.
+- If the user resumes `papanca-canon-usage` or
+  `vicikiccha-hindrance-vs-fetter`, continue their current phases normally.
+  When they reach `vicaya-3-complete`, the superseding scratch entries should
+  make them use the Phase 9.12 three-run Stage 3 split.
 - Run a fresh `/kamma:3-review` for this thread.
 - This should recreate
   `kamma/threads/20260602_vicaya-staged-skills-section-router/review.md`.
@@ -218,12 +273,6 @@ VICAYA_SCRATCH=/Users/deva/Documents/dps/vicaya/data/scratch/moha-amoha-avijja-v
 
 ## Known Caveats
 
-- `git status --short` still shows unrelated dirty Python files:
-  - `tests/test_research_sources.py`
-  - `tools/research_sources.py`
-  These were not part of this session's context-break edits.
-- `skill/vicaya/SKILL.md` is still dirty from earlier staged-router work in this
-  thread. This session did not edit it.
 - The thread history still contains earlier Phases 3-6 literal-router text.
-  Later Phases 9.5-9.10 intentionally supersede the pure-router constraint only
+  Later Phases 9.5-9.12 intentionally supersede the pure-router constraint only
   for bounded staged context controls.

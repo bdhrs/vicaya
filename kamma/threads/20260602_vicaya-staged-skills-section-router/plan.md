@@ -901,19 +901,47 @@ binding context-plan and context-break guard exceptions.
   - -> verify: `rg -n "vicaya-0-scope|vicaya-1-gather|vicaya-2-synthesize-review|vicaya-3-complete" README.md skill/vicaya/README.md kamma/project.md kamma/tech.md` shows concise staged references.
   - -> verify: `git diff --check -- README.md skill/vicaya/README.md kamma/project.md kamma/tech.md kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md` passes.
 
+## Phase 9.12 - User revision: Stage 3 mandatory three-run split
+
+- [x] Tighten extensive Stage 3 completion from adaptive draft-file stopping to
+  a mandatory three-run split.
+  - The user completed a live `vicaya-3-complete` run where the current
+    "continue while context remains healthy" wording produced a valid hard stop
+    before vault write, but only after reaching roughly 95-98% context.
+  - Update `skill/vicaya-3-complete/SKILL.md` so an extensive Stage 3 context
+    plan performs only the next mandatory pass, then hard stops even if context
+    seems comfortable:
+    1. writer brief plus `## Question` and `## Findings`;
+    2. remaining evidence/support sections plus frontmatter canon-ref
+       confirmation and completion audit, stopping before vault write;
+    3. vault write, validation, PDF, Phase 7 gate, note/run-report sync, final
+       user report, and self-improvement loop.
+  - Update `skill/vicaya-0-scope/SKILL.md` so future Phase 0 context plans
+    record that same three-run Stage 3 split.
+  - Update this thread `spec.md` to document the live-test finding and the
+    tightened Stage 3 default.
+  - Do not edit `skill/vicaya/SKILL.md`; the monolithic skill's Phase 5
+    deferred-draft self-improvement hunk was intentionally reverted because the
+    staged skills already own that protection.
+  - Do not change canonical Phase 7, final-report, validation, PDF, scratch
+    gate, run-report sync, or self-improvement requirements.
+  - Do not write a partial or draft note to the vault.
+  - -> verify: `rg -n "mandatory three-run|Run 1|Run 2|Run 3|context seems comfortable" skill/vicaya-0-scope/SKILL.md skill/vicaya-3-complete/SKILL.md kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md` shows the three-run Stage 3 split and no adaptive Stage 3 continuation wording.
+  - -> verify: `git diff --check -- skill/vicaya-0-scope/SKILL.md skill/vicaya-3-complete/SKILL.md kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md` passes.
+
 ## Phase 10 - Finalize only after clean review
 
 - [ ] Run `/kamma:4-finalize` only after review passes.
   - Because Phase 9.5 changed `vicaya-0-scope` after the existing review, first
     rerun review and confirm it accepts the bounded binding context-budget plan
     and context-break guard exceptions from Phases 9.5, 9.6, 9.7, 9.8, 9.9,
-    and 9.10.
+    9.10, and 9.12.
   - Do not finalize if the failed staged attempt was removed by broad Git
     reversal instead of explicit deletion/overwrite in this thread.
   - Do not finalize if any staged skill still summarizes canonical behavior.
   - Do not finalize if any staged skill differs from the routed section-router
     design except for the bounded context-budget controls documented in Phases
-    9.5, 9.6, 9.7, 9.8, 9.9, and 9.10.
+    9.5, 9.6, 9.7, 9.8, 9.9, 9.10, and 9.12.
   - Do not finalize if any staged skill lacks the out-of-scope handoff guard or
     permits running phases outside its owned scope.
   - Do not finalize if this thread changed `skill/vicaya/SKILL.md` anywhere
