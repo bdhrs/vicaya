@@ -6,7 +6,7 @@
   symlinked to `~/.claude/skills/vicaya/`
 - **Canon search:** SQLite (`tipitaka-translation-data.db`) via stdlib `sqlite3`
 - **Vault I/O:** Obsidian CLI v1.12.7+ (subcommand-style; requires desktop app running)
-- **Library search:** `calibredb` (Calibre 9+); metadata search always, FTS when indexed
+- **Library search:** metadata search reads `metadata.db` directly via read-only `sqlite3` (lock-free, concurrent-safe; falls back to `calibredb list` on schema mismatch); FTS still uses `calibredb` (Calibre 9+) when indexed
 - **YouTube:** `yt-dlp` for search, `youtube-transcript-api` for transcript fetch
 - **Note validation:** `scripts/validate_note.py` uses `tools/note_checks.py` for final-note mechanical checks
 - **PDF generation:** `scripts/generate_note_pdf.py` renders optional final-note PDFs with `markdown` and `weasyprint`

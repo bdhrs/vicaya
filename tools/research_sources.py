@@ -599,23 +599,17 @@ def calibre_library_available(library: Path | None = None) -> tuple[bool, str]:
     library = library or DEFAULT_CALIBRE_LIBRARY
     if library is None or not library.exists():
         return False, f"library path not set or missing: {library}"
+    db = _calibre_metadata_db_path(library)
+    if not db.exists():
+        return False, f"metadata.db not found: {db}"
     try:
-        cmd = [
-            "calibredb",
-            "list",
-            "--search",
-            "*",
-            "--fields",
-            "id",
-            "--for-machine",
-            "--limit",
-            "1",
-            "--library-path",
-            str(library),
-        ]
-        _run_calibre(cmd, timeout=15, retries=1)
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        try:
+            con.execute("SELECT count(*) FROM books").fetchone()
+        finally:
+            con.close()
         return True, "ok"
-    except CalibreUnavailable as e:
+    except sqlite3.Error as e:
         return False, str(e)
 
 
@@ -754,7 +748,78 @@ def _calibre_fts_search(
     return hits
 
 
+def _calibre_metadata_db_path(library: Path) -> Path:
+    return library / "metadata.db"
+
+
 def _calibre_metadata_search(
+    query: str, tags: list[str] | None, library: Path, limit: int, timeout: int = 60
+) -> list[CalibreHit]:
+    """Search Calibre metadata via a read-only SQLite connection.
+
+    Reads `metadata.db` directly so concurrent agents never contend on the
+    calibredb lock. Matches the free-text query against title, author names,
+    tags, and comments; restricts to the given tag names when provided. Falls
+    back to the calibredb CLI path if the schema is not as expected.
+    """
+    db = _calibre_metadata_db_path(library)
+    if not db.exists():
+        return _calibre_metadata_search_cli(query, tags, library, limit, timeout=timeout)
+    where: list[str] = []
+    params: list[str] = []
+    if query:
+        like = f"%{query}%"
+        where.append(
+            "(b.title LIKE ?"
+            " OR EXISTS (SELECT 1 FROM books_authors_link bal JOIN authors a"
+            " ON a.id = bal.author WHERE bal.book = b.id AND a.name LIKE ?)"
+            " OR EXISTS (SELECT 1 FROM comments c WHERE c.book = b.id AND c.text LIKE ?)"
+            " OR EXISTS (SELECT 1 FROM books_tags_link btl JOIN tags t"
+            " ON t.id = btl.tag WHERE btl.book = b.id AND t.name LIKE ?))"
+        )
+        params.extend([like, like, like, like])
+    if tags:
+        placeholders = ", ".join("?" for _ in tags)
+        where.append(
+            "EXISTS (SELECT 1 FROM books_tags_link btl JOIN tags t ON t.id = btl.tag"
+            f" WHERE btl.book = b.id AND lower(t.name) IN ({placeholders}))"
+        )
+        params.extend(t.lower() for t in tags)
+    clause = (" WHERE " + " AND ".join(where)) if where else ""
+    sql = (
+        "SELECT b.id, b.title,"
+        " (SELECT group_concat(a.name, ' & ') FROM books_authors_link bal"
+        "  JOIN authors a ON a.id = bal.author WHERE bal.book = b.id) AS authors,"
+        " (SELECT group_concat(t.name, char(31)) FROM books_tags_link btl"
+        "  JOIN tags t ON t.id = btl.tag WHERE btl.book = b.id) AS tags,"
+        " (SELECT c.text FROM comments c WHERE c.book = b.id) AS comments"
+        f" FROM books b{clause} ORDER BY b.id LIMIT ?"
+    )
+    params.append(str(limit))
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        try:
+            rows = con.execute(sql, params).fetchall()
+        finally:
+            con.close()
+    except sqlite3.DatabaseError:
+        return _calibre_metadata_search_cli(query, tags, library, limit, timeout=timeout)
+    hits: list[CalibreHit] = []
+    for book_id, title, authors, tag_str, comments in rows:
+        hits.append(
+            CalibreHit(
+                book_id=int(book_id or 0),
+                title=title or "",
+                authors=authors or "",
+                tags=tag_str.split("\x1f") if tag_str else [],
+                location="",
+                snippet=(comments or "")[:300],
+            )
+        )
+    return hits
+
+
+def _calibre_metadata_search_cli(
     query: str, tags: list[str] | None, library: Path, limit: int, timeout: int = 60
 ) -> list[CalibreHit]:
     # Calibre's default free-text search hits all fields. Compose as `query (tags:X or tags:Y)`.
@@ -1809,14 +1874,19 @@ def _read_state() -> dict:
         return {}
 
 
-def _write_state(scratch=None, phase=None) -> None:
+_STATE_PHASE_UNSET = object()
+
+
+def _write_state(scratch=None, phase=_STATE_PHASE_UNSET) -> None:
     """Persist the active scratch path / phase so they survive between shell calls."""
     try:
         _SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
         state = _read_state()
         if scratch is not None:
             state["scratch"] = str(scratch)
-        if phase is not None:
+        if phase is None:
+            state.pop("phase", None)
+        elif phase is not _STATE_PHASE_UNSET:
             state["phase"] = str(phase)
         (_SCRATCH_DIR / ".active").write_text(json.dumps(state), encoding="utf-8")
     except Exception:
@@ -1886,16 +1956,26 @@ _SCRATCH_PHASES: list[tuple[str, str, list[str]]] = [
 _PHASE_INDEX = {pid: (i, title, evidence) for i, (pid, title, evidence) in enumerate(_SCRATCH_PHASES)}
 
 
+def _next_worked_phase(text: str, idx: int) -> str | None:
+    nxt = idx + 1
+    if _run_class(text) == "thematic":
+        while nxt < len(_SCRATCH_PHASES) and _SCRATCH_PHASES[nxt][0] in _AUTO_SKIP_PHASES:
+            nxt += 1
+    if nxt < len(_SCRATCH_PHASES):
+        return _SCRATCH_PHASES[nxt][0]
+    return None
+
+
 def _scratch_path(slug: str | None = None) -> Path:
-    """Resolve the scratch path. Env override > active-state file > slug > error."""
+    """Resolve the scratch path. Explicit slug > env override > active-state file > error."""
+    if slug:
+        return _SCRATCH_DIR / f"{slug}.md"
     env = os.environ.get("VICAYA_SCRATCH")
     if env:
         return Path(env)
     state = _read_state().get("scratch")
     if state:
         return Path(state)
-    if slug:
-        return _SCRATCH_DIR / f"{slug}.md"
     raise ValueError("no scratch path: set VICAYA_SCRATCH, run scratch-init, or pass a slug")
 
 
@@ -2081,12 +2161,9 @@ def scratch_gate(phase: str, scratch: Path | None = None) -> dict:
     # Advance the active phase so the next phase's searches auto-log correctly
     # without the agent re-exporting VICAYA_PHASE. Thematic runs skip over the
     # auto-skipped phases so logs land on the next phase actually worked.
-    nxt = idx + 1
-    if _run_class(text) == "thematic":
-        while nxt < len(_SCRATCH_PHASES) and _SCRATCH_PHASES[nxt][0] in _AUTO_SKIP_PHASES:
-            nxt += 1
-    if nxt < len(_SCRATCH_PHASES):
-        _write_state(phase=_SCRATCH_PHASES[nxt][0])
+    next_phase = _next_worked_phase(text, idx)
+    if next_phase is not None:
+        _write_state(phase=next_phase)
     return {"ok": True, "phase": phase, "title": title}
 
 
@@ -2131,10 +2208,8 @@ def scratch_resume(slug: str | None = None, scratch: Path | None = None) -> dict
     for i, (pid, title, _) in enumerate(_SCRATCH_PHASES):
         if _gate_marker(pid) in text:
             last = {"phase": pid, "title": title}
-            if i + 1 < len(_SCRATCH_PHASES):
-                next_phase = _SCRATCH_PHASES[i + 1][0]
-            else:
-                next_phase = None
+            next_phase = _next_worked_phase(text, i)
+    _write_state(path, next_phase)
     return {"ok": True, "path": str(path), "last_gate": last, "next_phase": next_phase}
 
 

@@ -594,6 +594,56 @@ class TestScratchDossier:
         assert result["last_gate"]["phase"] == "2"
         assert result["next_phase"] == "2.5"
 
+    def test_resume_slug_ignores_stale_active_state(self, tmp_path, monkeypatch):
+        from tools.research_sources import _write_state, scratch_init, scratch_resume
+        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        stale_path = scratch_init("stale-run")
+        selected_path = scratch_init("selected-run")
+        _write_state(stale_path, "0")
+
+        result = scratch_resume("selected-run")
+
+        assert result["ok"]
+        assert result["path"] == str(selected_path)
+
+    def test_resume_updates_active_state_to_selected_scratch(self, tmp_path, monkeypatch):
+        from tools.research_sources import (
+            _read_state,
+            _write_state,
+            scratch_gate,
+            scratch_init,
+            scratch_resume,
+        )
+        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        stale_path = scratch_init("stale-active")
+        selected_path = scratch_init("selected-active")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(selected_path))
+        scratch_gate("0")
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        _write_state(stale_path, "0")
+
+        result = scratch_resume("selected-active")
+
+        assert result["ok"]
+        assert result["next_phase"] == "1"
+        assert _read_state() == {"scratch": str(selected_path), "phase": "1"}
+
+    def test_resume_thematic_run_reattaches_next_worked_phase(self, tmp_path, monkeypatch):
+        from tools.research_sources import _read_state, scratch_gate, scratch_init, scratch_resume
+        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        path = scratch_init("thematic-resume", run_class="thematic")
+        for phase in ("0", "1", "2"):
+            assert scratch_gate(phase)["ok"]
+
+        result = scratch_resume("thematic-resume")
+
+        assert result["ok"]
+        assert result["next_phase"] == "3"
+        assert _read_state() == {"scratch": str(path), "phase": "3"}
+
     def test_phase_7_gate_refuses_when_vault_note_has_rejected(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_gate, scratch_init
         monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
@@ -664,68 +714,139 @@ class TestScratchDossier:
         scratch_gate("0")
         assert _read_state()["phase"] == "1"
 
+    def test_autolog_uses_env_scratch_over_active_state(self, tmp_path, monkeypatch):
+        from tools.research_sources import _maybe_autolog, _write_state, scratch_init
+        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        stale_path = scratch_init("autolog-stale")
+        selected_path = scratch_init("autolog-selected")
+        _write_state(stale_path, "0")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(selected_path))
+        monkeypatch.setenv("VICAYA_PHASE", "1")
+
+        _maybe_autolog("search-vault", ["dukkha"], [])
+
+        assert "search-vault" in selected_path.read_text(encoding="utf-8")
+        assert "search-vault" not in stale_path.read_text(encoding="utf-8")
+
+    def test_autolog_uses_active_state_without_env(self, tmp_path, monkeypatch):
+        from tools.research_sources import _maybe_autolog, scratch_init
+        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        monkeypatch.delenv("VICAYA_PHASE", raising=False)
+        path = scratch_init("autolog-active")
+
+        _maybe_autolog("search-vault", ["dukkha"], [])
+
+        assert "search-vault" in path.read_text(encoding="utf-8")
+
+
+def _build_calibre_metadata_db(library: Path) -> Path:
+    """Create a minimal Calibre-shaped metadata.db for hermetic tests."""
+    import sqlite3
+    db = library / "metadata.db"
+    con = sqlite3.connect(db)
+    con.executescript(
+        """
+        CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT);
+        CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT);
+        CREATE TABLE books_authors_link (book INTEGER, author INTEGER);
+        CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT);
+        CREATE TABLE books_tags_link (book INTEGER, tag INTEGER);
+        CREATE TABLE comments (book INTEGER, text TEXT);
+        """
+    )
+    con.executemany("INSERT INTO books (id, title) VALUES (?, ?)", [
+        (1, "The Buddha's Teaching"),
+        (2, "Sanskrit Grammar"),
+    ])
+    con.executemany("INSERT INTO authors (id, name) VALUES (?, ?)", [(1, "Bhikkhu Bodhi"), (2, "Whitney")])
+    con.executemany("INSERT INTO books_authors_link (book, author) VALUES (?, ?)", [(1, 1), (2, 2)])
+    con.executemany("INSERT INTO tags (id, name) VALUES (?, ?)", [(1, "Buddhism"), (2, "Sanskrit")])
+    con.executemany("INSERT INTO books_tags_link (book, tag) VALUES (?, ?)", [(1, 1), (2, 2)])
+    con.executemany("INSERT INTO comments (book, text) VALUES (?, ?)", [
+        (1, "A study of dukkha and the path."),
+        (2, "Classical Sanskrit reference."),
+    ])
+    con.commit()
+    con.close()
+    return db
+
+
+class TestCalibreReadOnlySqlite:
+    """Metadata search and the preflight read metadata.db directly, never locking."""
+
+    def test_metadata_search_reads_sqlite_readonly(self, monkeypatch, tmp_path):
+        import tools.research_sources as rs
+        _build_calibre_metadata_db(tmp_path)
+        monkeypatch.setattr(rs, "_run_calibre", lambda *a, **k: pytest.fail("used calibredb"))
+
+        hits = rs._calibre_metadata_search("Buddha", None, tmp_path, limit=5)
+
+        assert len(hits) == 1
+        h = hits[0]
+        assert isinstance(h, rs.CalibreHit)
+        assert h.title == "The Buddha's Teaching"
+        assert h.authors == "Bhikkhu Bodhi"
+        assert h.tags == ["Buddhism"]
+        assert "dukkha" in h.snippet
+
+    def test_metadata_search_matches_author_and_comments(self, monkeypatch, tmp_path):
+        import tools.research_sources as rs
+        _build_calibre_metadata_db(tmp_path)
+        monkeypatch.setattr(rs, "_run_calibre", lambda *a, **k: pytest.fail("used calibredb"))
+
+        assert [h.book_id for h in rs._calibre_metadata_search("Whitney", None, tmp_path, 5)] == [2]
+        assert [h.book_id for h in rs._calibre_metadata_search("path", None, tmp_path, 5)] == [1]
+
+    def test_metadata_search_filters_by_tag(self, monkeypatch, tmp_path):
+        import tools.research_sources as rs
+        _build_calibre_metadata_db(tmp_path)
+        monkeypatch.setattr(rs, "_run_calibre", lambda *a, **k: pytest.fail("used calibredb"))
+
+        hits = rs._calibre_metadata_search("", ["Sanskrit"], tmp_path, limit=5)
+        assert [h.book_id for h in hits] == [2]
+
+    def test_metadata_search_falls_back_to_cli_on_schema_error(self, monkeypatch, tmp_path):
+        import tools.research_sources as rs
+        (tmp_path / "metadata.db").write_text("not a database", encoding="utf-8")
+        called = {}
+
+        def _cli(query, tags, library, limit, timeout=60):
+            called["hit"] = True
+            return [rs.CalibreHit(book_id=9, title="cli", authors="", tags=[])]
+
+        monkeypatch.setattr(rs, "_calibre_metadata_search_cli", _cli)
+        hits = rs._calibre_metadata_search("x", None, tmp_path, limit=5)
+        assert called.get("hit") and hits[0].book_id == 9
+
 
 class TestCalibreCheckHonesty:
-    """calibre-check must use a fast reachability probe, not FTS snippets."""
+    """calibre-check must use a fast, lock-free read-only SQLite probe."""
 
-    def test_available_when_fast_probe_succeeds(self, monkeypatch, tmp_path):
+    def test_available_when_metadata_db_readable(self, monkeypatch, tmp_path):
         import tools.research_sources as rs
-        seen = {}
-
-        def _capture(cmd, *, timeout, retries=3):
-            seen["cmd"] = cmd
-            seen["timeout"] = timeout
-            seen["retries"] = retries
-            return subprocess.CompletedProcess(cmd, 0, stdout="[]", stderr="")
-
+        _build_calibre_metadata_db(tmp_path)
         monkeypatch.setattr(rs, "DEFAULT_CALIBRE_LIBRARY", tmp_path)
+        monkeypatch.setattr(rs, "_run_calibre", lambda *a, **k: pytest.fail("used calibredb lock"))
         monkeypatch.setattr(rs, "search_calibre", lambda *a, **k: pytest.fail("used FTS search"))
-        monkeypatch.setattr(rs, "_run_calibre", _capture)
         ok, msg = rs.calibre_library_available()
         assert ok and msg == "ok"
-        assert seen["cmd"] == [
-            "calibredb",
-            "list",
-            "--search",
-            "*",
-            "--fields",
-            "id",
-            "--for-machine",
-            "--limit",
-            "1",
-            "--library-path",
-            str(tmp_path),
-        ]
-        assert seen["timeout"] == 15
-        assert seen["retries"] == 1
 
-    def test_unavailable_when_fast_probe_raises_lock(self, monkeypatch, tmp_path):
+    def test_unavailable_when_metadata_db_missing(self, monkeypatch, tmp_path):
         import tools.research_sources as rs
-
-        def _locked(*a, **k):
-            raise rs.CalibreUnavailable("database is locked")
-
         monkeypatch.setattr(rs, "DEFAULT_CALIBRE_LIBRARY", tmp_path)
-        monkeypatch.setattr(rs, "search_calibre", lambda *a, **k: pytest.fail("used FTS search"))
-        monkeypatch.setattr(rs, "_run_calibre", _locked)
+        monkeypatch.setattr(rs, "_run_calibre", lambda *a, **k: pytest.fail("used calibredb lock"))
         ok, msg = rs.calibre_library_available()
         assert ok is False
-        assert "locked" in msg
+        assert "metadata.db not found" in msg
 
-    def test_probe_uses_short_timeout_to_fail_fast(self, monkeypatch, tmp_path):
+    def test_unavailable_when_metadata_db_corrupt(self, monkeypatch, tmp_path):
         import tools.research_sources as rs
-        seen = {}
-
-        def _capture(cmd, *, timeout, retries=3):
-            seen["timeout"] = timeout
-            seen["retries"] = retries
-            return subprocess.CompletedProcess(cmd, 0, stdout="[]", stderr="")
-
+        (tmp_path / "metadata.db").write_text("not a database", encoding="utf-8")
         monkeypatch.setattr(rs, "DEFAULT_CALIBRE_LIBRARY", tmp_path)
-        monkeypatch.setattr(rs, "_run_calibre", _capture)
-        rs.calibre_library_available()
-        # Probe must not inherit the 120s search window — it fails fast.
-        assert seen == {"timeout": 15, "retries": 1}
+        monkeypatch.setattr(rs, "_run_calibre", lambda *a, **k: pytest.fail("used calibredb lock"))
+        ok, msg = rs.calibre_library_available()
+        assert ok is False
 
 
 class TestCalibreFtsFallback:
