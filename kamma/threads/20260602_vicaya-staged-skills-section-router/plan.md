@@ -686,7 +686,7 @@ the target file.
 
 ## Phase 9 - Review gate
 
-- [ ] Run fresh `/kamma:3-review` for this thread.
+- [x] Run fresh `/kamma:3-review` for this thread.
   - Reviewer must check exact source-section routing, not keyword presence.
   - Reviewer must confirm the failed attempt was removed by explicit
     deletion/overwrite in this thread, not by broad `git reset`, `git checkout
@@ -966,19 +966,106 @@ binding context-plan and context-break guard exceptions.
   - -> verify: `rg -n "stage-1-four-bundle-phase-9.13-supersedes|Phase 4a web plus Phase 4b YouTube.*Phase 4c WisdomLib" data/scratch/vicikiccha-hindrance-vs-fetter.md` shows the targeted scratch supersession.
   - -> verify: `git diff --check -- skill/vicaya-0-scope/SKILL.md skill/vicaya-1-gather/SKILL.md kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md kamma/threads/20260602_vicaya-staged-skills-section-router/handoff.md data/scratch/vicikiccha-hindrance-vs-fetter.md` passes.
 
+## Phase 9.14 - User revision: fixed `1 + 4 + 2 + 3` hard-stop redistribution
+
+- [x] Rebalance staged hard stops without adding new research logic.
+  - The user clarified the current goal: cost efficiency and never hitting the
+    200k context limit. The model cannot reliably sense current context usage,
+    so adaptive wording such as "context seems comfortable", "context pressure
+    is high", or "dossier is manageable" must not be used as the control
+    mechanism. Only predetermined hard stops work.
+  - Golden rule: do not introduce any new research logic. `skill/vicaya/SKILL.md`
+    remains the source of the actual workflow, quality standard, evidence
+    rules, gates, helper behavior, final-note requirements, and
+    self-improvement loop. This thread only redistributes the same canonical
+    work across fixed fresh-context sessions.
+  - Update `skill/vicaya-0-scope/SKILL.md` and
+    `skill/vicaya-1-gather/SKILL.md` so extensive Stage 1 keeps four default
+    invocations but rebalances the risky 195k Phase 2-2.5 pass:
+    1. Phase 1 vault/EBC context, angle triage, and perspective map plus Phase
+       2 root-canon mūla/sutta research;
+    2. Phase 2 commentary/exegesis only;
+    3. Phase 2.5 plus Phase 3 plus Phase 3b when applicable;
+    4. Phase 4a plus Phase 4b plus Phase 4c.
+  - Update `skill/vicaya-0-scope/SKILL.md` and
+    `skill/vicaya-2-synthesize-review/SKILL.md` so extensive Stage 2 keeps two
+    default invocations but rebalances heavy Phase 5 into lighter Phase 6:
+    1. canonical Phase 5 entry/verification, source and angle checks, Devil's
+       Advocate answers, bibliography/source allocation review, and a
+       concise scratch-logged Phase 5 drafting plan; hard stop before full
+       drafting;
+    2. complete Phase 5 drafting/integration and Phase 5 gate, then run Phase
+       6 second-pass review and Phase 6 gate.
+  - Update `skill/vicaya-0-scope/SKILL.md` and
+    `skill/vicaya-3-complete/SKILL.md` so extensive Stage 3 keeps three
+    default invocations but moves heavy early evidence drafting from Run 2 into
+    underused Run 1:
+    1. writer brief, draft setup, title/slug/outline/source
+       allocation/frontmatter targets, `## Question`, `## Findings`, Canon
+       Evidence, and Commentary Evidence;
+    2. remaining evidence/support sections, bibliography, footnotes,
+       frontmatter `canon_refs` confirmation, and completion audit;
+    3. vault write, validation, PDF, Phase 7 gate, note/run-report sync, final
+       report, and self-improvement loop.
+  - Update this thread `spec.md` and `handoff.md` to document the approved
+    `1 + 4 + 2 + 3` split and the no-new-logic rule.
+  - Update Phase 10 review/finalize criteria to include Phase 9.14.
+  - Do not edit `skill/vicaya/SKILL.md`.
+  - Do not change canonical phase gates, helper behavior, evidence
+    requirements, source requirements, synthesis/review requirements, Phase 7
+    requirements, final-report requirements, validation, PDF, run-report sync,
+    or self-improvement requirements.
+  - -> verify: `rg -n "because context seems|context seems comfortable|context pressure becomes high|dossier is manageable|very large dossiers|completion work is manageable|Devil's Advocate preparation|claim map|claim-map|partial draft structure" skill/vicaya-0-scope/SKILL.md skill/vicaya-1-gather/SKILL.md skill/vicaya-2-synthesize-review/SKILL.md skill/vicaya-3-complete/SKILL.md` returns no active staged-skill hits.
+  - -> verify: warning or historical prose in `spec.md`, `plan.md`, and `handoff.md` may mention disallowed adaptive phrases only to say they must not be used, or to preserve earlier superseded phase history.
+  - -> verify: `rg -n "1 \\+ 4 \\+ 2 \\+ 3|Phase 2 commentary/exegesis only|Phase 2\\.5.*Phase 3|Phase 5 drafting plan|Canon Evidence.*Commentary Evidence|Golden rule" skill/vicaya-0-scope/SKILL.md skill/vicaya-1-gather/SKILL.md skill/vicaya-2-synthesize-review/SKILL.md skill/vicaya-3-complete/SKILL.md kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md kamma/threads/20260602_vicaya-staged-skills-section-router/handoff.md` shows the approved fixed redistribution.
+  - -> verify: `git diff --check -- skill/vicaya-0-scope/SKILL.md skill/vicaya-1-gather/SKILL.md skill/vicaya-2-synthesize-review/SKILL.md skill/vicaya-3-complete/SKILL.md kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md kamma/threads/20260602_vicaya-staged-skills-section-router/handoff.md` passes.
+
+## Phase 9.15 - User revision: sync current unfinished research scratches
+
+- [x] Check the current handoff against the latest Phase 9.14 staged split and
+  the current unfinished research runs named by the user.
+  - `papanca-canon-usage` had already stopped after the Phase 5 gate under the
+    older Stage 2 split. Patch its scratch with a
+    `stage-2-context-plan phase-9.14-supersedes` note: because Phase 5 is
+    already gated, the next `vicaya-2-synthesize-review` invocation should run
+    canonical Phase 6 cross-check and the Phase 6 gate, then hand off to
+    `vicaya-3-complete`; future extensive Stage 2 runs use the fixed Phase
+    9.14 two-pass split.
+  - Patch `papanca-canon-usage` with a
+    `stage-3-context-plan phase-9.14-supersedes` note so completion uses the
+    rebalanced three-run draft/vault-write split whose Run 1 includes Canon
+    Evidence and Commentary Evidence.
+  - `vicikiccha-hindrance-vs-fetter` had Phase 3 gated but older Stage 1,
+    Stage 2, and Stage 3 context-plan wording. Patch it with Phase 9.14
+    superseding context-plan notes for Stage 1, Stage 2, and Stage 3.
+  - Update `handoff.md` so it no longer says the stale review was deleted or
+    that the next step is necessarily the older fresh review. Record that
+    `review.md` currently exists with verdict `PASSED`, and that this
+    post-review scratch/handoff sync should be considered before finalization.
+  - Do not edit `skill/vicaya/SKILL.md`.
+  - Do not change staged skill behavior.
+  - Do not continue either research run.
+  - -> verify: `rg -n "phase-9.14-supersedes|PHASE .* EXIT GATE" data/scratch/papanca-canon-usage.md data/scratch/vicikiccha-hindrance-vs-fetter.md` shows the new scratch supersession notes and existing gate state.
+  - -> verify: `rg -n "Run a fresh /kamma:3-review|stale .*review.*deleted|Phase 9.12 three-run|Phase 9.13 note" kamma/threads/20260602_vicaya-staged-skills-section-router/handoff.md` returns no stale active restart instructions.
+  - -> verify: `git diff --check -- kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md kamma/threads/20260602_vicaya-staged-skills-section-router/handoff.md` passes.
+
 ## Phase 10 - Finalize only after clean review
 
 - [ ] Run `/kamma:4-finalize` only after review passes.
+  - `review.md` currently exists with verdict `PASSED`, but Phase 9.15 updated
+    handoff text and ignored scratch run state after that review. If following
+    Kamma strictly for finalization, run a fresh review or focused review check
+    before `/kamma:4-finalize`; no staged skill behavior changed in Phase 9.15.
   - Because Phase 9.5 changed `vicaya-0-scope` after the existing review, first
     rerun review and confirm it accepts the bounded binding context-budget plan
     and context-break guard exceptions from Phases 9.5, 9.6, 9.7, 9.8, 9.9,
-    9.10, 9.12, and 9.13.
+    9.10, 9.12, 9.13, 9.14, and the handoff/scratch sync in 9.15.
   - Do not finalize if the failed staged attempt was removed by broad Git
     reversal instead of explicit deletion/overwrite in this thread.
   - Do not finalize if any staged skill still summarizes canonical behavior.
   - Do not finalize if any staged skill differs from the routed section-router
     design except for the bounded context-budget controls documented in Phases
-    9.5, 9.6, 9.7, 9.8, 9.9, 9.10, 9.12, and 9.13.
+    9.5, 9.6, 9.7, 9.8, 9.9, 9.10, 9.12, 9.13, and 9.14.
   - Do not finalize if any staged skill lacks the out-of-scope handoff guard or
     permits running phases outside its owned scope.
   - Do not finalize if this thread changed `skill/vicaya/SKILL.md` anywhere

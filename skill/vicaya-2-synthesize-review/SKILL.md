@@ -54,19 +54,15 @@ Next-stage handoff: use the same scratch slug with `vicaya-3-complete`; recommen
 
 ## Context Break Guard
 
-At entry, use the routed canonical scratch/resume and scratch/verify instructions to determine the last completed gate, whether Phase 0 recorded a `stage-2-context-plan`, whether Phase 0 recorded a later `context-plan-opt-out`, and whether the dossier is too large to synthesize and review in one context. This guard is stage-local context management only; it does not change any canonical synthesis requirement, review requirement, scratch format, helper behavior, phase gate, or owned phase scope.
+At entry, use the routed canonical scratch/resume and scratch/verify instructions to determine the last completed gate, whether Phase 0 recorded a `stage-2-context-plan`, whether Phase 0 recorded a later `context-plan-opt-out`, and whether scratch contains a Phase 5 drafting-plan checkpoint. This guard is stage-local context management only; it does not change any canonical synthesis requirement, review requirement, scratch format, helper behavior, phase gate, or owned phase scope.
 
-If no Stage 2 context plan exists, or if a `context-plan-opt-out` exists and the dossier is manageable, proceed normally through Phase 5 and Phase 6.
+If no Stage 2 context plan exists, or if a `context-plan-opt-out` exists, proceed normally through Phase 5 and Phase 6.
 
-If a Stage 2 context plan exists, it is binding for this staged run and overrides any model-tier recommendation. Run only the next planned synthesis/review pass, then hard stop after the relevant canonical gate and hand off with the same scratch slug. Do not merge, skip, or continue into the next planned pass because context seems comfortable.
+If a Stage 2 context plan exists, it is binding for this staged run and overrides any model-tier recommendation. Run only the next planned synthesis/review pass, then hard stop after the planned scratch checkpoint or canonical gate and hand off with the same scratch slug. Do not merge, skip, or continue into the next planned pass.
 
 Default extensive-run passes are:
 
-- Phase 5 synthesis, then stop after the Phase 5 gate and tell the user to refresh context and rerun `vicaya-2-synthesize-review` with the same scratch slug.
-- Phase 6 second-pass review, then stop after the Phase 6 gate and hand off to `vicaya-3-complete` with the same scratch slug.
-
-For very large dossiers, if Phase 5 cannot be responsibly drafted in the current context after reading the scratch, write a compact Phase 5 synthesis plan to scratch using the routed canonical scratch logging mechanism, then hard stop before drafting. The next fresh-context run must use that plan to complete Phase 5 and its canonical gate. This does not create a new phase; it is only a Phase 5 handoff note inside the canonical scratch system.
-
-If context pressure becomes high even without a Phase 0 plan, finish the current safe boundary: either log the Phase 5 synthesis plan before drafting, or complete the current canonical phase gate. Then hard stop and tell the user to refresh context and rerun with the same scratch slug.
+- Phase 5 entry verification, scratch review, source completeness check, angle coverage check, Devil's Advocate answers, bibliography/source allocation review, and a concise Phase 5 drafting plan recorded in scratch using the routed canonical scratch logging mechanism; hard stop before full drafting and tell the user to refresh context and rerun `vicaya-2-synthesize-review` with the same scratch slug.
+- Resume from the Phase 5 drafting plan, complete Phase 5 drafting/integration and the Phase 5 gate, then run Phase 6 second-pass review and the Phase 6 gate; hard stop and hand off to `vicaya-3-complete` with the same scratch slug.
 
 Do not read or create staged shared-reference files under skill/vicaya/shared/.

@@ -71,19 +71,17 @@ At entry, use the routed canonical scratch/resume instructions to determine the 
 
 If no Stage 1 context plan exists, or if a `context-plan-opt-out` exists, proceed normally through this staged skill's owned scope.
 
-If a Stage 1 context plan exists, it is binding for this staged run and overrides any model-tier recommendation. Every invocation under that plan runs exactly one next source block, then hard stops at the relevant safe boundary and hands off with the same scratch slug. A prior hard stop is only a handoff checkpoint; it must not be treated as satisfying the whole Stage 1 plan. Do not merge, skip, or continue into a second source block because context seems comfortable, because a prior hard stop already happened, or because the next block seems short.
+If a Stage 1 context plan exists, it is binding for this staged run and overrides any model-tier recommendation. Every invocation under that plan runs exactly one next source block, then hard stops at the relevant safe boundary and hands off with the same scratch slug. A prior hard stop is only a handoff checkpoint; it must not be treated as satisfying the whole Stage 1 plan. Do not merge, skip, or continue into a second source block.
 
 The next source block is the first listed block whose gate or source-block checkpoint is not complete in scratch, while respecting routed canonical skip rules and any latest Stage 1 hard-stop handoff note.
 
 Default extensive-run source blocks are:
 
 - Phase 1 vault/EBC context, angle triage, and perspective map, plus Phase 2 root-canon mūla/sutta research; write the Phase 1 gate, then hard stop at a scratch-logged Phase 2 in-progress checkpoint if commentary/ṭīkā research is still required. Do not write the Phase 2 gate until all canonical Phase 2 obligations are complete.
-- Phase 2 canonical exegesis/commentary research when applicable, including aṭṭhakathā, ṭīkā, Abhidhamma, Visuddhimagga, and DPD gloss checks required by the scoped question, plus Phase 2.5 SuttaCentral/offline parallel research when applicable; stop after the Phase 2.5 gate when applicable, otherwise stop after the Phase 2 gate.
-- Phase 3 library research plus Phase 3b Sanskrit source research when applicable; stop after the Phase 3b gate when applicable, otherwise stop after the Phase 3 gate.
+- Phase 2 canonical exegesis/commentary research when applicable, including aṭṭhakathā, ṭīkā, Abhidhamma, Visuddhimagga, and DPD gloss checks required by the scoped question; stop after the Phase 2 gate.
+- Phase 2.5 SuttaCentral/offline parallel research when applicable, plus Phase 3 library research and Phase 3b Sanskrit source research when applicable; stop after the Phase 3b gate when applicable, otherwise stop after the latest applicable gate.
 - Phase 4a web research, Phase 4b YouTube research when applicable, and Phase 4c WisdomLib research; stop after the Phase 4c gate and hand off to `vicaya-2-synthesize-review`.
 
 If the scoped run did not require Phase 2.5, Phase 3b, or Phase 4b, skip those phases only when the routed canonical scratch/gate instructions allow the skip.
-
-If context pressure becomes high even without a Phase 0 plan, finish the current canonical phase gate, log a concise hard-stop handoff note in scratch using the routed canonical scratch logging mechanism, then stop and tell the user to refresh context and rerun `vicaya-1-gather` with the same scratch slug.
 
 Do not read or create staged shared-reference files under skill/vicaya/shared/.

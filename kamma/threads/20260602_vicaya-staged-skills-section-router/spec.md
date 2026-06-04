@@ -351,8 +351,8 @@ staged-context protection.
 `vicaya-0-scope` may include one bounded stage-local context-plan block that
 asks the advanced model to decide, after Phase 0 scoping and before Phase 1
 work, whether Stage 1, Stage 2, and Stage 3 are likely to be extensive enough
-to require fresh context breaks. This context plan is allowed only to manage
-staged-run context pressure.
+to require fixed fresh-context hard stops. This context plan is allowed only to
+manage staged-run context-budget risk.
 
 `vicaya-1-gather`, `vicaya-2-synthesize-review`, and `vicaya-3-complete` may
 include bounded stage-local context-break guards. These guards must honor any
@@ -367,8 +367,9 @@ cost-control source-block hard stops over per-source micro-sessions. Stage 1
 source blocks should default to four bundled sessions where applicable:
 
 - Phase 1 vault/context setup plus root-canon mūla/sutta research;
-- canonical exegesis/commentary research plus Phase 2.5 parallel research;
-- library research plus Sanskrit source research;
+- canonical exegesis/commentary research only;
+- Phase 2.5 parallel research plus library research plus Sanskrit source
+  research;
 - web, YouTube, and WisdomLib research.
 
 Every `vicaya-1-gather` invocation under a recorded `stage-1-context-plan`
@@ -380,6 +381,17 @@ Stage 1 may hard-stop inside Phase 2 after root-canon mūla/sutta research when
 commentary/ṭīkā research remains. That stop must be recorded as a concise
 in-progress handoff note in scratch. It must not write the Phase 2 gate until
 all canonical Phase 2 obligations are complete.
+
+For extensive Stage 2 synthesis/review, the default context plan must keep two
+sessions and rebalance the heavy Phase 5 work into the lighter Phase 6 session
+without introducing new synthesis or review logic:
+
+- Phase 5 entry verification, scratch review, source completeness check, angle
+  coverage check, Devil's Advocate answers, bibliography/source allocation
+  review, and a concise scratch-logged Phase 5 drafting plan; then hard stop
+  before full drafting.
+- Complete Phase 5 drafting/integration and the Phase 5 gate, then run Phase 6
+  second-pass review and the Phase 6 gate.
 
 For extensive Stage 3 completion, the default context plan may use a
 scratch-local Phase 7 draft file under `data/scratch/`, normally
@@ -398,21 +410,34 @@ frontmatter, bibliography, and style requirements.
 
 After live testing showed that adaptive "continue while context remains healthy"
 wording can still push Stage 3 completion to the edge of context, extensive
-Stage 3 completion must default to a mandatory three-run split:
+Stage 3 completion must default to a fixed three-run split:
 
 - Run 1: create the Phase 7 writer brief and scratch-local draft file, record
-  title/slug/outline/source allocation/frontmatter targets, write only
-  `## Question` and `## Findings`, then hard stop.
-- Run 2: write the remaining evidence and support sections, confirm
-  frontmatter `canon_refs`, audit the complete draft against routed canonical
-  Phase 7/frontmatter/bibliography/style requirements, then hard stop before
-  any vault write.
+  title/slug/outline/source allocation/frontmatter targets, write `## Question`,
+  `## Findings`, Canon Evidence, and Commentary Evidence, then hard stop.
+- Run 2: write the remaining evidence/support sections, confirm frontmatter
+  `canon_refs`, audit the complete draft against routed canonical Phase
+  7/frontmatter/bibliography/style requirements, then hard stop before any vault
+  write.
 - Run 3: write only the complete audited draft to the vault, validate, generate
   PDF, run the Phase 7 gate, sync the note and run report, complete the final
   user report, and run the self-improvement loop.
 
-Under this default split, Stage 3 must not continue from one run group into the
-next merely because context seems comfortable.
+Under these default splits, staged skills must not continue from one run group
+into the next for any reason. Do not rely on model judgement such as "context
+seems comfortable", "context pressure is high", "the dossier is manageable",
+or conditional/adaptive continuation. The model cannot reliably calculate
+current context usage, so context control must be predetermined hard stops.
+
+The approved extensive staged split is `1 + 4 + 2 + 3`: one Stage 0 scoping
+invocation, four Stage 1 gathering invocations, two Stage 2 synthesis/review
+invocations, and three Stage 3 completion invocations.
+
+Golden rule: do not introduce any new research logic. The canonical
+`skill/vicaya/SKILL.md` remains the source of the actual workflow, quality
+standard, evidence rules, gates, helper behavior, final-note requirements, and
+self-improvement loop. This staged thread only redistributes the same
+canonical work across fixed fresh-context sessions.
 
 The context plan and guards may:
 
@@ -433,6 +458,8 @@ The context plan and guards must not:
 
 - change any canonical research phase, source requirement, evidence standard,
   synthesis requirement, review requirement, helper behavior, or phase gate;
+- introduce any new research logic beyond fixed redistribution of canonical
+  work across fresh-context sessions;
 - create workflow state outside the canonical scratch system, except for the
   scratch-local Phase 7 draft file allowed above;
 - perform work outside the owning staged skill's phase scope;
@@ -495,9 +522,15 @@ The thread is done when:
   hard stop per invocation, default to no more than four Stage 1 gathering
   invocations where all blocks apply, and do not treat a prior hard stop as
   completion of the whole Stage 1 plan.
+- Review confirms extensive `vicaya-2-synthesize-review` runs default to two
+  invocations where the first records a Phase 5 drafting plan and the second
+  completes Phase 5 plus Phase 6.
 - Review confirms extensive `vicaya-3-complete` runs use a scratch-local
   Phase 7 draft file for section-by-section note writing and never write an
   incomplete draft to the vault.
+- Review confirms the approved extensive split is `1 + 4 + 2 + 3`, uses only
+  predetermined hard stops, and introduces no new research logic beyond
+  redistributing canonical work across fresh-context sessions.
 
 ## What's not included
 

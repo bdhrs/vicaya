@@ -57,24 +57,24 @@ If the run is not extensive, do not add split friction. Hand off normally with t
 
 If the run is extensive, use the routed canonical scratch logging mechanism to record concise Phase 0 `stage-1-context-plan`, `stage-2-context-plan`, and `stage-3-context-plan` notes before the Phase 0 exit gate, then include the same hard-stop plan in the final handoff. These logged context plans are binding instructions for later staged skills and override any model-tier recommendation unless the user explicitly opts out before Stage 1 begins. Tell the user to run later staged skills in fresh sessions with the same scratch slug and refresh context between planned passes.
 
-For extensive Stage 1 gathering, record this split shape unless the scoped question clearly calls for a simpler one:
+For extensive Stage 1 gathering, record this fixed four-invocation split shape:
 
 - Phase 1 vault/EBC context, angle triage, and perspective map, plus Phase 2 root-canon mūla/sutta research; write the Phase 1 gate, then hard stop at a scratch-logged Phase 2 in-progress checkpoint if commentary/ṭīkā research is still required. Do not write the Phase 2 gate until all canonical Phase 2 obligations are complete.
-- Phase 2 canonical exegesis/commentary research when applicable, including aṭṭhakathā, ṭīkā, Abhidhamma, Visuddhimagga, and DPD gloss checks required by the scoped question, plus Phase 2.5 SuttaCentral/offline parallel research when applicable; stop after the Phase 2.5 gate when applicable, otherwise stop after the Phase 2 gate.
-- Phase 3 library research plus Phase 3b Sanskrit source research when applicable; stop after the Phase 3b gate when applicable, otherwise stop after the Phase 3 gate.
+- Phase 2 canonical exegesis/commentary research when applicable, including aṭṭhakathā, ṭīkā, Abhidhamma, Visuddhimagga, and DPD gloss checks required by the scoped question; stop after the Phase 2 gate.
+- Phase 2.5 SuttaCentral/offline parallel research when applicable, plus Phase 3 library research and Phase 3b Sanskrit source research when applicable; stop after the Phase 3b gate when applicable, otherwise stop after the latest applicable gate.
 - Phase 4a web research, Phase 4b YouTube research when applicable, and Phase 4c WisdomLib research; stop after the Phase 4c gate.
 
-For extensive Stage 2 synthesis/review, record this split shape unless the scoped question clearly calls for a simpler one:
+For extensive Stage 2 synthesis/review, record this fixed two-invocation split shape:
 
-- Phase 5 synthesis, then stop after the Phase 5 gate.
-- Phase 6 second-pass review, then stop after the Phase 6 gate and hand off to `vicaya-3-complete`.
+- Phase 5 entry verification, scratch review, source completeness check, angle coverage check, Devil's Advocate answers, bibliography/source allocation review, and a concise Phase 5 drafting plan recorded in scratch; hard stop before full drafting.
+- Complete Phase 5 drafting/integration and the Phase 5 gate, then run Phase 6 second-pass review and the Phase 6 gate; hard stop and hand off to `vicaya-3-complete`.
 
-For very large dossiers, record that `vicaya-2-synthesize-review` must first write a compact Phase 5 synthesis plan to scratch and stop before drafting, then resume in fresh context to complete Phase 5.
+For extensive Stage 2, this Phase 5 drafting-plan stop is fixed, not conditional on model-estimated context usage.
 
-For extensive Stage 3 completion, record this mandatory three-run split shape unless the scoped question clearly calls for a simpler one:
+For extensive Stage 3 completion, record this fixed three-run split shape:
 
-- Run 1: create a Phase 7 writer brief and scratch-local draft file plan. Use a draft path under `data/scratch/`, normally `data/scratch/<scratch-slug>.phase7-draft.md`. Record the draft path, vault-note title, filename slug, outline, section order, source allocation, target frontmatter refs, and section status in scratch. Write only the `## Question` and `## Findings` sections into the draft file, then hard stop.
-- Run 2: resume the same draft file. Write the remaining evidence and support sections into the draft file, confirm frontmatter `canon_refs` with the routed canonical citation requirements, run a completion audit against the routed canonical Phase 7/frontmatter/bibliography/style requirements, and hard stop before any vault write.
+- Run 1: create a Phase 7 writer brief and scratch-local draft file plan. Use a draft path under `data/scratch/`, normally `data/scratch/<scratch-slug>.phase7-draft.md`. Record the draft path, vault-note title, filename slug, outline, section order, source allocation, target frontmatter refs, and section status in scratch. Write the `## Question`, `## Findings`, Canon Evidence, and Commentary Evidence sections into the draft file, then hard stop.
+- Run 2: resume the same draft file. Write the remaining evidence/support sections into the draft file, confirm frontmatter `canon_refs` with the routed canonical citation requirements, run a completion audit against the routed canonical Phase 7/frontmatter/bibliography/style requirements, and hard stop before any vault write.
 - Run 3: write only the complete audited draft to the vault, validate, generate the PDF, run the Phase 7 gate, sync the note and run report, complete the final user report, and run the self-improvement loop.
 
 Record that `vicaya-3-complete` must never write a partial or draft note to the vault. Partial section drafts are allowed only in the scratch-local draft file, never in the vault.
