@@ -11,12 +11,12 @@ Run a multi-phase research session across the user's local + web sources and wri
 
 Four structural commands carry the run. Everything else is reference.
 
-1. **Phase 0:** `scratch-init <slug>` (add `--class thematic` for non-sutta-anchored questions). This records the active scratch path so every later helper call auto-logs to it — no env exports needed. Use `export VICAYA_SCRATCH=…`/`VICAYA_PHASE=…` only to override.
+1. **Phase 0:** `scratch-init <slug>` (add `--class thematic` for non-sutta-anchored questions). This records the shared active scratch path so later helper calls auto-log to it in a single-session run. For parallel runs, pin the run with `export VICAYA_SCRATCH=…`/`VICAYA_PHASE=…`.
 2. **Each phase boundary:** end the prior phase with `scratch-gate <prev-phase>`. The gate auto-advances the active phase, so the next phase's helper calls log correctly without any manual step. It refuses if earlier gates are missing and prints the exact evidence still needed. Thematic runs auto-skip the Phase 2.5 (SC-parallels) and 3b (Sanskrit) gates.
 3. **Start of Phase 5:** `scratch-verify`. Exit 0 = proceed to synthesis. Exit 1 = backfill the named phase first; do not draft.
 4. **End of Phase 7:** `scratch-gate 7`, then publish the run report with `uv run scripts/sync_run_report.py`. The run is not complete without both.
 
-If context compaction fires at any point, `scratch-resume <slug>` prints the last gate and the next phase — no findings are lost.
+If context compaction fires at any point, `scratch-resume <slug>` explicitly selects that run, reattaches the active scratch state, and prints the last gate and next phase — no findings are lost.
 
 ## Hard rules (read first — these are not preferences)
 
@@ -327,7 +327,7 @@ the dossier without re-running any expensive search.
 Five subcommands cover every interaction:
 
 ```bash
-# 1. At Phase 0 start — create the file (records the active scratch + phase)
+# 1. At Phase 0 start — create the file (records the shared active scratch + phase)
 uv run tools/research_sources.py scratch-init <slug>
 # add --class thematic for non-sutta-anchored questions (auto-skips 2.5 / 3b)
 
@@ -345,21 +345,26 @@ uv run tools/research_sources.py scratch-gate 2
 # 5. Before synthesis (Phase 5) — refuse to draft until all prior gates exist
 uv run tools/research_sources.py scratch-verify    # exit 0 = proceed, 1 = backfill first
 
-# Resume after compaction
+# Resume after compaction or restart; explicit slug wins over stale .active
 uv run tools/research_sources.py scratch-resume <slug>
 ```
 
 **Auto-logging is on as soon as `scratch-init` has run** (the active scratch path
-and phase are persisted to `data/scratch/.active`; `VICAYA_SCRATCH`/`VICAYA_PHASE`
-override only if you set them). Every `search-*`, `sc-*`, `get-ebc-overview`,
+and phase are persisted to `data/scratch/.active`). Scratch target precedence is:
+explicit helper argument such as `scratch-resume <slug>` or a direct `scratch=`
+path, then `VICAYA_SCRATCH`, then `.active`. `VICAYA_PHASE` overrides only the
+phase for helper auto-logs. Every `search-*`, `sc-*`, `get-ebc-overview`,
 `fetch-transcript`, `cross-check`, and `gemini-cross-check` call appends a full
-JSON-results block to the active phase. Forgetting to log is structurally impossible.
+JSON-results block to the selected phase. Forgetting to log is structurally
+impossible.
 
 **Running parallel agents?** `data/scratch/.active` is a single shared pointer, so
 a second agent's `scratch-init` will redirect the first agent's auto-logs to the
 wrong file. When more than one Vicaya run may be live at once, pin your own scratch
 explicitly — `scratch-init` prints the exact `export VICAYA_SCRATCH=…` line to use;
-the env var always wins over `.active`.
+the env var wins over `.active` for unpinned helper calls. `scratch-resume <slug>`
+reattaches `.active` for a restarted single session, but it does not make unpinned
+parallel auto-logging safe.
 
 **Iron rule:** a phase cannot be left without calling `scratch-gate <phase>`.
 `scratch-verify` is the enforcement mechanism at Phase 5 start — it exits 1 and
