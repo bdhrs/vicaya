@@ -740,67 +740,113 @@ class TestScratchDossier:
         assert "search-vault" in path.read_text(encoding="utf-8")
 
 
-class TestCalibreCheckHonesty:
-    """calibre-check must use a fast reachability probe, not FTS snippets."""
+def _build_calibre_metadata_db(library: Path) -> Path:
+    """Create a minimal Calibre-shaped metadata.db for hermetic tests."""
+    import sqlite3
+    db = library / "metadata.db"
+    con = sqlite3.connect(db)
+    con.executescript(
+        """
+        CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT);
+        CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT);
+        CREATE TABLE books_authors_link (book INTEGER, author INTEGER);
+        CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT);
+        CREATE TABLE books_tags_link (book INTEGER, tag INTEGER);
+        CREATE TABLE comments (book INTEGER, text TEXT);
+        """
+    )
+    con.executemany("INSERT INTO books (id, title) VALUES (?, ?)", [
+        (1, "The Buddha's Teaching"),
+        (2, "Sanskrit Grammar"),
+    ])
+    con.executemany("INSERT INTO authors (id, name) VALUES (?, ?)", [(1, "Bhikkhu Bodhi"), (2, "Whitney")])
+    con.executemany("INSERT INTO books_authors_link (book, author) VALUES (?, ?)", [(1, 1), (2, 2)])
+    con.executemany("INSERT INTO tags (id, name) VALUES (?, ?)", [(1, "Buddhism"), (2, "Sanskrit")])
+    con.executemany("INSERT INTO books_tags_link (book, tag) VALUES (?, ?)", [(1, 1), (2, 2)])
+    con.executemany("INSERT INTO comments (book, text) VALUES (?, ?)", [
+        (1, "A study of dukkha and the path."),
+        (2, "Classical Sanskrit reference."),
+    ])
+    con.commit()
+    con.close()
+    return db
 
-    def test_available_when_fast_probe_succeeds(self, monkeypatch, tmp_path):
+
+class TestCalibreReadOnlySqlite:
+    """Metadata search and the preflight read metadata.db directly, never locking."""
+
+    def test_metadata_search_reads_sqlite_readonly(self, monkeypatch, tmp_path):
         import tools.research_sources as rs
-        seen = {}
+        _build_calibre_metadata_db(tmp_path)
+        monkeypatch.setattr(rs, "_run_calibre", lambda *a, **k: pytest.fail("used calibredb"))
 
-        def _capture(cmd, *, timeout, retries=3):
-            seen["cmd"] = cmd
-            seen["timeout"] = timeout
-            seen["retries"] = retries
-            return subprocess.CompletedProcess(cmd, 0, stdout="[]", stderr="")
+        hits = rs._calibre_metadata_search("Buddha", None, tmp_path, limit=5)
 
+        assert len(hits) == 1
+        h = hits[0]
+        assert isinstance(h, rs.CalibreHit)
+        assert h.title == "The Buddha's Teaching"
+        assert h.authors == "Bhikkhu Bodhi"
+        assert h.tags == ["Buddhism"]
+        assert "dukkha" in h.snippet
+
+    def test_metadata_search_matches_author_and_comments(self, monkeypatch, tmp_path):
+        import tools.research_sources as rs
+        _build_calibre_metadata_db(tmp_path)
+        monkeypatch.setattr(rs, "_run_calibre", lambda *a, **k: pytest.fail("used calibredb"))
+
+        assert [h.book_id for h in rs._calibre_metadata_search("Whitney", None, tmp_path, 5)] == [2]
+        assert [h.book_id for h in rs._calibre_metadata_search("path", None, tmp_path, 5)] == [1]
+
+    def test_metadata_search_filters_by_tag(self, monkeypatch, tmp_path):
+        import tools.research_sources as rs
+        _build_calibre_metadata_db(tmp_path)
+        monkeypatch.setattr(rs, "_run_calibre", lambda *a, **k: pytest.fail("used calibredb"))
+
+        hits = rs._calibre_metadata_search("", ["Sanskrit"], tmp_path, limit=5)
+        assert [h.book_id for h in hits] == [2]
+
+    def test_metadata_search_falls_back_to_cli_on_schema_error(self, monkeypatch, tmp_path):
+        import tools.research_sources as rs
+        (tmp_path / "metadata.db").write_text("not a database", encoding="utf-8")
+        called = {}
+
+        def _cli(query, tags, library, limit, timeout=60):
+            called["hit"] = True
+            return [rs.CalibreHit(book_id=9, title="cli", authors="", tags=[])]
+
+        monkeypatch.setattr(rs, "_calibre_metadata_search_cli", _cli)
+        hits = rs._calibre_metadata_search("x", None, tmp_path, limit=5)
+        assert called.get("hit") and hits[0].book_id == 9
+
+
+class TestCalibreCheckHonesty:
+    """calibre-check must use a fast, lock-free read-only SQLite probe."""
+
+    def test_available_when_metadata_db_readable(self, monkeypatch, tmp_path):
+        import tools.research_sources as rs
+        _build_calibre_metadata_db(tmp_path)
         monkeypatch.setattr(rs, "DEFAULT_CALIBRE_LIBRARY", tmp_path)
+        monkeypatch.setattr(rs, "_run_calibre", lambda *a, **k: pytest.fail("used calibredb lock"))
         monkeypatch.setattr(rs, "search_calibre", lambda *a, **k: pytest.fail("used FTS search"))
-        monkeypatch.setattr(rs, "_run_calibre", _capture)
         ok, msg = rs.calibre_library_available()
         assert ok and msg == "ok"
-        assert seen["cmd"] == [
-            "calibredb",
-            "list",
-            "--search",
-            "*",
-            "--fields",
-            "id",
-            "--for-machine",
-            "--limit",
-            "1",
-            "--library-path",
-            str(tmp_path),
-        ]
-        assert seen["timeout"] == 15
-        assert seen["retries"] == 1
 
-    def test_unavailable_when_fast_probe_raises_lock(self, monkeypatch, tmp_path):
+    def test_unavailable_when_metadata_db_missing(self, monkeypatch, tmp_path):
         import tools.research_sources as rs
-
-        def _locked(*a, **k):
-            raise rs.CalibreUnavailable("database is locked")
-
         monkeypatch.setattr(rs, "DEFAULT_CALIBRE_LIBRARY", tmp_path)
-        monkeypatch.setattr(rs, "search_calibre", lambda *a, **k: pytest.fail("used FTS search"))
-        monkeypatch.setattr(rs, "_run_calibre", _locked)
+        monkeypatch.setattr(rs, "_run_calibre", lambda *a, **k: pytest.fail("used calibredb lock"))
         ok, msg = rs.calibre_library_available()
         assert ok is False
-        assert "locked" in msg
+        assert "metadata.db not found" in msg
 
-    def test_probe_uses_short_timeout_to_fail_fast(self, monkeypatch, tmp_path):
+    def test_unavailable_when_metadata_db_corrupt(self, monkeypatch, tmp_path):
         import tools.research_sources as rs
-        seen = {}
-
-        def _capture(cmd, *, timeout, retries=3):
-            seen["timeout"] = timeout
-            seen["retries"] = retries
-            return subprocess.CompletedProcess(cmd, 0, stdout="[]", stderr="")
-
+        (tmp_path / "metadata.db").write_text("not a database", encoding="utf-8")
         monkeypatch.setattr(rs, "DEFAULT_CALIBRE_LIBRARY", tmp_path)
-        monkeypatch.setattr(rs, "_run_calibre", _capture)
-        rs.calibre_library_available()
-        # Probe must not inherit the 120s search window — it fails fast.
-        assert seen == {"timeout": 15, "retries": 1}
+        monkeypatch.setattr(rs, "_run_calibre", lambda *a, **k: pytest.fail("used calibredb lock"))
+        ok, msg = rs.calibre_library_available()
+        assert ok is False
 
 
 class TestCalibreFtsFallback:
