@@ -42,3 +42,7 @@ A Markdown note at `<vault>/Vicaya/YYYY-MM-DD - <slug>.md` with:
   `skill/vicaya-2-synthesize-review`, or `skill/vicaya-3-complete`, verify the
   edited staged skill still routes to exact headings in `skill/vicaya/SKILL.md`
   and does not silently fork canonical workflow behavior.
+- The staged sibling skills are section routers, not alternate workflow
+  documents. Do not copy behavioral rules into them, do not restore summarized
+  shared references under `skill/vicaya/shared/`, and verify every routed
+  heading still exists after canonical skill heading changes.

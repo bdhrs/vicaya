@@ -30,6 +30,10 @@
   guards. Edits to any staged sibling must verify exact routing back to
   `skill/vicaya/SKILL.md` and must not silently fork canonical workflow
   behavior.
+- Staged sibling skills are router-only technical artifacts. They must not
+  contain behavioral summaries or depend on `skill/vicaya/shared/`; after any
+  canonical heading or staged route-list change, run a focused route-heading
+  audit before review or finalize.
 
 ## Resources
 - Canon DB: `<dpd-db>/resources/tipitaka_translation_db/tipitaka-translation-data.db`

@@ -4,12 +4,11 @@ No GitHub issue is associated with this thread.
 
 ## Overview
 
-The previous staged-skills thread,
-`kamma/threads/20260602_vicaya-staged-skills/`, is blocked. Its spec required
-"concise reference files" and "thin" staged skills that loaded summarized
-phase references. That requirement was wrong for Vicaya. It caused the staged
-workflow to become a paraphrased alternate workflow instead of a strict
-division of the existing monolithic skill.
+A previous failed staged-skills attempt required "concise reference files" and
+"thin" staged skills that loaded summarized phase references. That requirement
+was wrong for Vicaya. It caused the staged workflow to become a paraphrased
+alternate workflow instead of a strict division of the existing monolithic
+skill.
 
 This thread starts over with the corrected requirement:
 
@@ -253,11 +252,16 @@ with the same scratch slug. Do not infer completion from a local checklist.
 
 Update documentation to reflect the corrected staged design:
 
-- `skill/vicaya/README.md` must be a concise mode-and-registration note only:
-  it states the difference between the monolithic full-run skill and the four
-  staged section-router skills, and it states distribution parity. It must not
-  include phase summaries, command syntax, helper behavior, dependency tables,
-  output templates, staged handoff instructions, or other workflow paraphrases.
+- `README.md` and `skill/vicaya/README.md` keep the restored main-skill
+  documentation. They may retain usage, setup, output, dependency, limitation,
+  and source-layout material for the monolithic `/vicaya` skill.
+- README staged-mode references must be concise additions beside existing
+  monolithic-skill references: name the four staged skills, state that they
+  route to exact sections in `skill/vicaya/SKILL.md`, and state that
+  `skill/vicaya/SKILL.md` remains the behavioral source of truth.
+- README staged-mode references must not describe staged/shared reference files,
+  summarize canonical workflow behavior, copy staged handoff instructions, or
+  present staged mode as a replacement workflow.
 - `kamma/project.md` must state that staged mode routes to exact sections in
   `skill/vicaya/SKILL.md`, and that behavioral changes belong in the monolithic
   skill first.
@@ -542,11 +546,11 @@ The thread is done when:
 - If `skill/vicaya/SKILL.md` is edited, the diff is limited to the existing
   staged-mode pointer near the top and contains no behavioral workflow change,
   aside from any pre-existing hunks recorded before implementation.
-- `skill/vicaya/README.md` describes only monolithic-vs-staged mode difference,
-  distribution parity, and bounded staged context-budget controls, with no
-  other workflow paraphrase.
 - README files contain concise staged-skill references beside the main skill
-  references without replacing the restored main-skill descriptions.
+  references without replacing the restored main-skill descriptions. Those
+  staged references identify exact-section routing and the canonical source of
+  truth without describing shared staged references, handoff workflow, or
+  replacement behavior.
 - `kamma/project.md` and `kamma/tech.md` describe the maintenance coupling
   between the canonical skill and staged sibling skills.
 - Verification confirms that every heading named by a staged skill exists as a

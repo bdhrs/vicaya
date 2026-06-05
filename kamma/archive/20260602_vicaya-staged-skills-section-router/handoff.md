@@ -6,7 +6,8 @@ merging `main` into `sub-skills`, and a Phase 9.15 sync of the user's
 unfinished scratch runs. Updated on 2026-06-05 for Phase 9.16 durable Stage 2
 artifact handling after a live Phase 5 draft was lost from a global temporary
 directory, Phase 9.17 no-global-temp plus final cleanup handling, and Phase
-9.18 compact-tolerant default flow with risk-triggered hard-stop safety mode.
+9.18 compact-tolerant default flow with risk-triggered hard-stop safety mode,
+and Phase 9.19 Kamma README criteria cleanup.
 
 ## Latest User Direction
 
@@ -16,7 +17,7 @@ research logic. The user explicitly clarified that the research logic in
 truth. This thread only divides that existing research pattern into staged
 skills and preserves work across context compaction, interruption, and handoff.
 
-Latest policy from Phase 9.18:
+Latest staged-execution policy from Phase 9.18:
 
 - Default staged execution is compact-tolerant four-stage flow:
   `vicaya-0-scope` -> `vicaya-1-gather` ->
@@ -54,9 +55,39 @@ Latest policy from Phase 9.18:
 
 A fresh review currently exists at
 `kamma/threads/20260602_vicaya-staged-skills-section-router/review.md` with
-verdict `PASSED`, but it predates Phases 9.16, 9.17, and 9.18.
+verdict `PASSED`, but it predates Phases 9.16, 9.17, 9.18, and 9.19.
 
-## Latest Session Summary - 2026-06-05 Phase 9.18
+## Latest Session Summary - 2026-06-05 Phase 9.19
+
+User asked to make the thread more consistent, mainly in Kamma docs.
+
+Implemented:
+
+- `spec.md`: README documentation criteria now preserve restored main-skill
+  README content and constrain only staged-mode references.
+- `plan.md`: architecture decisions, the old Phase 7 README task, Phase 9.11
+  wording, and Phase 10 finalization criteria now agree that Phase 9.11
+  superseded the stripped-README requirement.
+- `plan.md`: added Phase 9.19 and marked it complete.
+- `handoff.md`: recorded this docs-only consistency cleanup.
+
+Not changed:
+
+- No staged skill files were edited.
+- `skill/vicaya/SKILL.md`, `README.md`, `skill/vicaya/README.md`,
+  `kamma/project.md`, and `kamma/tech.md` were not edited for Phase 9.19.
+- Route lists, phase scope, hard-stop policy, checkpoint policy, canonical
+  workflow, and skill registrations were not changed.
+
+Validation from this session:
+
+- Focused `rg` for obsolete stripped-README requirements, filtered to remove
+  verification/history lines, returned no hits.
+- `rg -n "restored README|preserve restored|Phase 9.19|staged README references|stripping restored README|shared-reference files as the staged behavior" ...` showed the corrected current policy in `spec.md`, `plan.md`, and this handoff.
+- `git diff --check -- spec.md plan.md handoff.md` passed.
+- `git diff --name-only -- skill/vicaya/SKILL.md skill/vicaya-*/SKILL.md README.md skill/vicaya/README.md kamma/project.md kamma/tech.md` returned no files, confirming Phase 9.19 touched only this thread's Kamma docs.
+
+## Previous Session Summary - 2026-06-05 Phase 9.18
 
 User asked to implement the revised staged-mode policy: do not change the
 canonical research logic, and treat this thread as stage division plus durable
@@ -121,10 +152,10 @@ When the user is ready to finalize this Kamma thread, continue with:
 /kamma:4-finalize @kamma/threads/20260602_vicaya-staged-skills-section-router/
 ```
 
-Because Phase 9.15 changed handoff text/ignored scratch run state and Phases
-9.16-9.18 changed staged/canonical skill behavior after the current `PASSED`
-review, run a fresh review or focused review check before strict Kamma
-finalization.
+Because Phase 9.15 changed handoff text/ignored scratch run state, Phases
+9.16-9.18 changed staged/canonical skill behavior, and Phase 9.19 changed Kamma
+finalization criteria after the current `PASSED` review, run a fresh review or
+focused review check before strict Kamma finalization.
 
 The staged workflow is currently in live testing. The user may return in the
 next session with additions, issues, or behavior reports from running the new
@@ -188,11 +219,11 @@ docs(vicaya): align staged completion route with note sync heading
 Current restart prompt for the next session:
 
 ```text
-Continue @kamma/threads/20260602_vicaya-staged-skills-section-router. Read handoff.md first. The staged router design was previously reviewed with verdict PASSED, but Phases 9.16-9.18 changed staged/canonical behavior after that review: durable Stage 2 artifacts, no global temporary directories, final per-run temp cleanup, compact-tolerant default flow, risk-triggered hard-stop safety mode, and stronger durable checkpoint rules. Recheck git status, handle any new user-reported staged test issue, then run a fresh review or focused review check before /kamma:4-finalize. Do not reintroduce the monolithic Phase 5 deferred-draft hunk; that was intentionally reverted.
+Continue @kamma/threads/20260602_vicaya-staged-skills-section-router. Read handoff.md first. The staged router design was previously reviewed with verdict PASSED, but Phases 9.16-9.18 changed staged/canonical behavior after that review: durable Stage 2 artifacts, no global temporary directories, final per-run temp cleanup, compact-tolerant default flow, risk-triggered hard-stop safety mode, and stronger durable checkpoint rules. Phase 9.19 then aligned Kamma README criteria with the restored README policy from Phase 9.11. Recheck git status, handle any new user-reported staged test issue, then run a fresh review or focused review check before /kamma:4-finalize. Do not reintroduce the monolithic Phase 5 deferred-draft hunk; that was intentionally reverted.
 ```
 
 `review.md` currently exists with verdict `PASSED`, but it predates Phases
-9.16, 9.17, and 9.18. Run a fresh review or focused review check before
+9.16, 9.17, 9.18, and 9.19. Run a fresh review or focused review check before
 finalization.
 
 ## Current State Snapshot
@@ -223,6 +254,10 @@ finalization.
   only when Phase 0 identifies objective context risk; Stage 1/2/3 durable
   checkpoint rules protect gathering, synthesis/review, and note-draft payloads
   even when no hard-stop plan exists.
+- Phase 9.19 in `plan.md` is complete: Kamma spec/plan/handoff README criteria
+  now preserve restored README content while requiring staged references to stay
+  concise, route to exact canonical sections, and avoid shared-reference or
+  replacement-workflow language.
 - `skill/vicaya/SKILL.md` now has the Phase 9.17 no-global-temp and cleanup
   changes.
 - Earlier Stage 1/Stage 3 revisions touched `skill/vicaya-0-scope/SKILL.md`,

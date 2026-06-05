@@ -12,7 +12,7 @@ on related topics, so the vault accumulates as a connected body of work.
 The main skill is invoked as `/vicaya <your question>` inside Claude Code (or
 any agent that reads a Markdown skill file). For lower-context staged runs, use
 the sibling skills `vicaya-0-scope`, `vicaya-1-gather`,
-`vicaya-2-synthesize-review`, and `vicaya-3-complete`.
+`vicaya-2-synthesize-review`, and `vicaya-3-complete`; they route to exact sections in `skill/vicaya/SKILL.md`, which remains the behavioral source of truth.
 
 ## Sources
 

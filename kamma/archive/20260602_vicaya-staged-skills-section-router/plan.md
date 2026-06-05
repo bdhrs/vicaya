@@ -28,11 +28,14 @@ No GitHub issue is associated with this thread.
     a narrow nonbehavioral update to the existing staged-mode pointer near the
     top, so it says staged skills read exact sections from this file and this
     file remains the only behavioral source of truth.
-- Keep `skill/vicaya/README.md` as a concise mode-and-registration note only.
-  - Rationale: phase summaries, command syntax, helper behavior, dependency
-    tables, and staged handoff instructions are workflow paraphrases. The README
-    should say only how the monolithic skill differs from the staged routers and
-    how staged routers are distributed beside the monolithic skill.
+- Preserve restored README content and add only concise staged references beside
+  monolithic skill references.
+  - Rationale: Phase 9.11 superseded the earlier stripped-README plan after the
+    user restored the README. Main-skill usage, setup, output, dependency,
+    limitation, and source-layout material may stay. Staged-mode README text
+    must remain concise: name the staged skills, say they route to exact
+    canonical sections, and point back to `skill/vicaya/SKILL.md` as the
+    behavioral source of truth.
 - Mirror the monolithic `vicaya` skill's active distribution for every staged
   skill.
   - Rationale: if an agent can load `vicaya` from a skill root, it must load the
@@ -78,11 +81,12 @@ Out-of-scope handoff ownership:
 
 ## Phase 1 - Pre-edit audit and reset boundary
 
-- [x] Confirm the previous thread remains blocked.
-  - Read: `kamma/threads/20260602_vicaya-staged-skills/review.md`.
-  - Confirm it contains `## Verdict` followed by `BLOCKED`.
-  - Do not edit the previous thread except if the user explicitly asks.
-  - -> verify: `rg -n "BLOCKED|Strict audit basis|section-by-section equivalence" kamma/threads/20260602_vicaya-staged-skills/review.md` shows the blocking audit.
+- [x] Confirm the previous failed attempt was blocked.
+  - Reviewed the prior blocking audit.
+  - Confirmed it contains `## Verdict` followed by `BLOCKED`.
+  - Do not edit the previous failed attempt except if the user explicitly asks.
+  - -> verify: blocking-audit text showed `BLOCKED`, strict audit basis, and
+    section-by-section equivalence requirements.
 
 - [x] Record the exact files owned by this reset.
   - Owned changes in this thread are limited to:
@@ -496,29 +500,17 @@ the target file.
     `skill/vicaya/SKILL.md` hunks must be unchanged pre-existing hunks.
 
 - [x] Update `skill/vicaya/README.md`.
-  - Replace it with a concise mode-and-registration note only.
-  - Do not include phase summaries, command syntax, helper behavior, dependency
-    tables, output templates, staged handoff instructions, source layout, known
-    limitations, or other workflow paraphrases. Those belong only in
-    `skill/vicaya/SKILL.md`, except for the bounded context-budget controls
-    later added by Phases 9.5-9.10.
-  - The README must state:
-    - `/vicaya` is the monolithic full-run skill.
-    - The four staged skills are `vicaya-0-scope`, `vicaya-1-gather`,
-      `vicaya-2-synthesize-review`, and `vicaya-3-complete`.
-    - The staged skills are section routers into exact headings in
-      `skill/vicaya/SKILL.md`.
-    - The staged skills save context by reading fewer canonical sections and,
-      for extensive runs, by using bounded scratch-backed context breaks.
-    - `skill/vicaya/SKILL.md` is the only behavioral source of truth.
-    - Staged skills must not use summaries, paraphrases, shared staged reference
-      files, or replacement behavior.
-    - Staged skills must be registered beside `vicaya` in every active skill
-      root that distributes `vicaya`.
-  - -> verify: read `skill/vicaya/README.md` end-to-end and confirm it contains
-    only monolithic-vs-staged mode difference, registration parity, and bounded
-    context-budget controls, with no other workflow paraphrase. `rg -n "shared/(core|scope|sources|synthesis|completion)\\.md|concise reference|uv run|Phase [0-9]|Helper|Dependency|Known limitations|Source layout" skill/vicaya/README.md`
-    returns no hits.
+  - Original Phase 7 plan: replace the README with a concise
+    mode-and-registration note only.
+  - Superseded by Phase 9.11: after the user restored the README, preserve the
+    restored main-skill descriptions unless they become stale.
+  - Current README requirement: add concise staged-router references beside the
+    monolithic skill references, state that staged skills route to exact
+    headings in `skill/vicaya/SKILL.md`, and state that
+    `skill/vicaya/SKILL.md` remains the behavioral source of truth.
+  - Do not describe staged/shared reference files, staged handoff workflow, or a
+    replacement staged workflow in README text.
+  - -> verify: superseded by the Phase 9.11 and Phase 9.19 README criteria.
 
 - [x] Update `kamma/project.md`.
   - Replace the current dual-mode maintenance rule if it mentions staged shared
@@ -712,11 +704,10 @@ the target file.
     staged-mode pointer near the top and contains no behavioral edits. If the
     file was already dirty, reviewer must confirm non-pointer hunks match the
     recorded pre-edit diff.
-  - Reviewer must verify `skill/vicaya/README.md` contains no behavioral
-    workflow paraphrase beyond the bounded context-budget controls, and no
-    command, phase, helper, dependency, output, source layout, or staged handoff
-    summaries. It may describe only the difference between monolithic and staged
-    modes, registration parity, and bounded context-budget controls.
+  - Reviewer must verify README files preserve the restored main-skill
+    descriptions while adding only concise staged references beside monolithic
+    skill references. Staged README text must not describe shared staged
+    references, handoff workflow, or replacement behavior.
   - Reviewer must verify the previous summarized shared references are gone and
     no replacement shared routing/reference file was created.
   - Reviewer must verify `skill/vicaya/shared/` is absent, not merely empty.
@@ -896,8 +887,8 @@ binding context-plan and context-break guard exceptions.
     edits to `skill/vicaya/SKILL.md` must check the staged sibling skills, and
     edits to staged sibling skills must verify they still route to the
     canonical skill without silently forking behavior.
-  - Do not add phase summaries, helper behavior, command syntax beyond
-    registration references, or staged handoff workflow prose.
+  - Do not add new staged phase summaries, helper behavior, command syntax
+    beyond registration references, or staged handoff workflow prose.
   - -> verify: `rg -n "vicaya-0-scope|vicaya-1-gather|vicaya-2-synthesize-review|vicaya-3-complete" README.md skill/vicaya/README.md kamma/project.md kamma/tech.md` shows concise staged references.
   - -> verify: `git diff --check -- README.md skill/vicaya/README.md kamma/project.md kamma/tech.md kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md` passes.
 
@@ -1168,6 +1159,28 @@ binding context-plan and context-break guard exceptions.
   - -> verify: `git diff -- skill/vicaya/SKILL.md` returns no diff.
   - -> verify: `git diff --check -- skill/vicaya-0-scope/SKILL.md skill/vicaya-1-gather/SKILL.md skill/vicaya-2-synthesize-review/SKILL.md skill/vicaya-3-complete/SKILL.md kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md kamma/threads/20260602_vicaya-staged-skills-section-router/handoff.md` passes.
 
+## Phase 9.19 - User revision: Kamma README criteria consistency
+
+- [x] Align Kamma documentation with the Phase 9.11 restored README decision.
+  - User asked to make the thread more consistent, mainly in Kamma docs.
+  - The current implementation intentionally preserves restored README content
+    and adds concise staged-router references beside main-skill references.
+    Older Kamma criteria that required `skill/vicaya/README.md` to be a
+    stripped mode-and-registration note are superseded.
+  - Update this thread's `spec.md`, `plan.md`, and `handoff.md` so finalization
+    criteria check the actual current policy: restored README content may stay;
+    staged README references must stay concise, point to exact canonical
+    sections, and avoid shared-reference files, staged handoff prose, or
+    replacement workflow behavior.
+  - Do not edit staged skills, `skill/vicaya/SKILL.md`, README files,
+    `kamma/project.md`, or `kamma/tech.md` for this cleanup unless verification
+    finds a live inconsistency in those files.
+  - This is a documentation-consistency cleanup only. It does not change route
+    lists, phase scope, hard-stop policy, checkpoint policy, canonical workflow,
+    or skill registrations.
+  - -> verify: `rg -n 'must be a concise mode-and-registration note only|Keep .*README.* concise mode|describes only monolithic-vs-staged|README contains no behavioral workflow paraphrase|Do not finalize if the README contains workflow' kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md kamma/threads/20260602_vicaya-staged-skills-section-router/handoff.md | rg -v -- '-> verify|Validation from this session|Original Phase 7 plan|superseded'` returns no hits.
+  - -> verify: `git diff --check -- kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md kamma/threads/20260602_vicaya-staged-skills-section-router/handoff.md` passes.
+
 ## Phase 10 - Finalize only after clean review
 
 - [ ] Run `/kamma:4-finalize` only after review passes.
@@ -1179,8 +1192,9 @@ binding context-plan and context-break guard exceptions.
     rerun review and confirm it accepts the bounded binding context-budget plan
     and context-break guard exceptions from Phases 9.5, 9.6, 9.7, 9.8, 9.9,
     9.10, 9.12, 9.13, 9.14, the handoff/scratch sync in 9.15, durable Stage 2
-    artifacts in 9.16, no-global-temp cleanup in 9.17, and compact-tolerant
-    default/risk-triggered hard-stop policy in 9.18.
+    artifacts in 9.16, no-global-temp cleanup in 9.17, compact-tolerant
+    default/risk-triggered hard-stop policy in 9.18, and the Kamma README
+    criteria cleanup in 9.19.
   - Do not finalize if the failed staged attempt was removed by broad Git
     reversal instead of explicit deletion/overwrite in this thread.
   - Do not finalize if any staged skill still summarizes canonical behavior.
@@ -1198,9 +1212,10 @@ binding context-plan and context-break guard exceptions.
   - Do not finalize if any heading route is broken.
   - Do not finalize if any routed heading points to a fenced example heading
     instead of a real canonical section.
-  - Do not finalize if the README contains workflow paraphrase beyond the
-    bounded context-budget controls, or if documentation still describes concise
-    reference files as the staged behavior mechanism.
+  - Do not finalize if Kamma docs still require stripping restored README
+    content, if staged README references are missing beside monolithic skill
+    references, or if documentation still describes concise/shared reference
+    files as the staged behavior mechanism.
   - Do not finalize if `skill/vicaya/shared/` exists.
   - Do not finalize if durable docs contain generic shared-reference language
     for staged behavior.
