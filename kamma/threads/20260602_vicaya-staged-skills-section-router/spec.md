@@ -389,9 +389,15 @@ without introducing new synthesis or review logic:
 - Phase 5 entry verification, scratch review, source completeness check, angle
   coverage check, Devil's Advocate answers, bibliography/source allocation
   review, and a concise scratch-logged Phase 5 drafting plan; then hard stop
-  before full drafting.
+  before full drafting. If any Phase 5 draft payload exists before the Phase 5
+  gate, it must be saved under `data/scratch/`, normally
+  `data/scratch/<scratch-slug>.phase5-draft.md`, and the path must be logged in
+  the main scratch.
 - Complete Phase 5 drafting/integration and the Phase 5 gate, then run Phase 6
-  second-pass review and the Phase 6 gate.
+  second-pass review and the Phase 6 gate. Phase 5 draft content, Phase 6 raw
+  review output, and handoff-critical synthesis payloads must not be left only
+  in any global/system temporary directory, repo-local `temp/`, or any other
+  non-scratch path.
 
 For extensive Stage 3 completion, the default context plan may use a
 scratch-local Phase 7 draft file under `data/scratch/`, normally
@@ -420,8 +426,9 @@ Stage 3 completion must default to a fixed three-run split:
   7/frontmatter/bibliography/style requirements, then hard stop before any vault
   write.
 - Run 3: write only the complete audited draft to the vault, validate, generate
-  PDF, run the Phase 7 gate, sync the note and run report, complete the final
-  user report, and run the self-improvement loop.
+  PDF, run the Phase 7 gate, sync the note and run report, clean only this
+  run's repo-local temp directory, complete the final user report, and run the
+  self-improvement loop.
 
 Under these default splits, staged skills must not continue from one run group
 into the next for any reason. Do not rely on model judgement such as "context
@@ -451,8 +458,12 @@ The context plan and guards may:
   handoffs.
 - use a scratch-logged Stage 1 grouped source-block checkpoint inside Phase 2
   when a source-class split is needed before the canonical Phase 2 gate.
+- use a scratch-local Phase 5 draft file under `data/scratch/` when synthesis
+  drafting or payload handoff needs a durable file before the Phase 5 gate.
 - use a scratch-local Phase 7 draft file for section-by-section final-note
   drafting, with scratch-logged path and section status.
+- use a per-run repo-local temp directory for disposable extraction files only,
+  with cleanup in the final Stage 3 completion run.
 
 The context plan and guards must not:
 
@@ -461,12 +472,13 @@ The context plan and guards must not:
 - introduce any new research logic beyond fixed redistribution of canonical
   work across fresh-context sessions;
 - create workflow state outside the canonical scratch system, except for the
-  scratch-local Phase 7 draft file allowed above;
+  scratch-local Phase 5 and Phase 7 draft files allowed above;
 - perform work outside the owning staged skill's phase scope;
 - modify `skill/vicaya/SKILL.md`;
 - authorize any staged skill to summarize or replace canonical workflow
   instructions;
 - allow a partial or draft note to be written to the vault.
+- use any global/system temporary directory in any stage.
 
 If Stage 0 judges the run extensive, it must explicitly tell the user that the
 planned fresh-context passes will be used by default, and that the user should
@@ -524,10 +536,14 @@ The thread is done when:
   completion of the whole Stage 1 plan.
 - Review confirms extensive `vicaya-2-synthesize-review` runs default to two
   invocations where the first records a Phase 5 drafting plan and the second
-  completes Phase 5 plus Phase 6.
+  completes Phase 5 plus Phase 6, with any draft payload or Phase 6 review
+  output durably recorded in scratch before a hard stop.
 - Review confirms extensive `vicaya-3-complete` runs use a scratch-local
   Phase 7 draft file for section-by-section note writing and never write an
   incomplete draft to the vault.
+- Review confirms no active Vicaya stage instruction uses a global/system
+  temporary directory, and final completion cleans the per-run repo-local temp
+  directory without removing `data/scratch/`.
 - Review confirms the approved extensive split is `1 + 4 + 2 + 3`, uses only
   predetermined hard stops, and introduces no new research logic beyond
   redistributing canonical work across fresh-context sessions.

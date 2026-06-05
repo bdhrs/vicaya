@@ -66,8 +66,8 @@ For extensive Stage 1 gathering, record this fixed four-invocation split shape:
 
 For extensive Stage 2 synthesis/review, record this fixed two-invocation split shape:
 
-- Phase 5 entry verification, scratch review, source completeness check, angle coverage check, Devil's Advocate answers, bibliography/source allocation review, and a concise Phase 5 drafting plan recorded in scratch; hard stop before full drafting.
-- Complete Phase 5 drafting/integration and the Phase 5 gate, then run Phase 6 second-pass review and the Phase 6 gate; hard stop and hand off to `vicaya-3-complete`.
+- Phase 5 entry verification, scratch review, source completeness check, angle coverage check, Devil's Advocate answers, bibliography/source allocation review, and a concise Phase 5 drafting plan recorded in scratch; hard stop before full drafting. If any Phase 5 draft payload is written before the Phase 5 gate, save it only under `data/scratch/`, normally `data/scratch/<scratch-slug>.phase5-draft.md`, and log that path in the main scratch.
+- Complete Phase 5 drafting/integration and the Phase 5 gate, then run Phase 6 second-pass review and the Phase 6 gate; hard stop and hand off to `vicaya-3-complete`. Do not leave Phase 5 draft content, Phase 6 raw review output, or handoff-critical synthesis payloads only in any global/system temporary directory, repo-local `temp/`, or any other non-scratch path.
 
 For extensive Stage 2, this Phase 5 drafting-plan stop is fixed, not conditional on model-estimated context usage.
 
@@ -75,7 +75,7 @@ For extensive Stage 3 completion, record this fixed three-run split shape:
 
 - Run 1: create a Phase 7 writer brief and scratch-local draft file plan. Use a draft path under `data/scratch/`, normally `data/scratch/<scratch-slug>.phase7-draft.md`. Record the draft path, vault-note title, filename slug, outline, section order, source allocation, target frontmatter refs, and section status in scratch. Write the `## Question`, `## Findings`, Canon Evidence, and Commentary Evidence sections into the draft file, then hard stop.
 - Run 2: resume the same draft file. Write the remaining evidence/support sections into the draft file, confirm frontmatter `canon_refs` with the routed canonical citation requirements, run a completion audit against the routed canonical Phase 7/frontmatter/bibliography/style requirements, and hard stop before any vault write.
-- Run 3: write only the complete audited draft to the vault, validate, generate the PDF, run the Phase 7 gate, sync the note and run report, complete the final user report, and run the self-improvement loop.
+- Run 3: write only the complete audited draft to the vault, validate, generate the PDF, run the Phase 7 gate, sync the note and run report, clean only this run's repo-local temp directory according to the routed canonical Phase 7 exit instructions, complete the final user report, and run the self-improvement loop.
 
 Record that `vicaya-3-complete` must never write a partial or draft note to the vault. Partial section drafts are allowed only in the scratch-local draft file, never in the vault.
 

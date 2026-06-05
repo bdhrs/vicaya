@@ -54,7 +54,7 @@ Next-stage handoff: use the same scratch slug with `vicaya-3-complete`; recommen
 
 ## Context Break Guard
 
-At entry, use the routed canonical scratch/resume and scratch/verify instructions to determine the last completed gate, whether Phase 0 recorded a `stage-2-context-plan`, whether Phase 0 recorded a later `context-plan-opt-out`, and whether scratch contains a Phase 5 drafting-plan checkpoint. This guard is stage-local context management only; it does not change any canonical synthesis requirement, review requirement, scratch format, helper behavior, phase gate, or owned phase scope.
+At entry, use the routed canonical scratch/resume and scratch/verify instructions to determine the last completed gate, whether Phase 0 recorded a `stage-2-context-plan`, whether Phase 0 recorded a later `context-plan-opt-out`, whether scratch contains a Phase 5 drafting-plan checkpoint, and whether scratch records a durable Phase 5 draft path. This guard is stage-local context management only; it does not change any canonical synthesis requirement, review requirement, scratch format, helper behavior, phase gate, or owned phase scope.
 
 If no Stage 2 context plan exists, or if a `context-plan-opt-out` exists, proceed normally through Phase 5 and Phase 6.
 
@@ -62,7 +62,7 @@ If a Stage 2 context plan exists, it is binding for this staged run and override
 
 Default extensive-run passes are:
 
-- Phase 5 entry verification, scratch review, source completeness check, angle coverage check, Devil's Advocate answers, bibliography/source allocation review, and a concise Phase 5 drafting plan recorded in scratch using the routed canonical scratch logging mechanism; hard stop before full drafting and tell the user to refresh context and rerun `vicaya-2-synthesize-review` with the same scratch slug.
-- Resume from the Phase 5 drafting plan, complete Phase 5 drafting/integration and the Phase 5 gate, then run Phase 6 second-pass review and the Phase 6 gate; hard stop and hand off to `vicaya-3-complete` with the same scratch slug.
+- Phase 5 entry verification, scratch review, source completeness check, angle coverage check, Devil's Advocate answers, bibliography/source allocation review, and a concise Phase 5 drafting plan recorded in scratch using the routed canonical scratch logging mechanism; hard stop before full drafting and tell the user to refresh context and rerun `vicaya-2-synthesize-review` with the same scratch slug. If any Phase 5 draft payload is written before the Phase 5 gate, save it only under `data/scratch/`, normally `data/scratch/<scratch-slug>.phase5-draft.md`, and log that path in the main scratch before stopping.
+- Resume from the Phase 5 drafting plan and any scratch-logged Phase 5 draft path, complete Phase 5 drafting/integration and the Phase 5 gate, then run Phase 6 second-pass review and the Phase 6 gate; hard stop and hand off to `vicaya-3-complete` with the same scratch slug. Do not leave Phase 5 draft content, Phase 6 raw review output, or handoff-critical synthesis payloads only in any global/system temporary directory, repo-local `temp/`, or any other non-scratch path.
 
 Do not read or create staged shared-reference files under skill/vicaya/shared/.

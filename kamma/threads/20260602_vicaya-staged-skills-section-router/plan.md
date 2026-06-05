@@ -1049,6 +1049,78 @@ binding context-plan and context-break guard exceptions.
   - -> verify: `rg -n "Run a fresh /kamma:3-review|stale .*review.*deleted|Phase 9.12 three-run|Phase 9.13 note" kamma/threads/20260602_vicaya-staged-skills-section-router/handoff.md` returns no stale active restart instructions.
   - -> verify: `git diff --check -- kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md kamma/threads/20260602_vicaya-staged-skills-section-router/handoff.md` passes.
 
+## Phase 9.16 - User revision: durable Stage 2 draft and review artifacts
+
+- [x] Audit staged skills for handoff-critical artifacts that could be left in
+  a global/system temporary directory, repo-local `temp/`, or another
+  non-scratch path.
+  - User report: a Phase 5 draft was saved to a global temporary file, the
+    machine/session later cleared that file, and the durable scratch still
+    showed only the last completed gate. This exposed that immediate
+    same-session continuation had hidden a durability problem.
+  - Active risk found: Stage 2 allowed a Phase 5 drafting-plan hard stop without
+    explicitly naming a durable file for any draft payload written before the
+    Phase 5 gate.
+  - Lower-risk disposable-temp case found: canonical Phase 6 used a global
+    temporary directory for the cross-check prompt/output. Phase 9.17
+    supersedes this and moves prompt/output files into scratch-local paths.
+  - Update `skill/vicaya-0-scope/SKILL.md` and
+    `skill/vicaya-2-synthesize-review/SKILL.md` so any Phase 5 draft payload
+    written before the Phase 5 gate must be saved under `data/scratch/`,
+    normally `data/scratch/<scratch-slug>.phase5-draft.md`, and the path must be
+    logged in the main scratch.
+  - Update Stage 2 wording so Phase 5 draft content, Phase 6 raw review output,
+    and handoff-critical synthesis payloads must not be left only in a
+    global/system temporary directory, repo-local `temp/`, or any other
+    non-scratch path.
+  - Update this thread `spec.md` and `handoff.md` to document the allowed
+    scratch-local Phase 5 draft artifact and the non-scratch-path prohibition.
+  - Patch active ignored scratch
+    `data/scratch/vicikiccha-hindrance-vs-fetter.md` with a
+    `stage-2-durable-artifact-phase-9.16` note because `.active` currently
+    points to that run at Phase 5 and it still contained the older Phase 9.14
+    Stage 2 artifact-location wording.
+  - Do not edit `skill/vicaya/SKILL.md`.
+  - Do not change canonical phase gates, helper behavior, evidence
+    requirements, source requirements, synthesis/review requirements, Phase 7
+    requirements, final-report requirements, validation, PDF, run-report sync,
+    or self-improvement requirements.
+  - -> verify: `rg -n "phase5-draft|handoff-critical synthesis payloads|Phase 6 raw review output|global/system temporary|repo-local .*temp" skill/vicaya-0-scope/SKILL.md skill/vicaya-2-synthesize-review/SKILL.md kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md kamma/threads/20260602_vicaya-staged-skills-section-router/handoff.md` shows the durable Stage 2 artifact guard.
+  - -> verify: `rg -n "global/system temporary|repo-local .*temp|phase5-draft|phase7-draft|draft payload|raw review output|handoff-critical" skill/vicaya-0-scope/SKILL.md skill/vicaya-1-gather/SKILL.md skill/vicaya-2-synthesize-review/SKILL.md skill/vicaya-3-complete/SKILL.md` shows no remaining active staged-skill instruction that leaves handoff-critical work outside `data/scratch/`.
+  - -> verify: `rg -n "stage-2-durable-artifact-phase-9.16|phase5-draft|handoff-critical synthesis payloads" data/scratch/vicikiccha-hindrance-vs-fetter.md` shows the current-run supersession note.
+  - -> verify: `git diff --check -- skill/vicaya-0-scope/SKILL.md skill/vicaya-2-synthesize-review/SKILL.md kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md kamma/threads/20260602_vicaya-staged-skills-section-router/handoff.md` passes.
+
+## Phase 9.17 - User revision: no global temporary directories in any stage
+
+- [x] Remove global temporary directory usage from all active Vicaya stage
+  instructions and add final per-run temp cleanup.
+  - User direction: because interruption can happen at any time and continuation
+    may happen much later, no stage should ever use global temporary
+    directories. Since repo-local temp is allowed only for disposable files,
+    final completion must clean this research run's temp files after the needed
+    work is done.
+  - Update `skill/vicaya/SKILL.md` so:
+    - the hard rules include a no-global-temporary-directory rule;
+    - Calibre extraction examples use per-run repo-local `temp/<scratch-slug>/`;
+    - Phase 6 cross-check prompt/output files use scratch-local files next to
+      the current scratch;
+    - Phase 6 explicitly logs raw review output in scratch before any hard stop;
+    - PDF fallback extraction uses per-run repo-local `temp/<scratch-slug>/`;
+    - Phase 7 final cleanup removes only this run's repo-local temp directory
+      and never removes `data/scratch/`.
+  - Update staged wrappers so final `vicaya-3-complete` cleanup is part of Run
+    3, and Stage 2 forbids leaving handoff-critical payloads in any
+    global/system temporary directory.
+  - Add a superseding note to the active ignored scratch
+    `data/scratch/vicikiccha-hindrance-vs-fetter.md` so the current Phase 5
+    resume follows the no-global-temporary-directory and final-cleanup rule.
+  - Do not change canonical research obligations, evidence requirements,
+    phase gates, helper semantics, Phase 7 note requirements, validation, PDF,
+    sync, final report, or self-improvement logic.
+  - -> verify: a fixed-string scan for global temp path literals across `skill/vicaya/SKILL.md`, `skill/vicaya-*/SKILL.md`, and this thread's `spec.md`/`plan.md`/`handoff.md` returns no active workflow hits.
+  - -> verify: `rg -n "cross-check-prompt|cross-check-review|phase5-draft|phase7-draft|repo-local .*temp|No global temporary|clean only this run" skill/vicaya/SKILL.md skill/vicaya-*/SKILL.md` shows scratch-local, repo-local, and cleanup replacements.
+  - -> verify: `git diff --check -- skill/vicaya/SKILL.md skill/vicaya-0-scope/SKILL.md skill/vicaya-2-synthesize-review/SKILL.md skill/vicaya-3-complete/SKILL.md kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md kamma/threads/20260602_vicaya-staged-skills-section-router/handoff.md` passes.
+
 ## Phase 10 - Finalize only after clean review
 
 - [ ] Run `/kamma:4-finalize` only after review passes.
@@ -1059,18 +1131,21 @@ binding context-plan and context-break guard exceptions.
   - Because Phase 9.5 changed `vicaya-0-scope` after the existing review, first
     rerun review and confirm it accepts the bounded binding context-budget plan
     and context-break guard exceptions from Phases 9.5, 9.6, 9.7, 9.8, 9.9,
-    9.10, 9.12, 9.13, 9.14, and the handoff/scratch sync in 9.15.
+    9.10, 9.12, 9.13, 9.14, the handoff/scratch sync in 9.15, durable Stage 2
+    artifacts in 9.16, and no-global-temp cleanup in 9.17.
   - Do not finalize if the failed staged attempt was removed by broad Git
     reversal instead of explicit deletion/overwrite in this thread.
   - Do not finalize if any staged skill still summarizes canonical behavior.
   - Do not finalize if any staged skill differs from the routed section-router
     design except for the bounded context-budget controls documented in Phases
-    9.5, 9.6, 9.7, 9.8, 9.9, 9.10, 9.12, 9.13, and 9.14.
+    9.5, 9.6, 9.7, 9.8, 9.9, 9.10, 9.12, 9.13, and 9.14, plus the durable
+    artifact/no-global-temp cleanup controls in Phases 9.16 and 9.17.
   - Do not finalize if any staged skill lacks the out-of-scope handoff guard or
     permits running phases outside its owned scope.
   - Do not finalize if this thread changed `skill/vicaya/SKILL.md` anywhere
-    other than the allowed staged-mode pointer wording near the top. Pre-existing
-    dirty hunks may remain only if they match the recorded pre-edit diff.
+    other than the allowed staged-mode pointer wording near the top and the
+    Phase 9.17 no-global-temp/per-run cleanup instructions. Pre-existing dirty
+    hunks may remain only if they match the recorded pre-edit diff.
   - Do not finalize if any heading route is broken.
   - Do not finalize if any routed heading points to a fenced example heading
     instead of a real canonical section.

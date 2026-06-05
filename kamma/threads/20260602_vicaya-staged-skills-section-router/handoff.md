@@ -3,7 +3,9 @@
 Session saved on 2026-06-04 after live staged-skill testing, Phase 9.14
 `1 + 4 + 2 + 3` hard-stop redistribution, a post-merge route-anchor fix after
 merging `main` into `sub-skills`, and a Phase 9.15 sync of the user's
-unfinished scratch runs.
+unfinished scratch runs. Updated on 2026-06-05 for Phase 9.16 durable Stage 2
+artifact handling after a live Phase 5 draft was lost from a global temporary
+directory, and Phase 9.17 no-global-temp plus final cleanup handling.
 
 ## Latest User Direction
 
@@ -64,10 +66,17 @@ matters.
   1. Canonical Phase 5 entry verification, scratch review, source/angle
      completeness checks, Devil's Advocate answers, bibliography/source
      allocation review, and a concise Phase 5 drafting plan; hard stop at a
-     scratch-logged Phase 5 in-progress checkpoint before full drafting.
+     scratch-logged Phase 5 in-progress checkpoint before full drafting. If any
+     Phase 5 draft payload exists before the Phase 5 gate, it must be saved
+     under `data/scratch/`, normally
+     `data/scratch/<scratch-slug>.phase5-draft.md`, and the path must be logged
+     in the main scratch.
   2. Finish Phase 5 drafting/integration and Phase 5 gate, then run Phase 6
      second-pass review and Phase 6 gate; hard stop and hand off to
-     `vicaya-3-complete`.
+     `vicaya-3-complete`. Do not leave Phase 5 draft content, Phase 6 raw
+     review output, or handoff-critical synthesis payloads only in any
+     global/system temporary directory, repo-local `temp/`, or any other
+     non-scratch path.
 - Stage 3: keep 3 invocations and rebalance the over-limit Run 2 into the
   underused Run 1:
   1. Writer brief, scratch-local draft file setup, title/slug/outline/source
@@ -78,12 +87,14 @@ matters.
      frontmatter `canon_refs` confirmation, and completion audit; then hard
      stop before any vault write.
   3. Vault write, validation, PDF, Phase 7 gate, note/run-report sync, final
-     report, and self-improvement loop.
+     repo-local temp cleanup, report, and self-improvement loop.
 
 The staged skills, spec, plan, and handoff have been updated for this approved
-`1 + 4 + 2 + 3` hard-stop redistribution. A fresh review currently exists at
+`1 + 4 + 2 + 3` hard-stop redistribution, plus the Phase 9.16 durable Stage 2
+artifact guard and Phase 9.17 no-global-temp/final-cleanup guard. A fresh
+review currently exists at
 `kamma/threads/20260602_vicaya-staged-skills-section-router/review.md` with
-verdict `PASSED`.
+verdict `PASSED`, but it predates Phases 9.16 and 9.17.
 
 Earlier user direction still applies: the monolithic `skill/vicaya/SKILL.md`
 Phase 5 "Deferred-draft pattern" self-improvement hunk was intentionally
@@ -100,10 +111,10 @@ When the user is ready to finalize this Kamma thread, continue with:
 /kamma:4-finalize @kamma/threads/20260602_vicaya-staged-skills-section-router/
 ```
 
-Because Phase 9.15 changed handoff text and ignored scratch run state after the
-current `PASSED` review, run a fresh review or focused review check first if
-strict Kamma finalization requires every post-review handoff change to be
-covered. No staged skill behavior changed in Phase 9.15.
+Because Phase 9.15 changed handoff text/ignored scratch run state and Phases
+9.16-9.17 changed staged/canonical skill behavior after the current `PASSED`
+review, run a fresh review or focused review check before strict Kamma
+finalization.
 
 The staged workflow is currently in live testing. The user may return in the
 next session with additions, issues, or behavior reports from running the new
@@ -167,12 +178,11 @@ docs(vicaya): align staged completion route with note sync heading
 Current restart prompt for the next session:
 
 ```text
-Continue @kamma/threads/20260602_vicaya-staged-skills-section-router. Read handoff.md first. The staged router design is reviewed with verdict PASSED, and Phase 9.15 synced the two unfinished scratch runs to Phase 9.14 hard-stop logic. Recheck git status, handle any new user-reported staged test issue, then proceed toward /kamma:4-finalize when ready. Do not reintroduce the monolithic Phase 5 deferred-draft hunk; that was intentionally reverted.
+Continue @kamma/threads/20260602_vicaya-staged-skills-section-router. Read handoff.md first. The staged router design was previously reviewed with verdict PASSED, but Phases 9.16 and 9.17 changed staged/canonical behavior after that review: durable Stage 2 artifacts, no global temporary directories, and final per-run temp cleanup. Recheck git status, handle any new user-reported staged test issue, then run a fresh review or focused review check before /kamma:4-finalize. Do not reintroduce the monolithic Phase 5 deferred-draft hunk; that was intentionally reverted.
 ```
 
-`review.md` currently exists with verdict `PASSED`. Because Phase 9.15 changed
-only handoff text and ignored scratch run state after that review, run a fresh
-review or focused review check only if strict finalization requires it.
+`review.md` currently exists with verdict `PASSED`, but it predates Phases 9.16
+and 9.17. Run a fresh review or focused review check before finalization.
 
 ## Current State Snapshot
 
@@ -187,7 +197,18 @@ review or focused review check only if strict finalization requires it.
 - Phase 9.15 in `plan.md` is complete: the two unfinished user-named research
   scratches were patched with latest Phase 9.14 supersession notes, and this
   handoff was corrected after checking the current `PASSED` review.
-- `skill/vicaya/SKILL.md` currently has no diff from this Stage 3 change.
+- Phase 9.16 in `plan.md` is complete: Stage 2 now requires any Phase 5 draft
+  payload to be saved under `data/scratch/`, normally
+  `data/scratch/<scratch-slug>.phase5-draft.md`, and requires Phase 5 draft
+  content, Phase 6 raw review output, and handoff-critical synthesis payloads
+  to be recorded in scratch before any hard stop.
+- Phase 9.17 in `plan.md` is complete: active canonical/staged instructions no
+  longer use global temporary directories. Disposable extraction files use a
+  per-run repo-local temp directory, and Stage 3 final completion cleans only
+  that directory after sync attempts. Scratch-local draft/review files remain
+  durable dossier state and are not cleaned.
+- `skill/vicaya/SKILL.md` now has the Phase 9.17 no-global-temp and cleanup
+  changes.
 - Earlier Stage 1/Stage 3 revisions touched `skill/vicaya-0-scope/SKILL.md`,
   `skill/vicaya-1-gather/SKILL.md`, and `skill/vicaya-3-complete/SKILL.md`,
   plus this thread's `spec.md`, `plan.md`, and `handoff.md`.
@@ -198,6 +219,10 @@ review or focused review check only if strict finalization requires it.
   stages:
   - `data/scratch/papanca-canon-usage.md`
   - `data/scratch/vicikiccha-hindrance-vs-fetter.md`
+- The active ignored scratch
+  `data/scratch/vicikiccha-hindrance-vs-fetter.md` also has a Phase 5
+  `stage-2-durable-artifact-phase-9.16` supersession note. It is run-state, so
+  it will not appear in normal `git status --short`.
 - The scratch-local Phase 7 draft file remains a completion artifact only. The
   vault must receive only the complete audited note.
 
@@ -222,8 +247,15 @@ review or focused review check only if strict finalization requires it.
   pre-existing extensive scratch dossiers. Phase 9.15 added newer Phase 9.14
   supersession notes so the current unfinished runs follow the final
   `1 + 4 + 2 + 3` redistribution.
-- Kept `skill/vicaya/SKILL.md` unchanged during this session. The canonical
-  analytical workflow still owns research behavior.
+- Phase 9.16 audited the staged skills for non-durable artifact risks. The
+  active issue was Stage 2: a Phase 5 draft/payload could be left in a
+  global/system temporary directory or repo-local `temp/` before the Phase 5
+  gate. Stage 2 now requires durable `data/scratch/` storage and scratch-logged
+  paths for those artifacts.
+- Phase 9.17 removed all global temporary directory usage from the canonical
+  routed skill. Phase 6 prompt/output files are now scratch-local, disposable
+  extraction files use per-run repo-local `temp/<scratch-slug>/`, and final
+  Stage 3 cleanup removes only that per-run temp directory.
 - Added/updated bounded context-management instructions in:
   - `skill/vicaya-0-scope/SKILL.md`
   - `skill/vicaya-1-gather/SKILL.md`
@@ -482,7 +514,7 @@ Checks run during this session:
 - Rerun succeeded with:
 
 ```text
-UV_CACHE_DIR=/private/tmp/uv-cache
+UV_CACHE_DIR=temp/uv-cache
 VICAYA_SCRATCH=/Users/deva/Documents/dps/vicaya/data/scratch/moha-amoha-avijja-vijja.md
 ```
 
@@ -492,13 +524,14 @@ VICAYA_SCRATCH=/Users/deva/Documents/dps/vicaya/data/scratch/moha-amoha-avijja-v
   before finalization.
 - If resuming `papanca-canon-usage`, run `vicaya-2-synthesize-review` for
   Phase 6 cross-check/gate, then hand off to `vicaya-3-complete`.
-- If resuming `vicikiccha-hindrance-vs-fetter`, run `vicaya-1-gather` for the
-  remaining grouped Stage 1 block: routed Phase 3b skip if applicable, then
-  Phase 4a/4b/4c and Phase 4c gate.
+- If resuming `vicikiccha-hindrance-vs-fetter`, `.active` currently points to
+  Phase 5. Run `vicaya-2-synthesize-review` with the same slug to resume from
+  the logged Phase 5 drafting plan, save any Phase 5 draft payload under
+  `data/scratch/`, complete the Phase 5 gate, then Phase 6 cross-check/gate.
 - If no further staged-skill design changes are made, proceed toward
-  `/kamma:4-finalize`. `review.md` is currently `PASSED`; rerun review or a
-  focused review check first only if strict finalization should cover the
-  post-review Phase 9.15 handoff/scratch sync.
+  `/kamma:4-finalize`. `review.md` is currently `PASSED`, but rerun review or
+  a focused review check first because Phases 9.16 and 9.17 changed behavior
+  after that review.
 
 ## Known Caveats
 
