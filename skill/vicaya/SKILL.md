@@ -1072,6 +1072,8 @@ If the hit is a `subhead` rend (the row introduces the next sutta), prefer looki
 **After individual hits cluster in the same book or nipāta, scan the wider structural unit.** Stem-search returns scattered paragraph hits but misses thematic chapter blocks (e.g. AN8.31–39 dāna chapter, SN35.* sense-contact group). When hits concentrate in one table, do a broader window query:
 
 ```bash
+CANON_DB=$(grep '^VICAYA_CANON_DB=' .env | cut -d= -f2- | sed "s|^~|$HOME|")
+test -s "$CANON_DB" || { echo "VICAYA_CANON_DB missing or empty: $CANON_DB" >&2; exit 1; }
 sqlite3 -readonly "$CANON_DB" \
   "SELECT id, paranum, pali_text, english_translation FROM <table> \
    WHERE id BETWEEN <first_cluster_id - 50> AND <last_cluster_id + 200> \
