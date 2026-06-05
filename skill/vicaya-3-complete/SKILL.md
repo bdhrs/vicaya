@@ -9,7 +9,7 @@ This staged skill is a section router into `../vicaya/SKILL.md`.
 
 Recommended model tier: fast if the routed canonical scratch/gate state shows Phase 5/6 synthesis is complete.
 
-`../vicaya/SKILL.md is the only behavioral source of truth`.
+`../vicaya/SKILL.md` is the only behavioral source of truth.
 
 Do not summarize, paraphrase, replace, weaken, or rewrite any routed canonical instruction.
 

@@ -9,7 +9,7 @@ This staged skill is a section router into `../vicaya/SKILL.md`.
 
 Recommended model tier: advanced.
 
-`../vicaya/SKILL.md is the only behavioral source of truth`.
+`../vicaya/SKILL.md` is the only behavioral source of truth.
 
 Do not summarize, paraphrase, replace, weaken, or rewrite any routed canonical instruction.
 
