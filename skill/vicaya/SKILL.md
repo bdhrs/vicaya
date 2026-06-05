@@ -39,6 +39,7 @@ These rules apply to every run, by every agent. They are part of the skill, not 
 8. **Query YouTube in English, anchor with Pāḷi sutta name + numeric reference.** Pāḷi-heavy queries return zero results; long English glosses return zero results. `apannaka sutta MN 60` works; `apannaka safe-bet wager rebirth` returns nothing.
 9. **CST paragraph numbers are book-global, not sutta-local.** A `paranum` returned by `search-canon` is a continuous index across the entire book file — para 261 in `s0202m_mul` is MN78, not MN60. Always run `resolve-citation` to confirm which sutta a paragraph belongs to before citing it. Never assume the paragraph number matches a sutta number.
 10. **YAML frontmatter safety.** Always wrap YAML values in double quotes if they contain a colon followed by a space (e.g. `"Topic: Subtitle"`). Unquoted colons break Obsidian's property rendering.
+11. **No global temporary directories.** Every stage must keep working files inside this repo. Use `data/scratch/` for anything needed after an interruption, restart, context refresh, or handoff. Use repo-local `temp/` only for disposable extraction files, and create it with `mkdir -p temp` before use.
 
 ## Inputs
 
@@ -104,7 +105,7 @@ Subcommands (each prints JSON to stdout):
 | `sc-parallels CITATION` | `--no-text` | Look up parallels for a citation (e.g. `mn18`, `sn35.28`) in the offline SuttaCentral archive. Returns `SCParallel` objects: `ref`, `resemblance` (bool, `~` prefix), `paragraph_range`, `text_pali`, `text_lzh`, `text_san`, `text_pra`, `translation_en`, `text_gaps` (list — explicit when text isn't in the partial archive). Parallel *identification* is comprehensive; text retrieval is best-effort. |
 | `sc-search QUERY` | `--lang pli\|lzh\|san\|pra\|en` `--limit N` | Fixed-string grep across SuttaCentral offline root texts in one language. `lzh` = Literary Chinese Āgamas. Returns `VaultHit`s with the matched JSON segment. |
 
-Parse the JSON with `jq` or read it as a file. Only fall back to `uv run python -c "..."` if you genuinely need to combine helpers in one step — and if so, write a short `.py` script to a temp path and run that, rather than a heredoc.
+Parse the JSON with `jq` or read it as a file. Only fall back to `uv run python -c "..."` if you genuinely need to combine helpers in one step — and if so, write a short `.py` script under repo-local `temp/` and run that, rather than a heredoc.
 
 ## Helper return shapes (read before calling)
 
@@ -1187,11 +1188,17 @@ format-appropriate tool (see below).
 **Format-agnostic extraction.** Books are in any format — PDF, epub, MOBI, doc,
 txt, AZW3, or others. Never assume epub. Per-format extraction:
 
+```bash
+SCRATCH="${VICAYA_SCRATCH:-data/scratch/<scratch-slug>.md}"
+RUN_TEMP="temp/$(basename "${SCRATCH%.md}")"
+mkdir -p temp
+```
+
 | Format | Command |
 |---|---|
 | PDF | `pdftotext /path/to/book.pdf -` |
-| epub | `unzip -o /path/to/book.epub -d /tmp/epub_extract && rg "<term>" /tmp/epub_extract/` |
-| Any format | `ebook-convert /path/to/book.<ext> /tmp/book.txt && rg "<term>" /tmp/book.txt` |
+| epub | `mkdir -p "$RUN_TEMP/epub_extract" && find "$RUN_TEMP/epub_extract" -mindepth 1 -depth -delete && unzip -q /path/to/book.epub -d "$RUN_TEMP/epub_extract" && rg "<term>" "$RUN_TEMP/epub_extract"/` |
+| Any format | `mkdir -p "$RUN_TEMP" && ebook-convert /path/to/book.<ext> "$RUN_TEMP/book.txt" && rg "<term>" "$RUN_TEMP/book.txt"` |
 
 `ebook-convert` (ships with Calibre) is the universal fallback. The book's Calibre
 path is in the metadata returned by `search-calibre` or from the library's folder.
@@ -1486,10 +1493,14 @@ above for format rules.
 
 Pipe your synthesis to a second model for an independent review:
 
-Write the prompt to a temp file, then pipe it in (avoids all shell quoting hazards):
+Write the prompt to scratch-local files, then pipe it in (avoids all shell quoting hazards):
 
 ```bash
-cat > /tmp/cross_check_prompt.txt <<'EOF'
+SCRATCH="${VICAYA_SCRATCH:-data/scratch/<scratch-slug>.md}"
+CROSS_CHECK_PROMPT="${SCRATCH%.md}.cross-check-prompt.txt"
+CROSS_CHECK_REVIEW="${SCRATCH%.md}.cross-check-review.txt"
+
+cat > "$CROSS_CHECK_PROMPT" <<'EOF'
 You are reviewing a research synthesis on a Pāḷi/Buddhist question.
 For each of the five areas below, respond specifically or say "no issue":
 
@@ -1505,10 +1516,12 @@ Synthesis:
 <the synthesis>
 EOF
 
-uv run tools/research_sources.py cross-check < /tmp/cross_check_prompt.txt > /tmp/cross_check_review.txt
+uv run tools/research_sources.py cross-check < "$CROSS_CHECK_PROMPT" > "$CROSS_CHECK_REVIEW"
+uv run tools/research_sources.py scratch-log 6 cross-check-review "$CROSS_CHECK_REVIEW" \
+  --summary "Raw Phase 6 cross-check output saved in the scratch-local review file and integrated before the Phase 6 gate."
 ```
 
-The `cross-check` helper POSTs to OpenRouter (model list in `data/openrouter_models.json` — edit freely, read at runtime). OpenRouter routes server-side via `models: [...]`: the first reachable model wins, subsequent entries cover outages / rate-limits. On any failure (no key, all models down, network error) the helper returns the `# SELF_REVIEW:` sentinel. **If `/tmp/cross_check_review.txt` begins with `# SELF_REVIEW:`**, no external provider was reachable. In that case, run the embedded five-point checklist on your own synthesis: read each numbered item, audit your synthesis against it, and apply fixes the same way you would for an external review. Do not write anything in the note acknowledging the self-review fallback; it is still subject to the IRON RULE below. The terminal report in Phase 7 records `cross-check: self-review` instead of a model name.
+The `cross-check` helper POSTs to OpenRouter (model list in `data/openrouter_models.json` — edit freely, read at runtime). OpenRouter routes server-side via `models: [...]`: the first reachable model wins, subsequent entries cover outages / rate-limits. On any failure (no key, all models down, network error) the helper returns the `# SELF_REVIEW:` sentinel. **If the scratch-local review file begins with `# SELF_REVIEW:`**, no external provider was reachable. In that case, run the embedded five-point checklist on your own synthesis: read each numbered item, audit your synthesis against it, and apply fixes the same way you would for an external review. Do not write anything in the note acknowledging the self-review fallback; it is still subject to the IRON RULE below. The terminal report in Phase 7 records `cross-check: self-review` instead of a model name.
 
 **Citation pre-annotation.** Every sutta reference in the helper's output arrives already labelled `[VERIFIED]` or `[REJECTED — not in sutta_info]` (existence check against `dpd.db sutta_info`). The label is existence-only: `[VERIFIED]` means the citation is a real sutta, **not** that the reviewer's content claim about it is correct. Pāḷi-quote misreads (e.g. `asantasanto` confused with `asanta`) and conceptual conflations are *not* caught by this — those still need scholarly judgement during integration. **Drop every `[REJECTED]` claim entirely; do not paraphrase, do not retain.** A `[REJECTED]` tag anywhere in the final vault note will cause `scratch-gate 7` to refuse, so they must be excised cleanly.
 
@@ -1832,6 +1845,22 @@ A sync failure is never fatal — the note is already saved to the vault.
 
 → **Phase 7 exit:** after validation/PDF generation, run `scratch-gate 7`, then `uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"`; after writing the reflection, run `uv run scripts/sync_run_report.py`. The run is not complete until the gate passes and both sync commands have been attempted — the gate confirms the vault path and PDF path are recorded in the dossier, note sync publishes the saved note, and run-report sync publishes the latest `runs/*.md` report. `scripts/sync_run_report.py` is a pre-approved run-report publishing script and may pull, commit, and push Vicaya run reports in this project repo. New or materially modified scripts are not automatically pre-approved for git, publishing, deployment, sync, delete, or overwrite operations.
 
+After both sync commands have been attempted, clean only this run's disposable repo-local temp directory; never remove `data/scratch/` or scratch-local draft/review files:
+
+```bash
+SCRATCH="${VICAYA_SCRATCH:-data/scratch/<scratch-slug>.md}"
+RUN_TEMP="temp/$(basename "${SCRATCH%.md}")"
+case "$RUN_TEMP" in
+  temp/*)
+    if [ -d "$RUN_TEMP" ]; then
+      find "$RUN_TEMP" -type f -delete
+      find "$RUN_TEMP" -depth -type d -empty -delete
+    fi
+    ;;
+  *) echo "Refusing to remove unexpected temp path: $RUN_TEMP" ;;
+esac
+```
+
 ## Final report to the user
 
 The terminal report has two distinct sections. Keep them separate — conflating them was a recurring bug in prior runs.
@@ -1862,9 +1891,11 @@ If fewer than 10, omit this section entirely.
 - **Calibre returns 0 hits**: first distinguish empty from error — `calibre-check` exits 1 on a lock. If locked, note the gap and skip rather than retrying fruitlessly. If reachable and truly empty: try fewer/looser tags; check `data/calibre_tags.csv` for the right vocabulary; try `authors:` with a known authority. If early-session queries succeeded but mid-session queries return 0 with no lock, suspect parallel-agent contention — fall back to `pdftotext` or `ebook-convert` on already-known book IDs from earlier hits.
 - **`cross-check` returns `# SELF_REVIEW:`**: OpenRouter is unreachable. Run the embedded checklist on your own synthesis as described in Phase 6; do not retry the helper. Common root causes: no `OPENROUTER_API_KEY` set (check `.env`), an empty / malformed `data/openrouter_models.json`, or every free model in the chain simultaneously rate-limited (rare). (Note: the legacy `gemini-cross-check` subcommand returns a `# ERROR:` line on failure instead — same response: skip the section and continue.)
 - **Obsidian create fails**: print the rendered markdown to the terminal so the user can save it manually.
-- **PDF URL — WebFetch returns garbled or empty content**: WebFetch cannot decode PDF binary. Instead, save the file to a temp path and extract with `pdftotext`:
+- **PDF URL — WebFetch returns garbled or empty content**: WebFetch cannot decode PDF binary. Instead, save the file under this run's repo-local temp directory and extract with `pdftotext`:
   ```bash
-  curl -sL "<url>" -o /tmp/source.pdf && pdftotext /tmp/source.pdf -
+  SCRATCH="${VICAYA_SCRATCH:-data/scratch/<scratch-slug>.md}"
+  RUN_TEMP="temp/$(basename "${SCRATCH%.md}")"
+  mkdir -p "$RUN_TEMP" && curl -sL "<url>" -o "$RUN_TEMP/source.pdf" && pdftotext "$RUN_TEMP/source.pdf" -
   ```
   `pdftotext` is at `/usr/bin/pdftotext` (Poppler 24.02) and handles Unicode including Pāḷi diacritics. If the PDF is password-protected or corrupt, `pdftotext` will exit non-zero — note the gap and move on. No other PDF extraction tool is reliably available on this system.
 
