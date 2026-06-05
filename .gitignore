@@ -19,6 +19,7 @@ data/youtube_cache/*
 # Research scratch files — per-run working notes, not committed.
 data/scratch/*
 !data/scratch/.gitkeep
+data/tipitaka-translation-data.db
 
 # Kamma run logs — machine-specific operational data
 kamma/runs/

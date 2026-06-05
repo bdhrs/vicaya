@@ -1045,17 +1045,19 @@ uv run tools/research_sources.py resolve-citation s0201m_mul 23
 **Parallel argument structures — pull the whole range.** Many suttas run the same argument across multiple parallel blocks (e.g. MN60's five rebirth-wager positions, AN 4.170's four paths, the five-aggregate formulae). Keyword search returns only the blocks containing your keyword — typically 1–2 of 5–10. When hits show a repeating formula (`''Tatra, gahapatayo…`, `''Kathañca…`, `''Idha bhikkhave…`), the other blocks carry the same structure with different terms and will be missed. Fix: find the `id` of the first hit and the `id` of the next sutta subhead, then pull everything in between:
 
 ```bash
-CANON_DB=$(eval echo $(grep VICAYA_CANON_DB /home/bodhirasa/MyFiles/3_Active/vicaya/.env | cut -d= -f2-))
-sqlite3 "$CANON_DB" \
+CANON_DB=$(grep '^VICAYA_CANON_DB=' .env | cut -d= -f2- | sed "s|^~|$HOME|")
+test -s "$CANON_DB" || { echo "VICAYA_CANON_DB missing or empty: $CANON_DB" >&2; exit 1; }
+sqlite3 -readonly "$CANON_DB" \
   "SELECT id, paranum, pali_text, english_translation FROM <table> WHERE id BETWEEN <start_id> AND <end_id>;"
 ```
 
 **When a search hit has empty `paranum`** — this is normal for subhead, gatha, and continuation rows within a paragraph (only the first row of each paragraph carries `paranum`). To find the owning sutta, query by `id`:
 
 ```bash
-CANON_DB=$(eval echo $(grep VICAYA_CANON_DB /home/bodhirasa/MyFiles/3_Active/vicaya/.env | cut -d= -f2-))
+CANON_DB=$(grep '^VICAYA_CANON_DB=' .env | cut -d= -f2- | sed "s|^~|$HOME|")
+test -s "$CANON_DB" || { echo "VICAYA_CANON_DB missing or empty: $CANON_DB" >&2; exit 1; }
 # Find the nearest preceding paranum for a hit at row <id>:
-sqlite3 "$CANON_DB" \
+sqlite3 -readonly "$CANON_DB" \
   "SELECT paranum FROM <table> WHERE id < <hit_id> AND paranum != '' ORDER BY id DESC LIMIT 1;"
 # Then resolve it:
 uv run tools/research_sources.py resolve-citation <table> <paranum>
@@ -1070,7 +1072,7 @@ If the hit is a `subhead` rend (the row introduces the next sutta), prefer looki
 **After individual hits cluster in the same book or nipāta, scan the wider structural unit.** Stem-search returns scattered paragraph hits but misses thematic chapter blocks (e.g. AN8.31–39 dāna chapter, SN35.* sense-contact group). When hits concentrate in one table, do a broader window query:
 
 ```bash
-sqlite3 "$CANON_DB" \
+sqlite3 -readonly "$CANON_DB" \
   "SELECT id, paranum, pali_text, english_translation FROM <table> \
    WHERE id BETWEEN <first_cluster_id - 50> AND <last_cluster_id + 200> \
    AND pali_text != '' ORDER BY id;"
