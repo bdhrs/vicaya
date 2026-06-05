@@ -1,4 +1,4 @@
-"""Synchronize Vicaya notes with the remote repository: pull, commit, and push."""
+"""Commit a single Vicaya note and best-effort push it to the remote."""
 import os
 import subprocess
 import sys
@@ -22,9 +22,9 @@ def load_dotenv(path: Path) -> None:
         os.environ.setdefault(key, val)
 
 
-def run_git(args: list[str], repo_path: Path) -> subprocess.CompletedProcess:
+def run_git(args: list[str], repo_path: Path, check: bool = True) -> subprocess.CompletedProcess:
     cmd = ["git", "-C", str(repo_path)] + args
-    return subprocess.run(cmd, check=True, capture_output=True, text=True)
+    return subprocess.run(cmd, check=check, capture_output=True, text=True)
 
 
 def main():
@@ -46,42 +46,32 @@ def main():
         rprint(f"[red]Error: Notes repository directory not found: {notes_repo}[/red]")
         sys.exit(1)
 
+    if not args.filename:
+        rprint("[yellow]No filename provided; nothing to commit.[/yellow]")
+        return
+
+    filename = args.filename
+    if filename.startswith("Vicaya/"):
+        filename = filename[7:]
+
+    note_path = notes_repo / filename
+    if not note_path.exists():
+        rprint(f"[red]Error: Note file not found: {note_path}[/red]")
+        sys.exit(1)
+
     try:
-        rprint("[cyan]Git pull...[/cyan]", end=" ")
-        run_git(["pull", "--rebase"], notes_repo)
+        rprint("[cyan]Git add...[/cyan]", end=" ")
+        run_git(["add", "--", filename], notes_repo)
         rprint("[green]ok[/green]")
 
-        if args.filename:
-            filename = args.filename
-            if filename.startswith("Vicaya/"):
-                filename = filename[7:]
-
-            note_path = notes_repo / filename
-            if not note_path.exists():
-                rprint(f"[red]Error: Note file not found: {note_path}[/red]")
-                sys.exit(1)
-
-            rprint("[cyan]Git add...[/cyan]", end=" ")
-            run_git(["add", filename], notes_repo)
-            rprint("[green]ok[/green]")
-
-            status = run_git(["status", "--porcelain"], notes_repo)
-            if status.stdout.strip():
-                slug = Path(filename).stem
-                rprint("[cyan]Git commit...[/cyan]", end=" ")
-                run_git(["commit", "-m", f"note: {slug}"], notes_repo)
-                rprint("[green]ok[/green]")
-            else:
-                rprint("[yellow]Nothing to commit[/yellow]")
-
-            rprint("[cyan]Git push...[/cyan]", end=" ")
-            run_git(["push", "origin", "HEAD"], notes_repo)
-            rprint("[green]ok[/green]")
-
-            rprint(f"[green]Successfully synced {filename}[/green]")
+        staged = run_git(["diff", "--cached", "--quiet", "--", filename], notes_repo, check=False)
+        if staged.returncode == 0:
+            rprint("[yellow]Nothing to commit[/yellow]")
         else:
-            rprint("[yellow]No filename provided, only pull performed.[/yellow]")
-
+            slug = Path(filename).stem
+            rprint("[cyan]Git commit...[/cyan]", end=" ")
+            run_git(["commit", "-m", f"note: {slug}", "--", filename], notes_repo)
+            rprint("[green]ok[/green]")
     except subprocess.CalledProcessError as e:
         rprint("[red]failed[/red]")
         rprint(f"[red]Git command failed: git {' '.join(e.cmd)}[/red]")
@@ -90,9 +80,18 @@ def main():
         if e.stderr:
             print(e.stderr)
         sys.exit(e.returncode)
-    except Exception as e:
-        rprint(f"[red]An unexpected error occurred: {e}[/red]")
-        sys.exit(1)
+
+    # Push is best-effort: a remote failure must not undo the local commit.
+    rprint("[cyan]Git push...[/cyan]", end=" ")
+    push = run_git(["push", "origin", "HEAD"], notes_repo, check=False)
+    if push.returncode == 0:
+        rprint("[green]ok[/green]")
+        rprint(f"[green]Successfully synced {filename}[/green]")
+    else:
+        rprint("[yellow]push failed (commit saved locally)[/yellow]")
+        if push.stderr:
+            print(push.stderr)
+        rprint(f"[green]Committed {filename} locally[/green]")
 
 
 if __name__ == "__main__":
