@@ -60,9 +60,11 @@ If no Stage 2 context plan exists, or if a `context-plan-opt-out` exists, procee
 
 If a Stage 2 context plan exists, it is binding for this staged run and overrides any model-tier recommendation. Run only the next planned synthesis/review pass, then hard stop after the planned scratch checkpoint or canonical gate and hand off with the same scratch slug. Do not merge, skip, or continue into the next planned pass.
 
-Default extensive-run passes are:
+Hard-stop safety mode passes are:
 
 - Phase 5 entry verification, scratch review, source completeness check, angle coverage check, Devil's Advocate answers, bibliography/source allocation review, and a concise Phase 5 drafting plan recorded in scratch using the routed canonical scratch logging mechanism; hard stop before full drafting and tell the user to refresh context and rerun `vicaya-2-synthesize-review` with the same scratch slug. If any Phase 5 draft payload is written before the Phase 5 gate, save it only under `data/scratch/`, normally `data/scratch/<scratch-slug>.phase5-draft.md`, and log that path in the main scratch before stopping.
 - Resume from the Phase 5 drafting plan and any scratch-logged Phase 5 draft path, complete Phase 5 drafting/integration and the Phase 5 gate, then run Phase 6 second-pass review and the Phase 6 gate; hard stop and hand off to `vicaya-3-complete` with the same scratch slug. Do not leave Phase 5 draft content, Phase 6 raw review output, or handoff-critical synthesis payloads only in any global/system temporary directory, repo-local `temp/`, or any other non-scratch path.
+
+Whether or not a Stage 2 context plan exists, do not carry handoff-critical synthesis or review payloads only in model context. If any Phase 5 draft payload exists before the Phase 5 gate, save it under `data/scratch/`, normally `data/scratch/<scratch-slug>.phase5-draft.md`, and log that path in the main scratch. Save Phase 6 raw review output and handoff-critical synthesis payloads in scratch-local files or the main scratch before any stop, context refresh, or handoff. This is durability only; it does not add synthesis or review requirements beyond the routed canonical sections.
 
 Do not read or create staged shared-reference files under skill/vicaya/shared/.

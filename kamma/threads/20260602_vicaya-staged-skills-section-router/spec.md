@@ -349,10 +349,32 @@ unchanged because it targets a model/context profile that does not need this
 staged-context protection.
 
 `vicaya-0-scope` may include one bounded stage-local context-plan block that
-asks the advanced model to decide, after Phase 0 scoping and before Phase 1
-work, whether Stage 1, Stage 2, and Stage 3 are likely to be extensive enough
-to require fixed fresh-context hard stops. This context plan is allowed only to
-manage staged-run context-budget risk.
+asks the advanced model to choose, after Phase 0 scoping and before Phase 1
+work, between the default compact-tolerant four-stage flow and the special
+hard-stop safety mode. This context plan is allowed only to manage staged-run
+context-budget risk.
+
+The default staged flow is:
+
+- `vicaya-0-scope`
+- `vicaya-1-gather`
+- `vicaya-2-synthesize-review`
+- `vicaya-3-complete`
+
+Normal context compaction is acceptable in this default flow because the routed
+canonical scratch/resume system protects durable run state. Stage 0 must not
+record `stage-1-context-plan`, `stage-2-context-plan`, or
+`stage-3-context-plan` notes merely because the run is important, asks for a
+full note, or will use several sources.
+
+Stage 0 may record the special hard-stop safety plan only when Phase 0
+identifies objective context risk: multiple Pali terms or doctrinal frames that
+each require separate searches; required comparison across canon, commentary,
+ṭīkā, Abhidhamma, Visuddhimagga, or DPD glosses; several investigation angles
+that each need real source work; an explicitly source-exhaustive or
+comprehensive request; an expected final note with many large evidence
+sections; or prior live-run token evidence from a similar topic near or above
+the context limit.
 
 `vicaya-1-gather`, `vicaya-2-synthesize-review`, and `vicaya-3-complete` may
 include bounded stage-local context-break guards. These guards must honor any
@@ -362,9 +384,10 @@ same scratch slug. A recorded context plan is binding for staged mode and
 overrides model-tier recommendations unless the user explicitly opts out before
 Stage 1 begins and that opt-out is recorded in scratch.
 
-For extensive Stage 1 gathering, the default context plan must prefer grouped
-cost-control source-block hard stops over per-source micro-sessions. Stage 1
-source blocks should default to four bundled sessions where applicable:
+For Stage 1 gathering under the special hard-stop safety mode, the context plan
+must prefer grouped cost-control source-block hard stops over per-source
+micro-sessions. Stage 1 source blocks should default to four bundled sessions
+where applicable:
 
 - Phase 1 vault/context setup plus root-canon mūla/sutta research;
 - canonical exegesis/commentary research only;
@@ -382,9 +405,9 @@ commentary/ṭīkā research remains. That stop must be recorded as a concise
 in-progress handoff note in scratch. It must not write the Phase 2 gate until
 all canonical Phase 2 obligations are complete.
 
-For extensive Stage 2 synthesis/review, the default context plan must keep two
-sessions and rebalance the heavy Phase 5 work into the lighter Phase 6 session
-without introducing new synthesis or review logic:
+For Stage 2 synthesis/review under the special hard-stop safety mode, the
+context plan must keep two sessions and rebalance the heavy Phase 5 work into
+the lighter Phase 6 session without introducing new synthesis or review logic:
 
 - Phase 5 entry verification, scratch review, source completeness check, angle
   coverage check, Devil's Advocate answers, bibliography/source allocation
@@ -399,8 +422,8 @@ without introducing new synthesis or review logic:
   in any global/system temporary directory, repo-local `temp/`, or any other
   non-scratch path.
 
-For extensive Stage 3 completion, the default context plan may use a
-scratch-local Phase 7 draft file under `data/scratch/`, normally
+For Stage 3 completion under the special hard-stop safety mode, the context
+plan may use a scratch-local Phase 7 draft file under `data/scratch/`, normally
 `data/scratch/<scratch-slug>.phase7-draft.md`. The draft file is a durable
 completion artifact for section-by-section note writing; the main scratch must
 record the draft path, section order, source allocation, section status, and
@@ -415,8 +438,8 @@ sections are finished and checked against the routed canonical Phase 7,
 frontmatter, bibliography, and style requirements.
 
 After live testing showed that adaptive "continue while context remains healthy"
-wording can still push Stage 3 completion to the edge of context, extensive
-Stage 3 completion must default to a fixed three-run split:
+wording can still push Stage 3 completion to the edge of context, Stage 3 under
+the special hard-stop safety mode must use a fixed three-run split:
 
 - Run 1: create the Phase 7 writer brief and scratch-local draft file, record
   title/slug/outline/source allocation/frontmatter targets, write `## Question`,
@@ -430,38 +453,44 @@ Stage 3 completion must default to a fixed three-run split:
   run's repo-local temp directory, complete the final user report, and run the
   self-improvement loop.
 
-Under these default splits, staged skills must not continue from one run group
-into the next for any reason. Do not rely on model judgement such as "context
-seems comfortable", "context pressure is high", "the dossier is manageable",
-or conditional/adaptive continuation. The model cannot reliably calculate
-current context usage, so context control must be predetermined hard stops.
+Under recorded hard-stop safety plans, staged skills must not continue from one
+run group into the next for any reason. Do not rely on model judgement such as
+"context seems comfortable", "context pressure is high", "the dossier is
+manageable", or conditional/adaptive continuation. The model cannot reliably
+calculate current context usage; if hard-stop safety mode is needed, context
+control must be predetermined hard stops.
 
-The approved extensive staged split is `1 + 4 + 2 + 3`: one Stage 0 scoping
+The approved hard-stop safety split is `1 + 4 + 2 + 3`: one Stage 0 scoping
 invocation, four Stage 1 gathering invocations, two Stage 2 synthesis/review
-invocations, and three Stage 3 completion invocations.
+invocations, and three Stage 3 completion invocations. It is not the default
+for every staged run.
 
 Golden rule: do not introduce any new research logic. The canonical
 `skill/vicaya/SKILL.md` remains the source of the actual workflow, quality
 standard, evidence rules, gates, helper behavior, final-note requirements, and
-self-improvement loop. This staged thread only redistributes the same
-canonical work across fixed fresh-context sessions.
+self-improvement loop. This staged thread only divides and checkpoints the same
+canonical work across staged sessions.
 
 The context plan and guards may:
 
 - record no split for ordinary runs;
-- record binding split Stage 1 passes for extensive research;
-- record binding split Stage 2 passes for extensive synthesis/review;
-- record binding split Stage 3 passes for extensive completion work;
+- record no split for compact-tolerant runs without objective context risk;
+- record binding split Stage 1 passes for hard-stop safety mode;
+- record binding split Stage 2 passes for hard-stop safety mode;
+- record binding split Stage 3 passes for hard-stop safety mode;
 - tell the user to refresh context between those passes;
 - use the canonical scratch logging mechanism routed from
   `../vicaya/SKILL.md` to record context plans, opt-outs, and mid-stage
   handoffs.
-- use a scratch-logged Stage 1 grouped source-block checkpoint inside Phase 2
-  when a source-class split is needed before the canonical Phase 2 gate.
+- use scratch-logged Stage 1 source-class checkpoints so gathering findings,
+  citations, source status, and skip rationales are not carried only in model
+  context.
 - use a scratch-local Phase 5 draft file under `data/scratch/` when synthesis
-  drafting or payload handoff needs a durable file before the Phase 5 gate.
-- use a scratch-local Phase 7 draft file for section-by-section final-note
-  drafting, with scratch-logged path and section status.
+  drafting or payload handoff needs a durable file before the Phase 5 gate,
+  whether or not a hard-stop plan exists.
+- use a scratch-local Phase 7 draft file for final-note drafting, with
+  scratch-logged path and section status, whether or not a hard-stop plan
+  exists.
 - use a per-run repo-local temp directory for disposable extraction files only,
   with cleanup in the final Stage 3 completion run.
 
@@ -469,8 +498,8 @@ The context plan and guards must not:
 
 - change any canonical research phase, source requirement, evidence standard,
   synthesis requirement, review requirement, helper behavior, or phase gate;
-- introduce any new research logic beyond fixed redistribution of canonical
-  work across fresh-context sessions;
+- introduce any new research logic beyond staged division and durable
+  checkpointing of canonical work;
 - create workflow state outside the canonical scratch system, except for the
   scratch-local Phase 5 and Phase 7 draft files allowed above;
 - perform work outside the owning staged skill's phase scope;
@@ -480,12 +509,12 @@ The context plan and guards must not:
 - allow a partial or draft note to be written to the vault.
 - use any global/system temporary directory in any stage.
 
-If Stage 0 judges the run extensive, it must explicitly tell the user that the
-planned fresh-context passes will be used by default, and that the user should
-say so before starting Stage 1 if they do not want those breaks. If the user
-opts out, the opt-out must be logged in scratch and later staged skills must
-treat the planned hard stops as disabled while keeping all canonical phase
-boundaries intact.
+If Stage 0 records hard-stop safety mode, it must explicitly tell the user that
+objective context risk was found, that planned fresh-context passes will be
+used, and that the user should say so before starting Stage 1 if they do not
+want those breaks. If the user opts out, the opt-out must be logged in scratch
+and later staged skills must treat the planned hard stops as disabled while
+keeping all canonical phase boundaries intact.
 
 Durable staged-mode documentation may mention these bounded context-management
 exceptions so it does not falsely describe all staged skills as pure routers.
@@ -528,25 +557,30 @@ The thread is done when:
   style as the monolithic `vicaya` registration and point to the rebuilt staged
   directories.
 - Review confirms there are no behavioral additions, omissions, or summaries in
-  the staged files, except for the bounded binding context-budget plan and
-  context-break guards allowed by the user-revision section above.
-- Review confirms extensive `vicaya-1-gather` runs use one grouped source-block
-  hard stop per invocation, default to no more than four Stage 1 gathering
-  invocations where all blocks apply, and do not treat a prior hard stop as
-  completion of the whole Stage 1 plan.
-- Review confirms extensive `vicaya-2-synthesize-review` runs default to two
-  invocations where the first records a Phase 5 drafting plan and the second
-  completes Phase 5 plus Phase 6, with any draft payload or Phase 6 review
-  output durably recorded in scratch before a hard stop.
-- Review confirms extensive `vicaya-3-complete` runs use a scratch-local
-  Phase 7 draft file for section-by-section note writing and never write an
-  incomplete draft to the vault.
+  the staged files, except for the bounded context-budget and durable
+  checkpoint controls allowed by the user-revision section above.
+- Review confirms `vicaya-0-scope` defaults to compact-tolerant four-stage flow
+  and records the hard-stop safety split only when Phase 0 identifies objective
+  context risk.
+- Review confirms hard-stop safety mode `vicaya-1-gather` runs use one grouped
+  source-block hard stop per invocation, default to no more than four Stage 1
+  gathering invocations where all blocks apply, and do not treat a prior hard
+  stop as completion of the whole Stage 1 plan.
+- Review confirms hard-stop safety mode `vicaya-2-synthesize-review` runs use
+  two invocations where the first records a Phase 5 drafting plan and the
+  second completes Phase 5 plus Phase 6, with any draft payload or Phase 6
+  review output durably recorded in scratch before a hard stop.
+- Review confirms `vicaya-1-gather`, `vicaya-2-synthesize-review`, and
+  `vicaya-3-complete` preserve handoff-critical gathering, synthesis/review,
+  and note-draft state durably even when no hard-stop plan exists.
+- Review confirms `vicaya-3-complete` uses a scratch-local Phase 7 draft file
+  for note writing and never writes an incomplete draft to the vault.
 - Review confirms no active Vicaya stage instruction uses a global/system
   temporary directory, and final completion cleans the per-run repo-local temp
   directory without removing `data/scratch/`.
-- Review confirms the approved extensive split is `1 + 4 + 2 + 3`, uses only
-  predetermined hard stops, and introduces no new research logic beyond
-  redistributing canonical work across fresh-context sessions.
+- Review confirms the approved hard-stop safety split is `1 + 4 + 2 + 3`, uses
+  only predetermined hard stops when recorded, and introduces no new research
+  logic beyond staged division and durable checkpointing of canonical work.
 
 ## What's not included
 

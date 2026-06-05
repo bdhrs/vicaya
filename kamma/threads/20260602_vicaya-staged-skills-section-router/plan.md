@@ -1121,6 +1121,53 @@ binding context-plan and context-break guard exceptions.
   - -> verify: `rg -n "cross-check-prompt|cross-check-review|phase5-draft|phase7-draft|repo-local .*temp|No global temporary|clean only this run" skill/vicaya/SKILL.md skill/vicaya-*/SKILL.md` shows scratch-local, repo-local, and cleanup replacements.
   - -> verify: `git diff --check -- skill/vicaya/SKILL.md skill/vicaya-0-scope/SKILL.md skill/vicaya-2-synthesize-review/SKILL.md skill/vicaya-3-complete/SKILL.md kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md kamma/threads/20260602_vicaya-staged-skills-section-router/handoff.md` passes.
 
+## Phase 9.18 - User revision: compact-tolerant default and risk-triggered hard stops
+
+- [x] Make the fixed hard-stop split a risk-triggered safety mode, not the
+  default for every extensive run.
+  - User clarified the current goal: research logic in `skill/vicaya/SKILL.md`
+    is working and must remain unchanged. This thread is only about dividing
+    that existing research pattern into staged skills, reducing unnecessary
+    cost, and ensuring nothing is lost across compaction or handoff.
+  - Default staged execution should be compact-tolerant four-stage flow:
+    `vicaya-0-scope` -> `vicaya-1-gather` ->
+    `vicaya-2-synthesize-review` -> `vicaya-3-complete`.
+  - Normal context compaction is acceptable in the default flow because the
+    routed canonical scratch/resume mechanism preserves durable run state.
+  - Update `skill/vicaya-0-scope/SKILL.md` so Stage 0 records
+    `stage-1-context-plan`, `stage-2-context-plan`, and `stage-3-context-plan`
+    only when Phase 0 identifies objective context risk: multiple Pali terms or
+    doctrinal frames needing separate searches; required canon/commentary/ṭīkā/
+    Abhidhamma/Visuddhimagga/DPD comparison; several investigation angles that
+    each require real source work; an explicitly source-exhaustive or
+    comprehensive request; an expected final note with many large evidence
+    sections; or prior similar live-run token evidence near or above the
+    context limit.
+  - Keep existing Stage 1, Stage 2, and Stage 3 hard-stop guards binding when a
+    recorded context plan exists.
+  - Strengthen durable checkpoint rules where auto-compaction can still lose
+    work:
+    - Stage 1 must record useful findings, citations, source status, and skip
+      rationale in scratch before moving between major source classes.
+    - Stage 2 must save Phase 5 draft payloads and Phase 6 raw review or
+      handoff-critical synthesis payloads in scratch-local files or the main
+      scratch whether or not a hard-stop plan exists.
+    - Stage 3 must assemble note drafts in a scratch-local Phase 7 draft file
+      whether or not a hard-stop plan exists; the vault still receives only the
+      complete audited note.
+  - Do not edit `skill/vicaya/SKILL.md`.
+  - Do not change canonical phase gates, helper behavior, evidence
+    requirements, source requirements, synthesis/review requirements, Phase 7
+    requirements, validation, PDF, sync, final report, or self-improvement
+    logic.
+  - Update this thread `spec.md` and `handoff.md` to document default
+    compact-tolerant flow, risk-triggered hard-stop safety mode, and durable
+    checkpointing.
+  - Update Phase 10 review/finalize criteria to include Phase 9.18.
+  - -> verify: `rg -n "compact-tolerant|objective context risk|hard-stop safety mode|normal context compaction|stage-1-context-plan|phase5-draft|phase7-draft" skill/vicaya-0-scope/SKILL.md skill/vicaya-1-gather/SKILL.md skill/vicaya-2-synthesize-review/SKILL.md skill/vicaya-3-complete/SKILL.md kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md kamma/threads/20260602_vicaya-staged-skills-section-router/handoff.md` shows the updated policy.
+  - -> verify: `git diff -- skill/vicaya/SKILL.md` returns no diff.
+  - -> verify: `git diff --check -- skill/vicaya-0-scope/SKILL.md skill/vicaya-1-gather/SKILL.md skill/vicaya-2-synthesize-review/SKILL.md skill/vicaya-3-complete/SKILL.md kamma/threads/20260602_vicaya-staged-skills-section-router/spec.md kamma/threads/20260602_vicaya-staged-skills-section-router/plan.md kamma/threads/20260602_vicaya-staged-skills-section-router/handoff.md` passes.
+
 ## Phase 10 - Finalize only after clean review
 
 - [ ] Run `/kamma:4-finalize` only after review passes.
@@ -1132,14 +1179,16 @@ binding context-plan and context-break guard exceptions.
     rerun review and confirm it accepts the bounded binding context-budget plan
     and context-break guard exceptions from Phases 9.5, 9.6, 9.7, 9.8, 9.9,
     9.10, 9.12, 9.13, 9.14, the handoff/scratch sync in 9.15, durable Stage 2
-    artifacts in 9.16, and no-global-temp cleanup in 9.17.
+    artifacts in 9.16, no-global-temp cleanup in 9.17, and compact-tolerant
+    default/risk-triggered hard-stop policy in 9.18.
   - Do not finalize if the failed staged attempt was removed by broad Git
     reversal instead of explicit deletion/overwrite in this thread.
   - Do not finalize if any staged skill still summarizes canonical behavior.
   - Do not finalize if any staged skill differs from the routed section-router
     design except for the bounded context-budget controls documented in Phases
     9.5, 9.6, 9.7, 9.8, 9.9, 9.10, 9.12, 9.13, and 9.14, plus the durable
-    artifact/no-global-temp cleanup controls in Phases 9.16 and 9.17.
+    artifact/no-global-temp cleanup controls in Phases 9.16 and 9.17, and the
+    compact-tolerant default plus durable checkpoint controls in Phase 9.18.
   - Do not finalize if any staged skill lacks the out-of-scope handoff guard or
     permits running phases outside its owned scope.
   - Do not finalize if this thread changed `skill/vicaya/SKILL.md` anywhere

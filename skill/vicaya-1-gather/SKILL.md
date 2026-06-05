@@ -75,7 +75,7 @@ If a Stage 1 context plan exists, it is binding for this staged run and override
 
 The next source block is the first listed block whose gate or source-block checkpoint is not complete in scratch, while respecting routed canonical skip rules and any latest Stage 1 hard-stop handoff note.
 
-Default extensive-run source blocks are:
+Hard-stop safety mode source blocks are:
 
 - Phase 1 vault/EBC context, angle triage, and perspective map, plus Phase 2 root-canon mūla/sutta research; write the Phase 1 gate, then hard stop at a scratch-logged Phase 2 in-progress checkpoint if commentary/ṭīkā research is still required. Do not write the Phase 2 gate until all canonical Phase 2 obligations are complete.
 - Phase 2 canonical exegesis/commentary research when applicable, including aṭṭhakathā, ṭīkā, Abhidhamma, Visuddhimagga, and DPD gloss checks required by the scoped question; stop after the Phase 2 gate.
@@ -83,5 +83,7 @@ Default extensive-run source blocks are:
 - Phase 4a web research, Phase 4b YouTube research when applicable, and Phase 4c WisdomLib research; stop after the Phase 4c gate and hand off to `vicaya-2-synthesize-review`.
 
 If the scoped run did not require Phase 2.5, Phase 3b, or Phase 4b, skip those phases only when the routed canonical scratch/gate instructions allow the skip.
+
+Whether or not a Stage 1 context plan exists, before moving from one major source class to another, ensure useful findings, citations, source status, and any skip rationale are recorded through the routed canonical scratch mechanism. Do not carry handoff-critical gathering results only in model context. This checkpoint is not a new phase gate unless the routed canonical gate instructions require one.
 
 Do not read or create staged shared-reference files under skill/vicaya/shared/.
