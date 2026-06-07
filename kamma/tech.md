@@ -15,6 +15,13 @@
 - **Sanskrit search:** `grep -rn -F --include="*.htm"` across a local GRETIL corpus (shallow clone of `wujastyk/GRETIL-mirror`). Unicode IAST `.htm` files; no new dependencies.
 - **Validation:** pytest, ruff, pyright, pyrefly
 
+## Python File Validation
+After touching any `.py` file, run the concrete scoped bundle before finalizing:
+- `uv run ruff check <changed .py files>`
+- `uv run pyright <changed .py files>`
+- `uv run pyrefly check --search-path . <changed .py files>`
+- `uv run pytest <relevant test file> -q`
+
 ## Constraints
 - All paths are per-machine; configured via `.env` (not committed). See `.env.example`.
 - Obsidian CLI requires the desktop app to be open; skill launches it automatically.
