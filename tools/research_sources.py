@@ -1071,6 +1071,16 @@ _EBC_NIKAYA_PREFIXES: tuple[str, ...] = (
     "T",
 )
 
+# Āgama nikāya → (Dhamma-pearls folder stem, BDK folder stem or None).
+# Longest prefixes must be checked first (handled by _EBC_NIKAYA_PREFIXES order).
+_AGAMA_FOLDER_MAP: dict[str, tuple[str, str | None]] = {
+    "MA": ("ma-patton", "ma-bdk"),
+    "DA": ("da-patton", "da-bdk"),
+    "EA": ("ea-patton", None),
+    "SA": ("sa-patton", None),
+    "T":  ("t-patton",  None),
+}
+
 
 def _normalise_sutta_code(s: str) -> str:
     """`mn 10`, `MN-10`, `mn10` → `MN10`. Idempotent on already-normalised codes."""
@@ -1201,6 +1211,87 @@ def get_ebc_overview(
         # EBC frontmatter uses the (sic) key `parallels_partilal`.
         parallels_partial=_split_parallel_refs(str(yaml.get("parallels_partilal") or "")),
     )
+
+
+def _find_agama_path(code: str, vault: Path) -> tuple[Path | None, str]:
+    """Return (path, translator_label) for an Āgama code like MA98, EA12.1, SA104.
+
+    Tries Patton (Dhamma pearls) first, then BDK. For SA sub-numbered refs
+    (e.g. SA1.167) also checks sa-patton-1 where dots become underscores.
+    Returns (None, "") when no file exists on disk.
+    """
+    nik = _ebc_nikaya_for(code)
+    if nik not in _AGAMA_FOLDER_MAP:
+        return None, ""
+    code_lower = code.lower()
+    agama_root = vault / "+Suttas" / "Sutta Texts"
+    patton_stem, bdk_stem = _AGAMA_FOLDER_MAP[nik]
+
+    candidates: list[tuple[Path, str]] = [
+        (agama_root / "Agamas Dhamma pearls" / patton_stem / f"{code_lower}-patton.md", "Patton"),
+    ]
+    if nik == "SA" and "." in code_lower:
+        code_underscore = code_lower.replace(".", "_")
+        candidates.append((
+            agama_root / "Agamas Dhamma pearls" / "sa-patton-1" / f"{code_underscore}-unknown.md",
+            "Patton",
+        ))
+    if bdk_stem:
+        candidates.append((
+            agama_root / "Agamas BDK" / bdk_stem / f"{code_lower}-bdk.md",
+            "BDK",
+        ))
+    for path, translator in candidates:
+        if path.exists():
+            return path, translator
+    return None, ""
+
+
+def get_agama_texts(
+    sutta_code: str,
+    vault: Path | None = DEFAULT_EBC_VAULT_PATH,
+    max_parallels: int = 5,
+) -> dict:
+    """Fetch Āgama parallel translations for a sutta.
+
+    Calls get_ebc_overview(), then resolves each parallels_agama code to its
+    Patton or BDK file and reads the full text. Returns a dict with:
+      sutta_code, parallels_found (list of dicts), parallels_missing (list of codes).
+    Codes with no file on disk appear in parallels_missing — never silently dropped.
+    """
+    if vault is None or not vault.exists():
+        return {
+            "sutta_code": sutta_code,
+            "parallels_found": [],
+            "parallels_missing": [],
+            "error": "EBC vault not configured",
+        }
+    overview = get_ebc_overview(sutta_code, vault=vault)
+    if overview is None:
+        return {
+            "sutta_code": sutta_code,
+            "parallels_found": [],
+            "parallels_missing": [],
+            "error": f"no EBC overview for {sutta_code!r}",
+        }
+    found: list[dict] = []
+    missing: list[str] = []
+    for code in (overview.parallels_agama or [])[:max_parallels]:
+        path, translator = _find_agama_path(code, vault)
+        if path is None:
+            missing.append(code)
+        else:
+            found.append({
+                "code": code,
+                "path": str(path),
+                "translator": translator,
+                "text": path.read_text(encoding="utf-8"),
+            })
+    return {
+        "sutta_code": overview.code,
+        "parallels_found": found,
+        "parallels_missing": missing,
+    }
 
 
 def search_ebc(
@@ -1867,9 +1958,40 @@ _SCRATCH_DIR = Path(__file__).resolve().parents[1] / "data" / "scratch"
 _AUTO_SKIP_PHASES = ("2.5", "3b")
 
 
+def _run_key() -> str:
+    """A stable per-run identifier shared by every tool call in one research run.
+
+    Keyed to the agent process — the parent of the POSIX session leader. Every
+    helper subprocess an agent launches in one run resolves to the same key;
+    two parallel runs (whether Claude, Gemini, opencode, or any other agent)
+    have different agent processes and therefore different keys. This is what
+    makes per-run scratch state collision-proof without env vars, exports, or
+    inline pinning: there is no single shared pointer to hijack.
+    """
+    try:
+        sid = os.getsid(0)
+        out = subprocess.run(
+            ["ps", "-o", "ppid=", "-p", str(sid)],
+            capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+        if out:
+            return out
+    except Exception:
+        pass
+    try:
+        return str(os.getppid())
+    except Exception:
+        return "default"
+
+
+def _state_file() -> Path:
+    """Path to this run's active-state pointer, keyed to the agent process."""
+    return _SCRATCH_DIR / f".active-{_run_key()}.json"
+
+
 def _read_state() -> dict:
     try:
-        return json.loads((_SCRATCH_DIR / ".active").read_text(encoding="utf-8"))
+        return json.loads(_state_file().read_text(encoding="utf-8"))
     except Exception:
         return {}
 
@@ -1888,7 +2010,7 @@ def _write_state(scratch=None, phase=_STATE_PHASE_UNSET) -> None:
             state.pop("phase", None)
         elif phase is not _STATE_PHASE_UNSET:
             state["phase"] = str(phase)
-        (_SCRATCH_DIR / ".active").write_text(json.dumps(state), encoding="utf-8")
+        _state_file().write_text(json.dumps(state), encoding="utf-8")
     except Exception:
         pass
 
@@ -2225,7 +2347,7 @@ def _maybe_autolog(cmd: str, argv: list[str], result_obj) -> None:
     if not scratch:
         return
     if cmd in {"scratch-init", "scratch-log", "scratch-gate",
-               "scratch-verify", "scratch-resume", "lookup-book"}:
+               "scratch-verify", "scratch-resume", "scratch-which", "lookup-book"}:
         return
     try:
         import datetime as _dt
@@ -2351,6 +2473,15 @@ def _cli() -> int:
                          help="Parse the EBC per-sutta overview card for SUTTA_CODE.")
     peo.add_argument("code", help="Sutta code, e.g. MN10, mn-10, mn 10, DN22, MA98.")
 
+    pga = sub.add_parser("get-agama",
+                         help="Fetch Āgama parallel translations for a sutta. "
+                              "Reads get-ebc-overview parallels_agama, resolves each "
+                              "to its Patton or BDK file, and returns the full text. "
+                              "Missing codes are listed in parallels_missing.")
+    pga.add_argument("code", help="Sutta code, e.g. MN10, DN22.")
+    pga.add_argument("--max", dest="max_parallels", type=int, default=5,
+                     help="Maximum parallels to fetch (default: 5).")
+
     pes = sub.add_parser("search-ebc",
                          help="Fixed-string grep across the Early Buddhist Connections vault.")
     pes.add_argument("query")
@@ -2413,6 +2544,9 @@ def _cli() -> int:
                          help="Print the last gate written and the suggested next phase.")
     psr.add_argument("slug", nargs="?", default=None,
                      help="Slug for the scratch file; omit if VICAYA_SCRATCH is set.")
+
+    sub.add_parser("scratch-which",
+                   help="Print this run's active scratch path (resolved from run state).")
 
     pvc = sub.add_parser("verify-citation",
                          help="Confirm a human sutta reference exists in dpd.db sutta_info.")
@@ -2486,6 +2620,10 @@ def _cli() -> int:
         result_for_autolog = result
         autolog_argv = [args.code]
         _dump(result)
+    elif args.cmd == "get-agama":
+        result_for_autolog = get_agama_texts(args.code, max_parallels=args.max_parallels)
+        autolog_argv = [args.code, "--max", str(args.max_parallels)]
+        _dump(result_for_autolog)
     elif args.cmd == "search-ebc":
         result_for_autolog = search_ebc(args.query, folder=args.folder, limit=args.limit)
         autolog_argv = [args.query] + (["--folder", args.folder] if args.folder else []) + ["--limit", str(args.limit)]
@@ -2513,7 +2651,10 @@ def _cli() -> int:
         path = scratch_init(args.slug, run_class=args.run_class)
         _dump({
             "ok": True, "path": str(path), "slug": args.slug, "class": args.run_class,
-            "pin_for_parallel_runs": f"export VICAYA_SCRATCH={path}",
+            "isolation": (
+                "auto-logging is isolated to this run (keyed to the agent "
+                "process); parallel runs never collide — nothing to pin or export"
+            ),
         })
     elif args.cmd == "scratch-log":
         path = scratch_log(
@@ -2537,6 +2678,13 @@ def _cli() -> int:
         result = scratch_resume(slug=args.slug)
         _dump(result)
         return 0 if result.get("ok") else 1
+    elif args.cmd == "scratch-which":
+        try:
+            print(_scratch_path())
+            return 0
+        except ValueError as e:
+            print(e, file=sys.stderr)
+            return 1
     elif args.cmd == "verify-citation":
         result = verify_citation(args.ref)
         _dump(result)

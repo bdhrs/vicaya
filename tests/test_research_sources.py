@@ -439,6 +439,71 @@ class TestStripXml:
         assert _strip_xml("") == ""
 
 
+# ---------- get-agama ----------
+
+from tools.research_sources import DEFAULT_EBC_VAULT_PATH  # noqa: E402
+
+_ebc_vault_present = (
+    DEFAULT_EBC_VAULT_PATH is not None and DEFAULT_EBC_VAULT_PATH.exists()
+)
+ebc_available = pytest.mark.skipif(
+    not _ebc_vault_present, reason="EBC vault not available (VICAYA_EBC_VAULT_PATH)"
+)
+
+
+class TestGetAgama:
+    def test_returns_error_when_vault_missing(self, tmp_path):
+        from tools.research_sources import get_agama_texts
+
+        result = get_agama_texts("MN10", vault=tmp_path / "nonexistent")
+        assert "error" in result
+        assert result["parallels_found"] == []
+        assert result["parallels_missing"] == []
+
+    def test_returns_error_on_unknown_sutta(self):
+        from tools.research_sources import get_agama_texts
+
+        result = get_agama_texts("XX999")
+        assert "error" in result
+
+    @ebc_available
+    def test_mn10_returns_agama_texts(self):
+        from tools.research_sources import get_agama_texts
+
+        result = get_agama_texts("MN10")
+        assert result["sutta_code"] == "MN10"
+        assert len(result["parallels_found"]) >= 1
+        first = result["parallels_found"][0]
+        assert first["code"] in ("EA12.1", "MA31", "MA81", "MA98")
+        assert first["translator"] in ("Patton", "BDK")
+        assert len(first["text"]) > 100
+
+    @ebc_available
+    def test_missing_codes_reported_not_dropped(self):
+        from tools.research_sources import get_agama_texts
+
+        result = get_agama_texts("MN10")
+        # EA27.1 exists in parallels_agama but has no file in the vault
+        assert len(result["parallels_missing"]) >= 1
+
+    @ebc_available
+    def test_max_parallels_limits_results(self):
+        from tools.research_sources import get_agama_texts
+
+        result = get_agama_texts("MN10", max_parallels=2)
+        assert len(result["parallels_found"]) + len(result["parallels_missing"]) <= 2
+
+    @ebc_available
+    def test_find_agama_path_sa_underscore(self):
+        from tools.research_sources import _find_agama_path
+
+        # SA1.167-style codes stored as sa1_167-unknown.md in sa-patton-1
+        path, translator = _find_agama_path("SA1.167", DEFAULT_EBC_VAULT_PATH)
+        if path is not None:
+            assert path.exists()
+            assert "sa-patton-1" in str(path)
+
+
 # ---------- sc-parallels / sc-search ----------
 
 from tools.research_sources import DEFAULT_SC_DATA_PATH  # noqa: E402
@@ -709,6 +774,35 @@ class TestScratchDossier:
         path = scratch_init("test-state")
         # No env set — resolution falls through to the active-state file.
         assert _scratch_path() == path
+
+    def test_state_file_is_keyed_to_run(self, tmp_path, monkeypatch):
+        from tools.research_sources import _state_file
+        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        # The state-pointer filename carries the run key, so it is per-run,
+        # not a single global ".active".
+        monkeypatch.setattr("tools.research_sources._run_key", lambda: "run-A")
+        assert _state_file() == tmp_path / ".active-run-A.json"
+        monkeypatch.setattr("tools.research_sources._run_key", lambda: "run-B")
+        assert _state_file() == tmp_path / ".active-run-B.json"
+
+    def test_parallel_runs_do_not_hijack_each_others_pointer(self, tmp_path, monkeypatch):
+        # Regression for the ".active scratch pointer hijack": a second run's
+        # scratch-init must not redirect the first run's auto-log target.
+        from tools.research_sources import _scratch_path, scratch_init
+        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+
+        # Run A initialises, then run B (different agent process) initialises.
+        monkeypatch.setattr("tools.research_sources._run_key", lambda: "agent-A")
+        path_a = scratch_init("question-a")
+        monkeypatch.setattr("tools.research_sources._run_key", lambda: "agent-B")
+        path_b = scratch_init("question-b")
+
+        # Each run still resolves to its OWN scratch — B did not clobber A.
+        monkeypatch.setattr("tools.research_sources._run_key", lambda: "agent-A")
+        assert _scratch_path() == path_a
+        monkeypatch.setattr("tools.research_sources._run_key", lambda: "agent-B")
+        assert _scratch_path() == path_b
 
     def test_gate_advances_active_phase_in_state(self, tmp_path, monkeypatch):
         from tools.research_sources import _read_state, scratch_gate, scratch_init
