@@ -45,6 +45,14 @@
 - YouTube cache: `data/youtube_cache/` (gitignored, grows over time)
 - Channel allowlist: `data/youtube_channels.md`
 
+## Documentation Ownership
+- `tools/research_sources.py`: actual helper behavior and CLI implementation.
+- `skill/vicaya/SKILL.md`: canonical agent workflow and source-use procedure.
+- `README.md`: user-facing setup and project overview.
+- `kamma/tech.md`: architecture summary, constraints, and resource map.
+- `skill/vicaya/README.md`: short skill-package overview; link to `SKILL.md`
+  for detailed behavior instead of duplicating it.
+
 ## Output shape
 A single `.md` file per research session written into `<vault>/Vicaya/`.
 Source helpers return plain Python lists-of-dicts; no external I/O inside helpers.

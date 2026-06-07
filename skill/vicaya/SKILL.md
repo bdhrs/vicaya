@@ -67,9 +67,9 @@ All user-specific paths come from the project's `.env` file (see `.env.example` 
 - Vault Root: `$VICAYA_VAULT_PATH` (This is the absolute path to the root directory of the vault).
 - Output folder in vault: `$VICAYA_VAULT_PATH/Vicaya/` (this folder is its own git repo — publish notes only through the pre-approved `scripts/sync_notes.py` path after Phase 7 validation/gating)
 - Helper module: `<repo>/tools/research_sources.py`
-- Canon db: read-only SQLite at the path baked into the helper module.
+- Canon db: read-only SQLite at `$VICAYA_CANON_DB`.
 - DPD dictionary db: read-only SQLite at `$VICAYA_DPD_DB` — Pāḷi word meanings, grammar, roots, and inflected-form resolution. See the **DPD dictionary database** section below for the two lookup paths.
-- Calibre library: path baked into the helper module. FTS indexing may or may not be complete depending on when the library was last indexed (14k books takes days to index from scratch). The helper checks FTS status automatically and falls back to metadata search if indexing is incomplete — don't try to force FTS. When FTS is active, snippets are returned with hits; when metadata-only, you get titles/authors/comments. Both are useful; note which mode is active in the scratch.
+- Calibre library: `$VICAYA_CALIBRE_LIBRARY`, the library root containing `metadata.db`. Metadata search reads `metadata.db` directly in read-only SQLite mode. FTS indexing may or may not be complete depending on when the library was last indexed (14k books takes days to index from scratch). The helper checks FTS status automatically and falls back to metadata search if indexing is incomplete or times out — don't try to force FTS. When FTS is active, snippets are returned with hits; when metadata-only, you get titles/authors/comments. Both are useful; note which mode is active in the scratch.
 - Cross-check uses an OpenRouter model chain (see Phase 6; current lead `deepseek/deepseek-v4-flash` — paid but ~$0.0001/call). Requires `OPENROUTER_API_KEY` in env / `.env`, or an OpenRouter key in `~/.local/share/opencode/auth.json`. When unavailable the helper returns a `# SELF_REVIEW:` sentinel and the agent runs the checklist on its own synthesis.
 - **Book code → source XML map**: `/home/bodhirasa/MyFiles/3_Active/dpd-db/tools/pali_text_files.py` maps every canon book code (e.g. `s0201m_mul`) to its source XML file in the DPD database. Consult this when you need to know which raw XML file a given book code corresponds to, or when debugging why a search returns no results for a book you expect to exist.
 - **EBC vault** (Early Buddhist Connections): `$VICAYA_EBC_VAULT_PATH` — a separate, read-only Obsidian vault of curated EBT material. Supplies per-sutta Āgama-parallel metadata, multiple parallel English translations of each sutta, Chinese-Āgama translations (Patton + BDK), and a Pātimokkha rule/commentary set. See the **EBC vault** section below.
@@ -101,7 +101,7 @@ Subcommands (each prints JSON to stdout):
 | `gemini-cross-check` | `--timeout N`; **prompt on stdin** | Legacy direct gemini call. Not used in Phase 6; kept for ad-hoc use if you want a second opinion from a different provider. |
 | `get-ebc-overview SUTTA_CODE` | — | Parsed EBC overview card: PTS ref, titles, themes, training, formula, **named Āgama parallels**, partial parallels. Accepts `MN10`, `mn 10`, `mn-10`, `DN22`, `MA98`, etc. Returns `EBCOverview` JSON or exits 1 if missing. |
 | `search-ebc QUERY` | `--folder PATH` `--limit N` | Fixed-string grep across the EBC vault (markdown only). Returns `VaultHit`s. `--folder` accepts a subdir like `+Suttas/Overviews Suttas/MN` or `+Vinaya/Patimokkha/bmc1`. |
-| `calibre-check` | — | Probe whether the Calibre library is reachable right now by running a real search, so its verdict matches what `search-calibre` will do. Exits 0 if ok, 1 if locked or unavailable, with a specific message. Use at Phase 3 start. |
+| `calibre-check` | — | Probe whether the Calibre library's `metadata.db` is reachable read-only. Exits 0 if ok, 1 if unavailable or unreadable, with a specific message. Use at Phase 3 start. |
 | `sc-parallels CITATION` | `--no-text` | Look up parallels for a citation (e.g. `mn18`, `sn35.28`) in the offline SuttaCentral archive. Returns `SCParallel` objects: `ref`, `resemblance` (bool, `~` prefix), `paragraph_range`, `text_pali`, `text_lzh`, `text_san`, `text_pra`, `translation_en`, `text_gaps` (list — explicit when text isn't in the partial archive). Parallel *identification* is comprehensive; text retrieval is best-effort. |
 | `sc-search QUERY` | `--lang pli\|lzh\|san\|pra\|en` `--limit N` | Fixed-string grep across SuttaCentral offline root texts in one language. `lzh` = Literary Chinese Āgamas. Returns `VaultHit`s with the matched JSON segment. |
 
@@ -161,6 +161,9 @@ above. The dpd-db repo ships a full SQLAlchemy model layer (`db/models.py`), but
 that is for building/editing the dictionary and pins you to that repo's
 environment; for read-only lookups raw SQL is simpler and the table/column schema
 is stable. Resolve the JSON columns in Python (`json.loads`) when you need them.
+If ordinary read-only access fails with `unable to open database file`, retry with
+SQLite's immutable URI form: `sqlite3 "file:${VICAYA_DPD_DB}?mode=ro&immutable=1"
+"SELECT ...;"`.
 
 **Spelling.** Exact Pāḷi diacritics with the `ṃ` niggahita (never `ṁ`), same as
 the canon db. Search verbatim.
@@ -1158,12 +1161,9 @@ Chinese is a reading aid for the agent only — never quote it as a translation.
 uv run tools/research_sources.py calibre-check
 ```
 
-If this exits 1, the library is locked — typically by the Calibre desktop GUI or
-a parallel Vicaya agent. The message tells you which. Options: close the GUI,
-wait for the other agent to finish, or proceed without Calibre and note the gap.
-`search-calibre` under a lock returns `{"status": "unavailable", "reason": …}`
-(exit 1) rather than crashing — treat it as a gap, not a retry loop.
-Do not silently return 0-hit results when the cause is a lock.
+If this exits 1, the library path is missing, `metadata.db` is missing, or the
+database cannot be opened read-only. The message tells you which. Proceed
+without Calibre and note the gap rather than retrying blindly.
 
 The user's Calibre library is whole-library non-fiction (Buddhism, religion, psychology). The tag vocabulary is in `<repo>/data/calibre_tags.csv` (~2k tags).
 
@@ -1181,13 +1181,13 @@ Pick up to 3 tags relevant to the question (e.g. `Abhidhamma`, `Buddhism`, `Vipa
 uv run tools/research_sources.py search-calibre "<term>" --tags Buddhism --limit 20
 ```
 
-**Parallel-agent note.** Calibre is single-process; concurrent Vicaya agents will
-hit lock contention mid-session (not just at the start). The helper automatically
-retries on lock errors with backoff, but persistent contention degrades to 0 results
-that look like "nothing found". If early queries succeed and later ones return 0 on
-terms that should match, the cause is likely lock contention, not vocabulary.
-Fallback: use book IDs from earlier hits to extract content directly with the
-format-appropriate tool (see below).
+**Parallel-agent note.** Normal metadata search is lock-free because it reads
+`metadata.db` read-only. FTS still goes through `calibredb`, so concurrent agents,
+the Calibre GUI, or another `calibredb` process can still cause FTS/fallback lock
+contention. The helper automatically retries lock errors with backoff; persistent
+contention is an availability gap, not evidence that the library has no matching
+books. Fallback: use book IDs from earlier hits to extract content directly with
+the format-appropriate tool (see below).
 
 **Format-agnostic extraction.** Books are in any format — PDF, epub, MOBI, doc,
 txt, AZW3, or others. Never assume epub. Per-format extraction:
@@ -1892,7 +1892,7 @@ If fewer than 10, omit this section entirely.
 
 - **Helper raises `FileNotFoundError`**: a path is wrong — tell the user, don't fudge.
 - **Canon search returns 0 hits**: try lang="any" and/or broader book scope before giving up.
-- **Calibre returns 0 hits**: first distinguish empty from error — `calibre-check` exits 1 on a lock. If locked, note the gap and skip rather than retrying fruitlessly. If reachable and truly empty: try fewer/looser tags; check `data/calibre_tags.csv` for the right vocabulary; try `authors:` with a known authority. If early-session queries succeeded but mid-session queries return 0 with no lock, suspect parallel-agent contention — fall back to `pdftotext` or `ebook-convert` on already-known book IDs from earlier hits.
+- **Calibre returns 0 hits**: first distinguish empty from error — `calibre-check` exits 1 when the library path or `metadata.db` is unavailable or unreadable. If the library is reachable and truly empty: try fewer/looser tags; check `data/calibre_tags.csv` for the right vocabulary; try `authors:` with a known authority. If FTS snippets are unavailable or time out, treat metadata-only hits as usable source-discovery evidence and extract text directly with `pdftotext` or `ebook-convert` on known book files.
 - **`cross-check` returns `# SELF_REVIEW:`**: OpenRouter is unreachable. Run the embedded checklist on your own synthesis as described in Phase 6; do not retry the helper. Common root causes: no `OPENROUTER_API_KEY` set (check `.env`), an empty / malformed `data/openrouter_models.json`, or every free model in the chain simultaneously rate-limited (rare). (Note: the legacy `gemini-cross-check` subcommand returns a `# ERROR:` line on failure instead — same response: skip the section and continue.)
 - **Obsidian create fails**: print the rendered markdown to the terminal so the user can save it manually.
 - **PDF URL — WebFetch returns garbled or empty content**: WebFetch cannot decode PDF binary. Instead, save the file under this run's repo-local temp directory and extract with `pdftotext`:

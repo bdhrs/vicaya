@@ -1,8 +1,9 @@
 """Integration tests for research_sources helpers.
 
-These tests hit the real local systems (Obsidian CLI, sqlite canon db, calibredb).
-They're skipped automatically when the underlying tool or data isn't available, so
-the suite stays green on a machine that doesn't have everything wired up yet.
+Some tests hit real local systems (Obsidian CLI, SQLite canon db, Calibre FTS via
+calibredb); Calibre metadata tests use a hermetic temp `metadata.db`. Tests that
+need optional tools or data are skipped automatically when unavailable, so the
+suite stays green on a machine that doesn't have everything wired up yet.
 """
 
 from __future__ import annotations
