@@ -39,12 +39,16 @@ from tools.research_sources import (  # noqa: E402
 obsidian_available = pytest.mark.skipif(
     shutil.which("obsidian") is None, reason="obsidian CLI not installed"
 )
+_calibre_library_present = (
+    DEFAULT_CALIBRE_LIBRARY is not None and DEFAULT_CALIBRE_LIBRARY.exists()
+)
 calibre_available = pytest.mark.skipif(
-    shutil.which("calibredb") is None or not DEFAULT_CALIBRE_LIBRARY.exists(),
+    shutil.which("calibredb") is None or not _calibre_library_present,
     reason="calibredb or library not available",
 )
+_canon_db_present = DEFAULT_CANON_DB is not None and DEFAULT_CANON_DB.exists()
 canon_available = pytest.mark.skipif(
-    not DEFAULT_CANON_DB.exists(), reason="canon db not available"
+    not _canon_db_present, reason="canon db not available"
 )
 gemini_available = pytest.mark.skipif(
     shutil.which("gemini") is None, reason="gemini CLI not installed"
