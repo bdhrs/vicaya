@@ -15,6 +15,13 @@
 - **Sanskrit search:** `grep -rn -F --include="*.htm"` across a local GRETIL corpus (shallow clone of `wujastyk/GRETIL-mirror`). Unicode IAST `.htm` files; no new dependencies.
 - **Validation:** pytest, ruff, pyright, pyrefly
 
+## Python File Validation
+After touching any `.py` file, run the concrete scoped bundle before finalizing:
+- `uv run ruff check <changed .py files>`
+- `uv run pyright <changed .py files>`
+- `uv run pyrefly check --search-path . <changed .py files>`
+- `uv run pytest <relevant test file> -q`
+
 ## Constraints
 - All paths are per-machine; configured via `.env` (not committed). See `.env.example`.
 - Obsidian CLI requires the desktop app to be open; skill launches it automatically.
@@ -44,6 +51,14 @@
 - Calibre library: path in `$VICAYA_CALIBRE_LIBRARY`
 - YouTube cache: `data/youtube_cache/` (gitignored, grows over time)
 - Channel allowlist: `data/youtube_channels.md`
+
+## Documentation Ownership
+- `tools/research_sources.py`: actual helper behavior and CLI implementation.
+- `skill/vicaya/SKILL.md`: canonical agent workflow and source-use procedure.
+- `README.md`: user-facing setup and project overview.
+- `kamma/tech.md`: architecture summary, constraints, and resource map.
+- `skill/vicaya/README.md`: short skill-package overview; link to `SKILL.md`
+  for detailed behavior instead of duplicating it.
 
 ## Output shape
 A single `.md` file per research session written into `<vault>/Vicaya/`.

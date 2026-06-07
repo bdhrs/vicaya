@@ -22,7 +22,7 @@ Each source is optional — if the tool or path isn't configured it is silently 
 |---|---|
 | **Obsidian vault** | Your existing research notes |
 | **Pāḷi canon** | Local SQLite DB — CST text, translations, commentaries |
-| **Calibre library** | Your book collection; metadata always, full-text when indexed |
+| **Calibre library** | Your book collection; metadata via read-only `metadata.db`, full-text via Calibre FTS when indexed |
 | **Sanskrit (GRETIL)** | Local clone of the GRETIL corpus — Vedic, Epic, Upaniṣadic, and philosophical Sanskrit texts in IAST plain text |
 | **YouTube** | Dhamma talks and sutta studies via a curated channel allowlist |
 | **Web** | General search and page fetch |
@@ -33,7 +33,7 @@ Each source is optional — if the tool or path isn't configured it is silently 
 1. `cp .env.example .env` and edit the paths to match your vault, library,
    and canon database.
 2. Install whichever of these you want to use: `obsidian` CLI, `calibredb`
-   (Calibre 9+), `yt-dlp`, `sqlite3`, `gemini` CLI.
+   (Calibre 9+, for full-text snippets), `yt-dlp`, `sqlite3`, `gemini` CLI.
 3. `uv sync` to install Python dependencies.
 4. Symlink the main skill folder into your agents' skills directories. Using
    symlinks ensures that changes made in this repository are immediately
@@ -63,8 +63,9 @@ Full setup notes are in [`skill/vicaya/SKILL.md`](skill/vicaya/SKILL.md).
 
 ### Calibre full-text search (optional but recommended)
 
-The skill always searches Calibre book metadata. To also search inside book
-content (EPUB/PDF), enable FTS indexing once:
+The skill always searches Calibre book metadata by reading the library's
+`metadata.db` directly in read-only mode. To also search inside book content
+(EPUB/PDF), enable FTS indexing once:
 
 1. Open Calibre with your library.
 2. Click the **FT** button at the left edge of the search bar.
@@ -78,8 +79,8 @@ built. It only needs to be open while the initial indexing is in progress.
 | Scenario | Calibre GUI needed? |
 |---|---|
 | FTS indexing is running | **Yes** — indexing only runs while the GUI is open |
-| Searching after index is built | No — `calibredb fts_search` queries the stored index directly |
-| Metadata search (no FTS) | No |
+| Searching full text after index is built | No — `calibredb fts_search` queries the stored index directly |
+| Metadata search (no FTS) | No — Vicaya reads `<library>/metadata.db` read-only |
 
 > Note: The old path `Preferences → Searching → Full text search` was removed
 > in Calibre 9. Use the **FT** button in the search bar instead.
@@ -127,7 +128,7 @@ Run the following and note what is missing:
 ```bash
 which uv          # Python package manager — required
 which obsidian    # Obsidian CLI — optional (vault search)
-which calibredb   # Calibre — optional (library search)
+which calibredb   # Calibre — optional (full-text library snippets)
 which yt-dlp      # yt-dlp — optional (YouTube search)
 which gemini      # Gemini CLI — optional (cross-check model)
 python3 --version # system Python — only needed if uv is absent
@@ -147,6 +148,7 @@ tool the user does not need — the skill degrades gracefully.
 pip install -U yt-dlp          # or: uv tool install yt-dlp
 
 # Calibre CLI — install Calibre from https://calibre-ebook.com/download
+# needed for full-text snippets; metadata search reads metadata.db directly
 # then calibredb is available in PATH automatically.
 
 # Gemini CLI — requires Google AI Studio API key
