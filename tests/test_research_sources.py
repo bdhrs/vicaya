@@ -804,6 +804,33 @@ class TestScratchDossier:
         monkeypatch.setattr("tools.research_sources._run_key", lambda: "agent-B")
         assert _scratch_path() == path_b
 
+    def test_concurrent_appends_do_not_lose_entries(self, tmp_path, monkeypatch):
+        # Regression for the "lost append": a run's subagents auto-log to the
+        # same scratch concurrently; every entry must survive the read→write race.
+        import threading
+
+        from tools.research_sources import _append_under_phase, scratch_init
+        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        path = scratch_init("concurrent-append")
+
+        n = 40
+        barrier = threading.Barrier(n)
+
+        def worker(i: int) -> None:
+            barrier.wait()  # release all writers at once to maximise contention
+            _append_under_phase(path, "2", f"### entry-{i:03d}")
+
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(n)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        text = path.read_text(encoding="utf-8")
+        for i in range(n):
+            assert f"entry-{i:03d}" in text, f"lost append: entry-{i:03d}"
+
     def test_gate_advances_active_phase_in_state(self, tmp_path, monkeypatch):
         from tools.research_sources import _read_state, scratch_gate, scratch_init
         monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)

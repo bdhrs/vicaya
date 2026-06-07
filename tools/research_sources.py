@@ -1989,6 +1989,32 @@ def _state_file() -> Path:
     return _SCRATCH_DIR / f".active-{_run_key()}.json"
 
 
+@contextmanager
+def _file_lock(target: Path):
+    """Serialize concurrent read-modify-write of `target` across processes.
+
+    A run's subagents all auto-log to the same scratch file; without this, two
+    concurrent appends race on the read→splice→write cycle and one clobbers the
+    other (a lost append). A blocking flock on a companion `.lock` file queues
+    the writers; each append is sub-millisecond, so contention is negligible.
+    Degrades to unlocked rather than crashing if the lock can't be created.
+    """
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fh = open(target.with_name(target.name + ".lock"), "w")
+    except Exception:
+        yield
+        return
+    try:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        finally:
+            fh.close()
+
+
 def _read_state() -> dict:
     try:
         return json.loads(_state_file().read_text(encoding="utf-8"))
@@ -2003,14 +2029,15 @@ def _write_state(scratch=None, phase=_STATE_PHASE_UNSET) -> None:
     """Persist the active scratch path / phase so they survive between shell calls."""
     try:
         _SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
-        state = _read_state()
-        if scratch is not None:
-            state["scratch"] = str(scratch)
-        if phase is None:
-            state.pop("phase", None)
-        elif phase is not _STATE_PHASE_UNSET:
-            state["phase"] = str(phase)
-        _state_file().write_text(json.dumps(state), encoding="utf-8")
+        with _file_lock(_state_file()):
+            state = _read_state()
+            if scratch is not None:
+                state["scratch"] = str(scratch)
+            if phase is None:
+                state.pop("phase", None)
+            elif phase is not _STATE_PHASE_UNSET:
+                state["phase"] = str(phase)
+            _state_file().write_text(json.dumps(state), encoding="utf-8")
     except Exception:
         pass
 
@@ -2142,33 +2169,36 @@ def _phase_section_header(phase: str) -> str:
 
 def _append_under_phase(path: Path, phase: str, block: str) -> None:
     """Append `block` immediately under the named phase's section heading."""
-    text = path.read_text(encoding="utf-8")
     header = _phase_section_header(phase)
-    if header not in text:
-        text = text.rstrip() + f"\n\n{header}\n\n{block.rstrip()}\n"
-        path.write_text(text, encoding="utf-8")
-        return
-    # Insert at the end of the section (before the next "## " or EOF).
-    lines = text.splitlines(keepends=True)
-    out: list[str] = []
-    i = 0
-    while i < len(lines):
-        out.append(lines[i])
-        if lines[i].rstrip() == header:
+    # Lock the whole read→splice→write so concurrent subagent appends to one
+    # run's scratch can't clobber each other (lost append).
+    with _file_lock(path):
+        text = path.read_text(encoding="utf-8")
+        if header not in text:
+            text = text.rstrip() + f"\n\n{header}\n\n{block.rstrip()}\n"
+            path.write_text(text, encoding="utf-8")
+            return
+        # Insert at the end of the section (before the next "## " or EOF).
+        lines = text.splitlines(keepends=True)
+        out: list[str] = []
+        i = 0
+        while i < len(lines):
+            out.append(lines[i])
+            if lines[i].rstrip() == header:
+                i += 1
+                # find end of this section
+                section_end = i
+                while section_end < len(lines) and not lines[section_end].startswith("## "):
+                    section_end += 1
+                # copy section body, then append our block
+                out.extend(lines[i:section_end])
+                if out and not out[-1].endswith("\n"):
+                    out.append("\n")
+                out.append(block.rstrip() + "\n\n")
+                i = section_end
+                continue
             i += 1
-            # find end of this section
-            section_end = i
-            while section_end < len(lines) and not lines[section_end].startswith("## "):
-                section_end += 1
-            # copy section body, then append our block
-            out.extend(lines[i:section_end])
-            if out and not out[-1].endswith("\n"):
-                out.append("\n")
-            out.append(block.rstrip() + "\n\n")
-            i = section_end
-            continue
-        i += 1
-    path.write_text("".join(out), encoding="utf-8")
+        path.write_text("".join(out), encoding="utf-8")
 
 
 def scratch_log(

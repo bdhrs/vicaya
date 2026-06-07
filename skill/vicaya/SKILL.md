@@ -16,7 +16,7 @@ canonical one-goal `/vicaya` workflow and the only behavioral source of truth.
 
 Four structural commands carry the run. Everything else is reference.
 
-1. **Phase 0:** `scratch-init <slug>` (add `--class thematic` for non-sutta-anchored questions). This records the shared active scratch path so later helper calls auto-log to it in a single-session run. For parallel runs, pin the run with `export VICAYA_SCRATCH=…`/`VICAYA_PHASE=…`.
+1. **Phase 0:** `scratch-init <slug>` (add `--class thematic` for non-sutta-anchored questions). This records the active scratch for *this run*. Auto-logging is isolated automatically — the run's state is keyed to your agent process, so parallel runs never collide. There is nothing to pin or export.
 2. **Each phase boundary:** end the prior phase with `scratch-gate <prev-phase>`. The gate auto-advances the active phase, so the next phase's helper calls log correctly without any manual step. It refuses if earlier gates are missing and prints the exact evidence still needed. Thematic runs auto-skip the Phase 2.5 (SC-parallels) and 3b (Sanskrit) gates.
 3. **Start of Phase 5:** `scratch-verify`. Exit 0 = proceed to synthesis. Exit 1 = backfill the named phase first; do not draft.
 4. **End of Phase 7:** `scratch-gate 7`, then publish the saved note with `uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"`; after writing the reflection, publish the run report with `uv run scripts/sync_run_report.py`. The run is not complete until the gate passes and both sync commands have been attempted.
@@ -100,6 +100,7 @@ Subcommands (each prints JSON to stdout):
 | `verify-citation REF` | — | Confirm a human sutta reference (`MN60`, `SN 46.42`, `Sn 4.8`) exists in `dpd.db sutta_info`. Exits 1 if not. Existence-only; says nothing about content claims. |
 | `gemini-cross-check` | `--timeout N`; **prompt on stdin** | Legacy direct gemini call. Not used in Phase 6; kept for ad-hoc use if you want a second opinion from a different provider. |
 | `get-ebc-overview SUTTA_CODE` | — | Parsed EBC overview card: PTS ref, titles, themes, training, formula, **named Āgama parallels**, partial parallels. Accepts `MN10`, `mn 10`, `mn-10`, `DN22`, `MA98`, etc. Returns `EBCOverview` JSON or exits 1 if missing. |
+| `get-agama SUTTA_CODE` | `--max N` | **Always call this immediately after `get-ebc-overview`.** Resolves every code in `parallels_agama`, reads the Patton (preferred) or BDK translation file, and returns the full text in `parallels_found`. Codes with no file on disk appear in `parallels_missing` — never silently dropped. Default max 5. |
 | `search-ebc QUERY` | `--folder PATH` `--limit N` | Fixed-string grep across the EBC vault (markdown only). Returns `VaultHit`s. `--folder` accepts a subdir like `+Suttas/Overviews Suttas/MN` or `+Vinaya/Patimokkha/bmc1`. |
 | `calibre-check` | — | Probe whether the Calibre library's `metadata.db` is reachable read-only. Exits 0 if ok, 1 if unavailable or unreadable, with a specific message. Use at Phase 3 start. |
 | `sc-parallels CITATION` | `--no-text` | Look up parallels for a citation (e.g. `mn18`, `sn35.28`) in the offline SuttaCentral archive. Returns `SCParallel` objects: `ref`, `resemblance` (bool, `~` prefix), `paragraph_range`, `text_pali`, `text_lzh`, `text_san`, `text_pra`, `translation_en`, `text_gaps` (list — explicit when text isn't in the partial archive). Parallel *identification* is comprehensive; text retrieval is best-effort. |
@@ -268,14 +269,14 @@ Nikāya prefixes used in `<NIK>` and `<code>`: `MN`, `DN`, `SN`, `AN`, `DHP`,
 
 ### When to reach for EBC
 
-1. **Any sutta-anchored question** → `get-ebc-overview <code>` first. One call
-   gives you PTS ref, themes, training, formula, and the full list of named
-   Chinese-Āgama parallels + partial parallels. This is the single highest-leverage
-   capability and replaces a SuttaCentral parallel-table lookup.
-2. **Want a verbatim Chinese-Āgama parallel quote** → from the overview's
-   `parallels_agama`, pick a code (e.g. `MA98`), then `Read` the Patton or BDK
-   translation at the path shown in the folder map. Patton paragraphs are
-   numbered; quote with `Madhyamāgama 98, trans. Charles Patton, §<n>`.
+1. **Any sutta-anchored question** → `get-ebc-overview <code>` then immediately
+   `get-agama <code>`. The overview returns the parallel list and metadata; `get-agama`
+   resolves each `parallels_agama` code to its Patton or BDK translation file and
+   returns the full text. **Always call both — do not stop at the overview.**
+   Codes with no file on disk appear in `parallels_missing`; note those as gaps.
+2. **Cite the translation** → quote as *Madhyamāgama 98, trans. Charles Patton, §<n>*
+   (Patton paragraphs are numbered). BDK translations cite as *Dīrghāgama 10,
+   trans. BDK English Tripiṭaka*.
 3. **Compare English translators on the same sutta** → `Read` two files from
    `Sutta Texts/Bodhi/`, `Sujato-pali/`, `dn_walshe/`, `Thanissaro notes/`, etc.
 4. **Thematic catalogue lookup** → `grep -F "4 satipaṭṭhānā" Catalogue/Suttas-Catalogue.tsv`
@@ -308,13 +309,12 @@ Nikāya prefixes used in `<NIK>` and `<code>`: `MN`, `DN`, `SN`, `AN`, `DHP`,
 ### Examples
 
 ```bash
-# Step 1: get parallels for MN 10
+# Step 1: metadata + parallel list
 uv run tools/research_sources.py get-ebc-overview MN10
 
-# Step 2: read the Madhyamāgama parallel
-# (path from the folder map; the overview confirms MA98 is one of the parallels)
-# Use the Read tool on:
-#   $VICAYA_EBC_VAULT_PATH/+Suttas/Sutta Texts/Agamas Dhamma pearls/ma-patton/ma98-patton.md
+# Step 2: fetch all Āgama translation texts (always do this immediately after)
+uv run tools/research_sources.py get-agama MN10
+# Returns parallels_found with full Patton/BDK text, parallels_missing for gaps.
 
 # Free-text discovery scoped to one translator
 uv run tools/research_sources.py search-ebc "ekayano ayaṁ maggo" \
@@ -336,7 +336,7 @@ the dossier without re-running any expensive search.
 Five subcommands cover every interaction:
 
 ```bash
-# 1. At Phase 0 start — create the file (records the shared active scratch + phase)
+# 1. At Phase 0 start — create the file (records this run's active scratch + phase)
 uv run tools/research_sources.py scratch-init <slug>
 # add --class thematic for non-sutta-anchored questions (auto-skips 2.5 / 3b)
 
@@ -354,26 +354,32 @@ uv run tools/research_sources.py scratch-gate 2
 # 5. Before synthesis (Phase 5) — refuse to draft until all prior gates exist
 uv run tools/research_sources.py scratch-verify    # exit 0 = proceed, 1 = backfill first
 
-# Resume after compaction or restart; explicit slug wins over stale .active
+# Resume after compaction or restart; explicit slug wins
 uv run tools/research_sources.py scratch-resume <slug>
+
+# Ad-hoc: print this run's active scratch path (for shell variables in code blocks)
+uv run tools/research_sources.py scratch-which
 ```
 
-**Auto-logging is on as soon as `scratch-init` has run** (the active scratch path
-and phase are persisted to `data/scratch/.active`). Scratch target precedence is:
-explicit helper argument such as `scratch-resume <slug>` or a direct `scratch=`
-path, then `VICAYA_SCRATCH`, then `.active`. `VICAYA_PHASE` overrides only the
-phase for helper auto-logs. Every `search-*`, `sc-*`, `get-ebc-overview`,
+**Auto-logging is on as soon as `scratch-init` has run.** The active scratch path
+and phase are persisted to a per-run state file (`data/scratch/.active-<run>.json`)
+keyed to your agent process. Every `search-*`, `sc-*`, `get-ebc-overview`,
 `fetch-transcript`, `cross-check`, and `gemini-cross-check` call appends a full
 JSON-results block to the selected phase. Forgetting to log is structurally
-impossible.
+impossible. Scratch target precedence is: explicit helper argument such as
+`scratch-resume <slug>` or a direct `scratch=` path, then `VICAYA_SCRATCH` (manual
+override), then the per-run state file. `VICAYA_PHASE` overrides only the phase for
+helper auto-logs.
 
-**Running parallel agents?** `data/scratch/.active` is a single shared pointer, so
-a second agent's `scratch-init` will redirect the first agent's auto-logs to the
-wrong file. When more than one Vicaya run may be live at once, pin your own scratch
-explicitly — `scratch-init` prints the exact `export VICAYA_SCRATCH=…` line to use;
-the env var wins over `.active` for unpinned helper calls. `scratch-resume <slug>`
-reattaches `.active` for a restarted single session, but it does not make unpinned
-parallel auto-logging safe.
+**Parallel runs are isolated automatically — nothing to pin.** The per-run state
+file is keyed to the agent process that launched the helper calls, so two Vicaya
+runs live at once (in any combination of agents — Claude, Gemini, opencode, …)
+write to separate state files and cannot hijack each other's auto-log target.
+There is no single shared `.active` pointer to clobber. You do **not** need to
+`export VICAYA_SCRATCH`; it exists only as an explicit one-off override (e.g. to
+force a specific scratch when resuming a run from a different process). `export`
+does not survive between Bash calls in most agent harnesses anyway — rely on the
+automatic per-run isolation instead.
 
 **Iron rule:** a phase cannot be left without calling `scratch-gate <phase>`.
 `scratch-verify` is the enforcement mechanism at Phase 5 start — it exits 1 and
@@ -569,9 +575,9 @@ Nikāya material has at least partial parallels).
   explicitly flags missing texts rather than silently returning empty — log these
   as known gaps in Critical Gaps. The partial archive covers SA well, MA partially
   (~15 suttas), EA minimally — `text_gaps` will tell you.
-- **EBC vault** (`get-ebc-overview <code>`) — provides named Āgama parallels with
-  files readable via `Read`. Patton (MA) and BDK translations at
-  `+Suttas/Sutta Texts/Agamas Dhamma pearls/` and `Agamas BDK/`.
+- **EBC vault** (`get-ebc-overview <code>` then `get-agama <code>`) — always call
+  both. `get-agama` returns the full Patton or BDK translation text for each named
+  Āgama parallel; `parallels_missing` lists codes with no file available.
 - **Calibre `authors:Analayo`** — Bhikkhu Anālayo's *Comparative Study of the
   Majjhima-Nikāya* and related work is the standard T3 reference. Tags
   `Chinese Canon (Tripitaka)`, `Sanskrit Canon`, `Tibetan Canon`, `Comparative
@@ -1193,7 +1199,7 @@ the format-appropriate tool (see below).
 txt, AZW3, or others. Never assume epub. Per-format extraction:
 
 ```bash
-SCRATCH="${VICAYA_SCRATCH:-data/scratch/<scratch-slug>.md}"
+SCRATCH="$(uv run tools/research_sources.py scratch-which)"
 RUN_TEMP="temp/$(basename "${SCRATCH%.md}")"
 mkdir -p temp
 ```
@@ -1500,7 +1506,7 @@ Pipe your synthesis to a second model for an independent review:
 Write the prompt to scratch-local files, then pipe it in (avoids all shell quoting hazards):
 
 ```bash
-SCRATCH="${VICAYA_SCRATCH:-data/scratch/<scratch-slug>.md}"
+SCRATCH="$(uv run tools/research_sources.py scratch-which)"
 CROSS_CHECK_PROMPT="${SCRATCH%.md}.cross-check-prompt.txt"
 CROSS_CHECK_REVIEW="${SCRATCH%.md}.cross-check-review.txt"
 
@@ -1852,7 +1858,7 @@ A sync failure is never fatal — the note is already saved to the vault.
 After both sync commands have been attempted, clean only this run's disposable repo-local temp directory; never remove `data/scratch/` or scratch-local draft/review files:
 
 ```bash
-SCRATCH="${VICAYA_SCRATCH:-data/scratch/<scratch-slug>.md}"
+SCRATCH="$(uv run tools/research_sources.py scratch-which)"
 RUN_TEMP="temp/$(basename "${SCRATCH%.md}")"
 case "$RUN_TEMP" in
   temp/*)
@@ -1897,7 +1903,7 @@ If fewer than 10, omit this section entirely.
 - **Obsidian create fails**: print the rendered markdown to the terminal so the user can save it manually.
 - **PDF URL — WebFetch returns garbled or empty content**: WebFetch cannot decode PDF binary. Instead, save the file under this run's repo-local temp directory and extract with `pdftotext`:
   ```bash
-  SCRATCH="${VICAYA_SCRATCH:-data/scratch/<scratch-slug>.md}"
+  SCRATCH="$(uv run tools/research_sources.py scratch-which)"
   RUN_TEMP="temp/$(basename "${SCRATCH%.md}")"
   mkdir -p "$RUN_TEMP" && curl -sL "<url>" -o "$RUN_TEMP/source.pdf" && pdftotext "$RUN_TEMP/source.pdf" -
   ```
