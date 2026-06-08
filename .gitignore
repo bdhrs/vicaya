@@ -21,6 +21,11 @@ data/scratch/*
 !data/scratch/.gitkeep
 data/tipitaka-translation-data.db
 
+# Local generated indexes / evidence
+*.sqlite
+*.sqlite3
+kamma/**/dup-evidence.json
+
 # Kamma run logs — machine-specific operational data
 kamma/runs/
 kamma/setup_state.json
