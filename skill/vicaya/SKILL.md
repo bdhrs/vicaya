@@ -1,6 +1,6 @@
 ---
 name: vicaya
-description: Run a structured Pāḷi/Buddhist research session across the user's local sources (Obsidian vault, CST canon SQLite, Calibre library) plus web search, cross-checked with Gemini, and write a single linked note into the Obsidian vault. Invoke when the user types /vicaya <question> or asks for "research on X", "look into X across my sources", "find what the suttas say about X", or any multi-source research request that should land as a permanent vault note.
+description: Run a structured Pāḷi/Buddhist research session across the user's local sources (Obsidian vault, CST canon SQLite, Calibre library, unmanaged folder corpus) plus web search, cross-checked with Gemini, and write a single linked note into the Obsidian vault. Invoke when the user types /vicaya <question> or asks for "research on X", "look into X across my sources", "find what the suttas say about X", or any multi-source research request that should land as a permanent vault note.
 ---
 
 # Research skill
@@ -70,6 +70,7 @@ All user-specific paths come from the project's `.env` file (see `.env.example` 
 - Canon db: read-only SQLite at `$VICAYA_CANON_DB`.
 - DPD dictionary db: read-only SQLite at `$VICAYA_DPD_DB` — Pāḷi word meanings, grammar, roots, and inflected-form resolution. See the **DPD dictionary database** section below for the two lookup paths.
 - Calibre library: `$VICAYA_CALIBRE_LIBRARY`, the library root containing `metadata.db`. Metadata search reads `metadata.db` directly in read-only SQLite mode. FTS indexing may or may not be complete depending on when the library was last indexed (14k books takes days to index from scratch). The helper checks FTS status automatically and falls back to metadata search if indexing is incomplete or times out — don't try to force FTS. When FTS is active, snippets are returned with hits; when metadata-only, you get titles/authors/comments. Both are useful; note which mode is active in the scratch.
+- Folder corpus: `$VICAYA_FOLDER_CORPUS_ROOT` is an unmanaged document tree, and `$VICAYA_FOLDER_CORPUS_INDEX` is its local SQLite FTS index. This source is independent of Calibre: normal search reads the index only; source files are touched only during `folder-corpus-refresh` or manual inspection.
 - Cross-check uses an OpenRouter model chain (see Phase 6; current lead `deepseek/deepseek-v4-flash` — paid but ~$0.0001/call). Requires `OPENROUTER_API_KEY` in env / `.env`, or an OpenRouter key in `~/.local/share/opencode/auth.json`. When unavailable the helper returns a `# SELF_REVIEW:` sentinel and the agent runs the checklist on its own synthesis.
 - **Book code → source XML map**: `/home/bodhirasa/MyFiles/3_Active/dpd-db/tools/pali_text_files.py` maps every canon book code (e.g. `s0201m_mul`) to its source XML file in the DPD database. Consult this when you need to know which raw XML file a given book code corresponds to, or when debugging why a search returns no results for a book you expect to exist.
 - **EBC vault** (Early Buddhist Connections): `$VICAYA_EBC_VAULT_PATH` — a separate, read-only Obsidian vault of curated EBT material. Supplies per-sutta Āgama-parallel metadata, multiple parallel English translations of each sutta, Chinese-Āgama translations (Patton + BDK), and a Pātimokkha rule/commentary set. See the **EBC vault** section below.
@@ -95,6 +96,10 @@ Subcommands (each prints JSON to stdout):
 | `search-canon QUERY` | `--books PAT...` `--lang pali\|english\|any` `--limit N` | Default books: sutta mūla (`s*_mul`) |
 | `resolve-citation BOOK_CODE PARANUM` | — | Returns `Citation` JSON |
 | `search-calibre QUERY` | `--tags T...` `--limit N` | Diacritics stripped automatically |
+| `folder-corpus-check` | — | Probe configured unmanaged folder corpus root/index. Does not walk the source tree. |
+| `folder-corpus-refresh` | `--limit N` | Refresh the folder corpus SQLite index. This is the only command that walks the source tree. |
+| `search-folder-corpus QUERY` | `--limit N` `--include-duplicates` | Search the local folder corpus index. Exact duplicates are collapsed by default. |
+| `folder-corpus-duplicates` | `--samples N` | Read-only duplicate diagnostic from the local index. |
 | `lookup-book VALUE` | — | Translate any CST book identifier into the others (filename, table, Pāḷi title, gui code, DPD code) |
 | `cross-check` | `--timeout N`; **prompt on stdin** | OpenRouter model chain (see `data/openrouter_models.json`) → `# SELF_REVIEW:` sentinel on failure. Output is post-processed: every sutta citation is stamped `[VERIFIED]` or `[REJECTED — not in sutta_info]`. Use this in Phase 6. |
 | `verify-citation REF` | — | Confirm a human sutta reference (`MN60`, `SN 46.42`, `Sn 4.8`) exists in `dpd.db sutta_info`. Exits 1 if not. Existence-only; says nothing about content claims. |
@@ -116,6 +121,7 @@ Every helper returns dataclasses serialised to JSON by the CLI. Field names are 
 - **CanonHit**: `book_code` (str, e.g. `s0201m_mul`), `paranum` (str), `pali` (str), `english` (str). **No `snippet` field** — quote from `pali` / `english` directly. XML/TEI markup is stripped automatically; text is plain UTF-8.
 - **Citation**: `machine` (e.g. `s0201m_mul:23`), `human` (e.g. `MN60 Apaṇṇakasuttaṃ para 97`), `pitaka`, `text_type`, `paranum`.
 - **CalibreHit**: `book_id` (int), `title` (str), `authors` (str), `tags` (list[str]), `location` (str), `snippet` (str — populated only when FTS is ready).
+- **Folder corpus hit**: plain dict with `document_id`, `title`, `relative_path`, `source_path`, `extension`, `snippet`, `extraction_status`, `duplicate_count`, `duplicate_paths`, `possible_duplicate_of`, and `source_available`.
 - **YouTubeHit**: `video_id` (str), `title` (str), `channel` (str), `channel_id` (str), `duration` (float | null, seconds), `url` (str), `tier` (str — `trusted` | `probationary`; `excluded` never appears here, those are filtered out).
 - **YouTubeTranscript**: `video_id` (str), `lang` (str, e.g. `"en"`), `is_auto` (bool — **true means Pāḷi terms are unreliable; paraphrase, don't quote**), `segments` (list of `{start, duration, text}`), `fetched` (ISO date).
 - **EBCOverview**: `code` (str), `path` (str — absolute path to the overview file), `pts` (str, e.g. `"M i 55"`), `titles` (list — Pāḷi + English), `nikaya` (list), `chapter` (list), `themes` (list), `topics` (list), `training` (list), `formula` (list), `audience` (list), `teacher` (list), `parallels_agama` (list of bare codes, e.g. `["MA98", "EA12.1"]`), `parallels_partial` (list).
@@ -1332,6 +1338,25 @@ search returning zero. Walk down these rungs in order:
 If all five rungs return nothing, the topic is genuinely absent from the
 library — note it as a gap in *Open Threads*, do not invent a citation.
 
+#### Folder corpus search
+
+If `folder-corpus-check` reports a configured index, search the folder corpus as
+a separate secondary-source search alongside Calibre. Do not treat it as Calibre
+metadata and do not call Calibre tools for it.
+
+```bash
+uv run tools/research_sources.py folder-corpus-check
+uv run tools/research_sources.py search-folder-corpus "<term>" --limit 20
+```
+
+Exact byte duplicates and identical normalized extracted text are already
+collapsed in default search results; use `--include-duplicates` only when you
+need to inspect every copy. A hit's `possible_duplicate_of` entries are weak
+filename-based same-book hints for judgment, not proof and not grounds to
+double-count evidence. If `source_available` is false, treat the hit as an
+access gap for quotation/verification, not as no evidence: the index matched,
+but the original source tree is unavailable.
+
 → **Phase 3 exit:** `scratch-gate 3`.
 
 ### Phase 3b — Sanskrit source search
@@ -1559,6 +1584,7 @@ is complete. Never write a partial or draft note to the vault.
 - Is every *applicable* angle from the Phase 1 triage represented by at least one citation, and is every *non-applicable* angle logged in `## Angles Not Pursued` with a one-line reason?
 - Are all pertinent canon hits in the Canon Evidence (T1) section — not a curated sample?
 - Have I searched Calibre for every plausible tag cluster, not just the first match?
+- Have I searched the folder corpus when configured, and handled `possible_duplicate_of` / `source_available` correctly?
 - Have I pulled transcripts for the most relevant Dhamma talks, not just noted the video titles?
 - Have I fetched and read the most promising web sources, not just linked to search results?
 - Is the draft approaching ~12 pages (~3,500 words)? If not, the answer is almost always: I have not surfaced enough sources.

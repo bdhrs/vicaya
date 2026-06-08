@@ -7,6 +7,7 @@
 - **Canon search:** SQLite (`tipitaka-translation-data.db`) via stdlib `sqlite3`
 - **Vault I/O:** Obsidian CLI v1.12.7+ (subcommand-style; requires desktop app running)
 - **Library search:** metadata search reads `metadata.db` directly via read-only `sqlite3` (lock-free, concurrent-safe; falls back to `calibredb list` on schema mismatch); FTS still uses `calibredb` (Calibre 9+) when indexed
+- **Folder corpus search:** unmanaged file-tree source indexed into a user-controlled local SQLite FTS5 database via `tools/folder_corpus.py`; independent of Calibre. Refresh walks the configured root and extracts stdlib-supported text plus optional local tools (`pdftotext`, `textutil`, `antiword`, `catdoc`); normal search queries the local index only.
 - **YouTube:** `yt-dlp` for search, `youtube-transcript-api` for transcript fetch
 - **Note validation:** `scripts/validate_note.py` uses `tools/note_checks.py` for final-note mechanical checks
 - **PDF generation:** `scripts/generate_note_pdf.py` renders optional final-note PDFs with `markdown` and `weasyprint`
@@ -26,6 +27,7 @@ After touching any `.py` file, run the concrete scoped bundle before finalizing:
 - All paths are per-machine; configured via `.env` (not committed). See `.env.example`.
 - Obsidian CLI requires the desktop app to be open; skill launches it automatically.
 - Calibre FTS indexing is a background process that takes days on a large library.
+- Folder corpus indexes must live outside the repo. Searches must not walk or read the source tree; only refresh and manual inspection touch source files. Exact byte/text duplicates are collapsed by default, while filename-only matches remain `possible_duplicate_of` hints.
 - `yt-dlp` 2024.04.09 cannot fetch captions; `youtube-transcript-api` is used instead.
 - No vector RAG. Local corpora are structured enough that SQL + tag search + vault search
   is more precise than embeddings.
@@ -49,6 +51,7 @@ After touching any `.py` file, run the concrete scoped bundle before finalizing:
 - Vault: path in `$VICAYA_VAULT_PATH`, vault name `$VICAYA_VAULT_NAME`
 - Optional PDF output: path in `$VICAYA_PDF_PATH`
 - Calibre library: path in `$VICAYA_CALIBRE_LIBRARY`
+- Folder corpus root: path in `$VICAYA_FOLDER_CORPUS_ROOT`; folder corpus index: local SQLite path in `$VICAYA_FOLDER_CORPUS_INDEX`
 - YouTube cache: `data/youtube_cache/` (gitignored, grows over time)
 - Channel allowlist: `data/youtube_channels.md`
 

@@ -4,7 +4,7 @@ A research tool for Pāḷi and Buddhist topics.
 
 You ask a question. The tool searches your Obsidian vault, the Pāḷi canon
 (suttas, Vinaya, Abhidhamma, commentaries, sub-commentaries), your Calibre
-library, YouTube talks, and the open web. It drafts an answer with full
+library, unmanaged folder corpora, YouTube talks, and the open web. It drafts an answer with full
 citations, has a second model review the draft, and saves a single Markdown
 note into your vault under `Vicaya/`. Notes link back to existing notes
 on related topics, so the vault accumulates as a connected body of work.
@@ -23,6 +23,7 @@ Each source is optional — if the tool or path isn't configured it is silently 
 | **Obsidian vault** | Your existing research notes |
 | **Pāḷi canon** | Local SQLite DB — CST text, translations, commentaries |
 | **Calibre library** | Your book collection; metadata via read-only `metadata.db`, full-text via Calibre FTS when indexed |
+| **Folder corpus** | Unmanaged document tree indexed into a local SQLite FTS database; separate from Calibre |
 | **Sanskrit (GRETIL)** | Local clone of the GRETIL corpus — Vedic, Epic, Upaniṣadic, and philosophical Sanskrit texts in IAST plain text |
 | **YouTube** | Dhamma talks and sutta studies via a curated channel allowlist |
 | **Web** | General search and page fetch |
@@ -91,6 +92,41 @@ built. It only needs to be open while the initial indexing is in progress.
 | Linux (AppImage) | `~/.local/bin/calibredb` or wherever you extracted the AppImage |
 | Linux (apt/rpm) | `/usr/bin/calibredb` |
 | Windows | Added to PATH by the installer; may need a new terminal after install |
+
+### Folder corpus search (optional)
+
+The folder corpus source indexes an unmanaged document tree without reading
+Calibre metadata or calling `calibredb`. Configure:
+
+- `VICAYA_FOLDER_CORPUS_ROOT`: the source tree, which may be local, external, or server-mounted.
+- `VICAYA_FOLDER_CORPUS_INDEX`: a local SQLite index path outside this repository.
+
+Normal research search uses only the SQLite index. Source files are touched
+during `folder-corpus-refresh` or later manual inspection, not during
+`search-folder-corpus`.
+
+Build and verify the index after setting `.env`:
+
+```bash
+uv run tools/research_sources.py folder-corpus-check
+uv run tools/research_sources.py folder-corpus-refresh
+uv run tools/research_sources.py search-folder-corpus "dhamma" --limit 5
+uv run tools/research_sources.py folder-corpus-duplicates --samples 10
+```
+
+The first unbounded refresh may take a long time on a large or mounted tree
+because it must walk and hash every accepted file. Search covers files where
+text extraction succeeds; metadata-only files are still tracked for path,
+hash, and duplicate diagnostics but are not searchable by body text. Optional
+local tools such as `pdftotext`, `textutil`, `antiword`, and `catdoc` improve
+extraction coverage when installed.
+
+Duplicate handling is conservative. Exact byte duplicates and identical
+normalized extracted text are collapsed by default; `--include-duplicates`
+returns every member. Filename-only matches are surfaced as
+`possible_duplicate_of` hints for the researcher to judge, not auto-hidden.
+Junk names such as `metadata.opf` and `Picasa.ini` are filtered from those
+hints.
 
 ### Obsidian CLI
 
@@ -187,7 +223,7 @@ uv run python -c "import youtube_transcript_api; print('ok')"
 
 ### 2 — Discover local paths
 
-The `.env` file maps four paths to the user's local data. Discover them
+The `.env` file maps local paths to the user's local data. Discover them
 automatically before writing:
 
 ```bash
@@ -196,6 +232,9 @@ find ~ -maxdepth 4 -name ".obsidian" -type d 2>/dev/null | head -5
 
 # Calibre library — contains metadata.db
 find ~ -maxdepth 5 -name "metadata.db" 2>/dev/null | grep -i calibre | head -5
+
+# Optional unmanaged folder corpus — ask before choosing a large source tree.
+# The index path should be local and outside this repository.
 
 # Canon DB — tipitaka-translation-data.db (from dpd-db project)
 find ~ -maxdepth 8 -name "tipitaka-translation-data.db" 2>/dev/null | head -3
@@ -225,6 +264,8 @@ Example layout (adjust to actual paths):
 VICAYA_VAULT_NAME=Obsidian
 VICAYA_VAULT_PATH=~/Obsidian
 VICAYA_CALIBRE_LIBRARY=~/Calibre Library
+VICAYA_FOLDER_CORPUS_ROOT=
+VICAYA_FOLDER_CORPUS_INDEX=
 VICAYA_CANON_DB=~/path/to/dpd-db/resources/tipitaka_translation_db/tipitaka-translation-data.db
 VICAYA_DPD_DB=~/path/to/dpd-db/dpd.db
 VICAYA_GRETIL_PATH=~/MyFiles/2_Resources/gretil
@@ -295,6 +336,10 @@ uv run tools/research_sources.py resolve-citation s0202m_mul 97
 # Search canon (requires VICAYA_CANON_DB to be set)
 uv run tools/research_sources.py search-canon "dukkha" --limit 3
 # Expected: list of CanonHit objects
+
+# Check optional folder corpus configuration
+uv run tools/research_sources.py folder-corpus-check
+# Expected: JSON status; unavailable is fine when the source is not configured
 ```
 
 Setup is complete when both return results without errors. The skill is
@@ -305,6 +350,7 @@ ready to use: `/vicaya <your question>` in Claude Code.
 ```
 vicaya/
 ├── tools/research_sources.py   # source helpers + CLI subcommands
+├── tools/folder_corpus.py       # unmanaged folder-corpus SQLite index/search
 ├── tests/                       # pytest suite
 ├── data/
 │   ├── calibre_tags.csv         # tag vocabulary

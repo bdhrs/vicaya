@@ -2445,6 +2445,20 @@ def _dump(obj) -> None:
     sys.stdout.write("\n")
 
 
+def _load_folder_corpus_module():
+    import importlib.util
+    import sys
+
+    module_path = Path(__file__).with_name("folder_corpus.py")
+    spec = importlib.util.spec_from_file_location("vicaya_folder_corpus", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not load folder corpus module from {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def _cli() -> int:
     import argparse
     import sys
@@ -2529,6 +2543,23 @@ def _cli() -> int:
     sub.add_parser("calibre-check",
                    help="Probe the Calibre library; reports ok or the specific failure "
                         "(e.g. locked by GUI or another agent). Use as a Phase 3 preflight.")
+
+    sub.add_parser("folder-corpus-check",
+                   help="Probe configured unmanaged folder corpus paths and index health.")
+
+    pfr = sub.add_parser("folder-corpus-refresh",
+                         help="Refresh the configured unmanaged folder corpus index.")
+    pfr.add_argument("--limit", type=int, default=None)
+
+    psfc = sub.add_parser("search-folder-corpus",
+                          help="Search the configured unmanaged folder corpus index.")
+    psfc.add_argument("query")
+    psfc.add_argument("--limit", type=int, default=20)
+    psfc.add_argument("--include-duplicates", action="store_true")
+
+    pfd = sub.add_parser("folder-corpus-duplicates",
+                         help="Summarize duplicate clusters in the folder corpus index.")
+    pfd.add_argument("--samples", type=int, default=5)
 
     psp = sub.add_parser("sc-parallels",
                          help="SuttaCentral offline archive: list parallels for a citation "
@@ -2669,6 +2700,32 @@ def _cli() -> int:
         _dump(result_for_autolog)
         _maybe_autolog(args.cmd, autolog_argv, result_for_autolog)
         return 0 if ok else 1
+    elif args.cmd == "folder-corpus-check":
+        folder_corpus = _load_folder_corpus_module()
+        result_for_autolog = folder_corpus.check()
+        autolog_argv = []
+        _dump(result_for_autolog)
+    elif args.cmd == "folder-corpus-refresh":
+        folder_corpus = _load_folder_corpus_module()
+        result_for_autolog = folder_corpus.refresh(limit=args.limit)
+        autolog_argv = ["--limit", str(args.limit)] if args.limit is not None else []
+        _dump(result_for_autolog)
+    elif args.cmd == "search-folder-corpus":
+        folder_corpus = _load_folder_corpus_module()
+        result_for_autolog = folder_corpus.search(
+            args.query,
+            limit=args.limit,
+            include_duplicates=args.include_duplicates,
+        )
+        autolog_argv = [args.query, "--limit", str(args.limit)]
+        if args.include_duplicates:
+            autolog_argv.append("--include-duplicates")
+        _dump(result_for_autolog)
+    elif args.cmd == "folder-corpus-duplicates":
+        folder_corpus = _load_folder_corpus_module()
+        result_for_autolog = folder_corpus.duplicates(samples=args.samples)
+        autolog_argv = ["--samples", str(args.samples)]
+        _dump(result_for_autolog)
     elif args.cmd == "sc-parallels":
         result_for_autolog = sc_parallels(args.citation, include_text=not args.no_text)
         autolog_argv = [args.citation] + (["--no-text"] if args.no_text else [])
