@@ -1,9 +1,9 @@
 # Vicaya task recipes. Run `just` to list them.
 #
-# These wrap the folder-corpus subcommands of tools/research_sources.py — an
-# unmanaged document tree indexed into a local SQLite FTS5 database, separate
-# from Calibre. Paths come from .env (VICAYA_FOLDER_CORPUS_ROOT / _INDEX /
-# _EXCLUDE). Only fc-refresh touches the source tree; the rest read the index.
+# These wrap the folder-corpus subcommands of tools/research_sources.py.
+# Multiple source trees (including Calibre libraries) are indexed together into
+# one SQLite FTS5 database. Paths come from .env (VICAYA_FOLDER_CORPUS_SOURCES /
+# _INDEX / _EXCLUDE). Only fc-refresh touches the source trees; the rest are read-only.
 
 # List all recipes.
 default:

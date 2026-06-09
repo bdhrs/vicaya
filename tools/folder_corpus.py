@@ -21,10 +21,10 @@ from tqdm import tqdm
 
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-ROOT_ENV = "VICAYA_FOLDER_CORPUS_ROOT"
+SOURCES_ENV = "VICAYA_FOLDER_CORPUS_SOURCES"
 INDEX_ENV = "VICAYA_FOLDER_CORPUS_INDEX"
 EXCLUDE_ENV = "VICAYA_FOLDER_CORPUS_EXCLUDE"
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 TEXT_EXTENSIONS = {".txt", ".md", ".json", ".jsonl", ".py"}
 HTML_EXTENSIONS = {".htm", ".html", ".shtml", ".xhtml", ".xht", ".xml"}
 EPUB_EXTENSIONS = {".epub"}
@@ -102,7 +102,7 @@ _load_dotenv()
 
 @dataclass(frozen=True)
 class FolderCorpusConfig:
-    root: Path | None
+    roots: list[Path]
     index: Path | None
     missing: tuple[str, ...] = ()
     exclude: tuple[Path, ...] = ()
@@ -129,6 +129,17 @@ def _env_path(key: str) -> Path | None:
     return Path(os.path.expanduser(value))
 
 
+def _env_sources(key: str) -> list[Path]:
+    value = os.environ.get(key)
+    if not value:
+        return []
+    return [
+        Path(os.path.expanduser(entry.strip()))
+        for entry in value.split("|")
+        if entry.strip()
+    ]
+
+
 def _env_excludes(key: str) -> tuple[Path, ...]:
     value = os.environ.get(key)
     if not value:
@@ -141,11 +152,15 @@ def _env_excludes(key: str) -> tuple[Path, ...]:
 
 
 def default_config() -> FolderCorpusConfig:
-    root = _env_path(ROOT_ENV)
+    roots = _env_sources(SOURCES_ENV)
     index = _env_path(INDEX_ENV)
-    missing = tuple(key for key, value in ((ROOT_ENV, root), (INDEX_ENV, index)) if value is None)
+    missing = tuple(
+        key
+        for key, ok in ((SOURCES_ENV, bool(roots)), (INDEX_ENV, index is not None))
+        if not ok
+    )
     return FolderCorpusConfig(
-        root=root,
+        roots=roots,
         index=index,
         missing=missing,
         exclude=_env_excludes(EXCLUDE_ENV),
@@ -187,12 +202,27 @@ def _utc_now() -> str:
 
 
 def initialize_schema(conn: sqlite3.Connection) -> None:
+    try:
+        version = conn.execute(
+            "SELECT value FROM index_meta WHERE key = 'schema_version'"
+        ).fetchone()
+        if version is None or version[0] != SCHEMA_VERSION:
+            conn.executescript("""
+                DROP TABLE IF EXISTS documents;
+                DROP TABLE IF EXISTS document_fts;
+                DROP TABLE IF EXISTS index_meta;
+                DROP INDEX IF EXISTS idx_documents_content_hash;
+                DROP INDEX IF EXISTS idx_documents_text_hash;
+            """)
+    except sqlite3.OperationalError:
+        pass
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS documents (
             id INTEGER PRIMARY KEY,
-            source_path TEXT NOT NULL,
-            rel_path TEXT NOT NULL UNIQUE,
+            source_root TEXT NOT NULL,
+            source_path TEXT NOT NULL UNIQUE,
+            rel_path TEXT NOT NULL,
             filename TEXT NOT NULL,
             extension TEXT NOT NULL,
             category_path TEXT NOT NULL,
@@ -252,9 +282,16 @@ def _connect_readonly(index: Path) -> sqlite3.Connection:
 
 def check(config: FolderCorpusConfig | None = None) -> dict[str, Any]:
     config = config or default_config()
-    root = config.root
     index = config.index
-    root_available = bool(root is not None and root.is_dir())
+    roots_info = [
+        {
+            "path": str(r),
+            "available": r.is_dir(),
+            "calibre": (r / "metadata.db").exists(),
+        }
+        for r in config.roots
+    ]
+    any_root_available = any(ri["available"] for ri in roots_info)
     index_exists = bool(index is not None and index.exists())
     index_available = False
     document_count = None
@@ -262,11 +299,10 @@ def check(config: FolderCorpusConfig | None = None) -> dict[str, Any]:
     if index_exists and index is not None:
         index_available, document_count, index_error = _document_count(index)
     return {
-        "status": "ok" if config.available and root_available else "unavailable",
-        "root_path": str(root) if root is not None else None,
+        "status": "ok" if config.available and any_root_available else "unavailable",
+        "source_roots": roots_info,
         "index_path": str(index) if index is not None else None,
         "missing": list(config.missing),
-        "root_available": root_available,
         "index_exists": index_exists,
         "index_available": index_available,
         "index_error": index_error,
@@ -285,26 +321,30 @@ def _is_excluded(path: Path, exclude: tuple[Path, ...]) -> bool:
 
 
 def _iter_files(
-    root: Path,
+    roots: list[Path],
     limit: int | None,
     exclude: tuple[Path, ...] = (),
-) -> list[Path]:
-    files: list[Path] = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(
-            d
-            for d in dirnames
-            if not d.startswith(".") and not _is_excluded(Path(dirpath) / d, exclude)
-        )
-        for filename in sorted(filenames):
-            if filename.startswith("."):
-                continue
-            path = Path(dirpath) / filename
-            if not _accepted_file(path):
-                continue
-            files.append(path)
-            if limit is not None and len(files) >= limit:
-                return files
+) -> list[tuple[Path, Path]]:
+    """Return (source_root, path) pairs across all roots."""
+    files: list[tuple[Path, Path]] = []
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = sorted(
+                d
+                for d in dirnames
+                if not d.startswith(".") and not _is_excluded(Path(dirpath) / d, exclude)
+            )
+            for filename in sorted(filenames):
+                if filename.startswith("."):
+                    continue
+                path = Path(dirpath) / filename
+                if not _accepted_file(path):
+                    continue
+                files.append((root, path))
+                if limit is not None and len(files) >= limit:
+                    return files
     return files
 
 
@@ -316,8 +356,8 @@ def _hash_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _unreadable_content_hash(rel_path: str, size: int, mtime: float) -> str:
-    value = f"unreadable\x00{rel_path}\x00{size}\x00{mtime}"
+def _unreadable_content_hash(source_path: str, size: int, mtime: float) -> str:
+    value = f"unreadable\x00{source_path}\x00{size}\x00{mtime}"
     return f"unreadable:{hashlib.sha256(value.encode('utf-8')).hexdigest()}"
 
 
@@ -499,16 +539,52 @@ def _normalized_text_hash(text: str) -> str | None:
 
 
 def _safe_fts_query(query: str) -> str:
-    terms = re.findall(r"[\w\u0080-\uffff]+", query, flags=re.UNICODE)
+    terms = re.findall(r"[\w-￿]+", query, flags=re.UNICODE)
     if not terms:
         return query
     return " ".join(f'"{term.replace("\"", "\"\"")}"' for term in terms)
 
 
+def _build_calibre_metadata_lookup(calibre_root: Path) -> dict[str, str]:
+    """Return {absolute_file_path: metadata_prefix} for all files in a Calibre library."""
+    metadata_db = calibre_root / "metadata.db"
+    if not metadata_db.exists():
+        return {}
+    try:
+        with sqlite3.connect(f"file:{metadata_db}?mode=ro", uri=True) as conn:
+            authors_by_book: dict[int, list[str]] = {}
+            for book_id, name in conn.execute(
+                "SELECT bal.book, a.name FROM books_authors_link bal JOIN authors a ON bal.author = a.id"
+            ).fetchall():
+                authors_by_book.setdefault(int(book_id), []).append(str(name))
+            tags_by_book: dict[int, list[str]] = {}
+            for book_id, name in conn.execute(
+                "SELECT btl.book, t.name FROM books_tags_link btl JOIN tags t ON btl.tag = t.id"
+            ).fetchall():
+                tags_by_book.setdefault(int(book_id), []).append(str(name))
+            lookup: dict[str, str] = {}
+            for book_id, book_path, file_name, fmt in conn.execute(
+                "SELECT b.id, b.path, d.name, d.format FROM books b JOIN data d ON b.id = d.book"
+            ).fetchall():
+                book_id = int(book_id)
+                file_path = str(calibre_root / str(book_path) / f"{file_name}.{fmt.lower()}")
+                authors = ", ".join(authors_by_book.get(book_id, []))
+                tags = ", ".join(tags_by_book.get(book_id, []))
+                parts = [f"Calibre #{book_id}"]
+                if authors:
+                    parts.append(f"Authors: {authors}")
+                if tags:
+                    parts.append(f"Tags: {tags}")
+                lookup[file_path] = "[" + " | ".join(parts) + "]"
+    except sqlite3.Error:
+        return {}
+    return lookup
+
+
 def _upsert_document(
     conn: sqlite3.Connection,
     *,
-    root: Path,
+    source_root: Path,
     path: Path,
     stat_result: os.stat_result | None = None,
     content_hash: str,
@@ -516,16 +592,18 @@ def _upsert_document(
     indexed_at: str,
 ) -> int:
     stat = stat_result or path.stat()
-    rel_path = path.relative_to(root).as_posix()
-    category_path = path.relative_to(root).parent.as_posix()
+    source_path = str(path)
+    rel_path = path.relative_to(source_root).as_posix()
+    category_path = path.relative_to(source_root).parent.as_posix()
     category_path = "" if category_path == "." else category_path
     text_hash = _normalized_text_hash(extracted.text)
     existing = conn.execute(
-        "SELECT id FROM documents WHERE rel_path = ?",
-        (rel_path,),
+        "SELECT id FROM documents WHERE source_path = ?",
+        (source_path,),
     ).fetchone()
     values = {
-        "source_path": str(path),
+        "source_root": str(source_root),
+        "source_path": source_path,
         "rel_path": rel_path,
         "filename": path.name,
         "extension": path.suffix.lower(),
@@ -542,7 +620,8 @@ def _upsert_document(
         conn.execute(
             """
             UPDATE documents
-            SET source_path = :source_path,
+            SET source_root = :source_root,
+                rel_path = :rel_path,
                 filename = :filename,
                 extension = :extension,
                 category_path = :category_path,
@@ -560,11 +639,11 @@ def _upsert_document(
     cursor = conn.execute(
         """
         INSERT INTO documents (
-            source_path, rel_path, filename, extension, category_path,
+            source_root, source_path, rel_path, filename, extension, category_path,
             size, mtime, content_hash, text_hash, extraction_status, indexed_at
         )
         VALUES (
-            :source_path, :rel_path, :filename, :extension, :category_path,
+            :source_root, :source_path, :rel_path, :filename, :extension, :category_path,
             :size, :mtime, :content_hash, :text_hash, :extraction_status, :indexed_at
         )
         """,
@@ -588,14 +667,14 @@ def _replace_fts_text(conn: sqlite3.Connection, doc_id: int, text: str) -> None:
 def _should_skip(
     conn: sqlite3.Connection,
     *,
-    rel_path: str,
+    source_path: str,
     size: int,
     mtime: float,
     retry_failed: bool,
 ) -> bool:
     row = conn.execute(
-        "SELECT size, mtime, extraction_status FROM documents WHERE rel_path = ?",
-        (rel_path,),
+        "SELECT size, mtime, extraction_status FROM documents WHERE source_path = ?",
+        (source_path,),
     ).fetchone()
     if row is None:
         return False
@@ -606,10 +685,10 @@ def _should_skip(
     return True
 
 
-def _delete_missing_documents(conn: sqlite3.Connection, seen_rel_paths: set[str]) -> int:
+def _delete_missing_documents(conn: sqlite3.Connection, seen_source_paths: set[str]) -> int:
     deleted = 0
-    for doc_id, rel_path in conn.execute("SELECT id, rel_path FROM documents").fetchall():
-        if rel_path in seen_rel_paths:
+    for doc_id, source_path in conn.execute("SELECT id, source_path FROM documents").fetchall():
+        if source_path in seen_source_paths:
             continue
         conn.execute("DELETE FROM document_fts WHERE rowid = ?", (doc_id,))
         conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
@@ -624,30 +703,33 @@ def refresh(
     retry_failed: bool = False,
 ) -> dict[str, Any]:
     config = config or default_config()
-    if config.root is None or config.index is None:
+    if not config.roots or config.index is None:
         return {
             "status": "unavailable",
             "reason": f"missing config: {', '.join(config.missing)}",
             "indexed": 0,
         }
-    root = config.root
-    index = config.index
-    if not root.is_dir():
+    available_roots = [r for r in config.roots if r.is_dir()]
+    if not available_roots:
         return {
             "status": "unavailable",
-            "reason": f"root unavailable: {root}",
+            "reason": "no source roots are available",
             "indexed": 0,
         }
+    index = config.index
     index.parent.mkdir(parents=True, exist_ok=True)
     indexed_at = _utc_now()
-    files = _iter_files(root, limit, config.exclude)
+    calibre_lookup: dict[str, str] = {}
+    for root in available_roots:
+        calibre_lookup.update(_build_calibre_metadata_lookup(root))
+    files = _iter_files(available_roots, limit, config.exclude)
     extracted_count = 0
     metadata_only = 0
     skipped = 0
     written = 0
     deleted = 0
     errors: list[dict[str, str]] = []
-    seen_rel_paths: set[str] = set()
+    seen_source_paths: set[str] = set()
     with sqlite3.connect(index) as conn:
         initialize_schema(conn)
         progress = tqdm(
@@ -657,17 +739,18 @@ def refresh(
             smoothing=0,
             disable=not sys.stderr.isatty(),
         )
-        for path in progress:
-            rel_path = path.relative_to(root).as_posix()
+        for source_root, path in progress:
+            source_path = str(path)
+            rel_path = path.relative_to(source_root).as_posix()
             try:
                 stat = path.stat()
             except OSError as e:
                 errors.append({"relative_path": rel_path, "error": f"stat failed: {e}"})
                 continue
-            seen_rel_paths.add(rel_path)
+            seen_source_paths.add(source_path)
             if _should_skip(
                 conn,
-                rel_path=rel_path,
+                source_path=source_path,
                 size=stat.st_size,
                 mtime=stat.st_mtime,
                 retry_failed=retry_failed,
@@ -677,7 +760,7 @@ def refresh(
             try:
                 content_hash = _hash_file(path)
             except OSError as e:
-                content_hash = _unreadable_content_hash(rel_path, stat.st_size, stat.st_mtime)
+                content_hash = _unreadable_content_hash(source_path, stat.st_size, stat.st_mtime)
                 extracted = ExtractedText(text="", status=f"error: file read failed: {e}")
                 errors.append({"relative_path": rel_path, "error": extracted.status})
             else:
@@ -688,7 +771,7 @@ def refresh(
                     errors.append({"relative_path": rel_path, "error": extracted.status})
             doc_id = _upsert_document(
                 conn,
-                root=root,
+                source_root=source_root,
                 path=path,
                 stat_result=stat,
                 content_hash=content_hash,
@@ -696,13 +779,15 @@ def refresh(
                 indexed_at=indexed_at,
             )
             written += 1
-            _replace_fts_text(conn, doc_id, extracted.text)
-            if extracted.text.strip():
+            prefix = calibre_lookup.get(source_path, "")
+            fts_text = (prefix + "\n\n" + extracted.text).strip() if prefix else extracted.text
+            _replace_fts_text(conn, doc_id, fts_text)
+            if fts_text.strip():
                 extracted_count += 1
             else:
                 metadata_only += 1
         if limit is None:
-            deleted = _delete_missing_documents(conn, seen_rel_paths)
+            deleted = _delete_missing_documents(conn, seen_source_paths)
         conn.execute(
             """
             INSERT INTO index_meta(key, value) VALUES ('last_refresh', ?)
@@ -713,7 +798,7 @@ def refresh(
         conn.commit()
     return {
         "status": "ok",
-        "root_path": str(root),
+        "source_roots": [str(r) for r in available_roots],
         "index_path": str(index),
         "indexed": len(files),
         "written": written,
@@ -737,6 +822,7 @@ def _search_rows(
     sql = """
         SELECT
             d.id,
+            d.source_root,
             d.source_path,
             d.rel_path,
             d.filename,
@@ -773,10 +859,10 @@ def _union(parent: dict[int, int], left: int, right: int) -> None:
 
 def _exact_duplicate_map(conn: sqlite3.Connection) -> dict[int, list[tuple[int, str]]]:
     rows = conn.execute(
-        "SELECT id, rel_path, content_hash, text_hash FROM documents"
+        "SELECT id, source_path, content_hash, text_hash FROM documents"
     ).fetchall()
     parent = {int(row["id"]): int(row["id"]) for row in rows}
-    rel_paths = {int(row["id"]): str(row["rel_path"]) for row in rows}
+    source_paths = {int(row["id"]): str(row["source_path"]) for row in rows}
     for key in ("content_hash", "text_hash"):
         groups: dict[str, list[int]] = {}
         for row in rows:
@@ -797,7 +883,10 @@ def _exact_duplicate_map(conn: sqlite3.Connection) -> dict[int, list[tuple[int, 
     for ids in components.values():
         if len(ids) < 2:
             continue
-        members = sorted(((doc_id, rel_paths[doc_id]) for doc_id in ids), key=lambda item: item[1])
+        members = sorted(
+            ((doc_id, source_paths[doc_id]) for doc_id in ids),
+            key=lambda item: item[1],
+        )
         for doc_id in ids:
             duplicate_map[doc_id] = members
     return duplicate_map
@@ -832,8 +921,8 @@ def _weak_duplicate_hints(
     conn: sqlite3.Connection,
     exact_duplicate_map: dict[int, list[tuple[int, str]]],
 ) -> dict[int, list[dict[str, Any]]]:
-    rows = conn.execute("SELECT id, rel_path, filename, extension FROM documents").fetchall()
-    rel_paths = {int(row["id"]): str(row["rel_path"]) for row in rows}
+    rows = conn.execute("SELECT id, source_path, filename, extension FROM documents").fetchall()
+    source_paths = {int(row["id"]): str(row["source_path"]) for row in rows}
     exact_sets = {
         doc_id: {member_id for member_id, _ in members}
         for doc_id, members in exact_duplicate_map.items()
@@ -861,10 +950,10 @@ def _weak_duplicate_hints(
                 signals_by_doc.setdefault(doc_id, {}).setdefault(other_id, set()).add(signal)
     hints: dict[int, list[dict[str, Any]]] = {}
     for doc_id, candidates in signals_by_doc.items():
-        ordered = sorted(candidates.items(), key=lambda item: rel_paths[item[0]])
+        ordered = sorted(candidates.items(), key=lambda item: source_paths[item[0]])
         hints[doc_id] = [
             {
-                "relative_path": rel_paths[other_id],
+                "source_path": source_paths[other_id],
                 "signals": sorted(signals),
             }
             for other_id, signals in ordered[:10]
@@ -889,7 +978,7 @@ def _duplicate_cluster_summary(
         "samples": [
             {
                 "key": key,
-                "paths": sorted(str(row["rel_path"]) for row in rows),
+                "paths": sorted(str(row["source_path"]) for row in rows),
             }
             for key, rows in ordered[:samples]
         ],
@@ -930,7 +1019,7 @@ def duplicates(
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             """
-            SELECT id, rel_path, filename, extension, size, content_hash, text_hash
+            SELECT id, source_path, filename, extension, size, content_hash, text_hash
             FROM documents
             """
         ).fetchall()
@@ -990,7 +1079,6 @@ def search(
     config = config or default_config()
     if config.index is None or not config.index.exists():
         return []
-    source_available = bool(config.root is not None and config.root.is_dir())
     candidate_limit = limit if include_duplicates else max(limit * 10, limit + 50)
     with _connect_readonly(config.index) as conn:
         try:
@@ -1006,13 +1094,14 @@ def search(
         if (
             not include_duplicates
             and duplicate_members
-            and row["rel_path"] != duplicate_members[0][1]
+            and row["source_path"] != duplicate_members[0][1]
         ):
             continue
         hits.append(
             {
                 "document_id": int(row["id"]),
                 "title": row["filename"],
+                "source_root": row["source_root"],
                 "relative_path": row["rel_path"],
                 "source_path": row["source_path"],
                 "extension": row["extension"],
@@ -1021,7 +1110,7 @@ def search(
                 "duplicate_count": len(duplicate_members) if duplicate_members else 1,
                 "duplicate_paths": [path for _, path in duplicate_members],
                 "possible_duplicate_of": weak_hints.get(int(row["id"]), []),
-                "source_available": source_available,
+                "source_available": Path(row["source_path"]).exists(),
             }
         )
         if len(hits) >= limit:
