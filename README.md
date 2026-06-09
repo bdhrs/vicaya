@@ -104,7 +104,11 @@ hash, and duplicate diagnostics but are not searchable by body text. Optional
 local tools such as `pdftotext`, `textutil`, `antiword`, `catdoc`, and
 `ebook-convert` (ships with Calibre — handles the Kindle/Mobipocket family
 `.mobi`, `.azw3`, `.azw`, `.prc`, `.lit`, `.pdb`, `.chm`, plus `.rtf`) improve
-extraction coverage when installed. A normal refresh skips files whose size and
+extraction coverage when installed. `.zip`, `.bz2`, and `.7z` archives are also
+searchable: each archive is indexed as a single document whose text is the
+concatenation of its text-bearing members (binary/noise members are skipped),
+bounded by per-archive caps of 5,000 members, 2 GB uncompressed, and a 5-minute
+wall-clock. A normal refresh skips files whose size and
 mtime are unchanged, so after installing a new extractor re-run with
 `--retry-failed` / `just lf-refresh-retry` once; later refreshes skip them again.
 

@@ -1,5 +1,30 @@
 # Plan — Library Folders: extract text from archives
 
+## Implementation status (2026-06-10) — DONE, ready for review
+
+All phases implemented and validated. `uv run pytest` → 164 passed, 1 skipped
+(was 151; +13 archive tests). `ruff` / `pyright` / `pyrefly` all clean on the
+two touched files. Touched files: `tools/library_folders.py`,
+`tests/test_library_folders.py`, `README.md`, `kamma/tech.md`. Not committed;
+`lf-refresh-retry` not run (user runs it).
+
+**Deviations from the plan as written (simpler / more robust):**
+1. **No `_ARCHIVE_MEMBER_TEXT_EXTRACTORS` dict.** Instead every non-noise,
+   non-archive member is routed back through the existing, tested
+   `extract_text()` — html/text in-memory members go via a tempfile bridge
+   (`_route_member_bytes`), 7z members via on-disk `extract_text(path)`. This
+   guarantees member routing is *identical* to top-level file routing and
+   removes a second routing table that could drift.
+2. **No `7z l -slt` parsing.** `_extract_7z` extracts the whole archive to a
+   tempdir with `7z x` then walks it with `extract_text()`, sidestepping the
+   fragile parse of diacritic/space filenames the plan flagged as a risk.
+3. **`.css` / `.opf` are not routed to html** — both are in `NOISE_EXTENSIONS`
+   and are correctly skipped at the member level (styling / epub packaging,
+   not prose). The plan's html-routing list for them was dead code.
+4. **Skip rule** is one shared helper `_skip_member(ext)` → skips empty-suffix,
+   `NOISE_EXTENSIONS`, and `ARCHIVE_EXTENSIONS` (the last gives no-recursion for
+   nested archives) across all three extractors.
+
 > Single best version, ready for review. All numbers below are
 > evidence-backed from the real-data probe in `spec.md`. Phase 0 is closed.
 > This plan is for a 2-do step: land the code and the tests. The
@@ -29,23 +54,23 @@ and bound the worst case from a zip-bomb or a runaway archive.
 
 ## Phase 1 — `.zip` member extraction
 
-- [ ] Add the three constants above near the top of `tools/library_folders.py`
+- [x] Add the three constants above near the top of `tools/library_folders.py`
       (next to the existing extension sets).
-- [ ] Add `_ARCHIVE_MEMBER_TEXT_EXTRACTORS: dict[str, Callable[[Path], ExtractedText]]`
+- [x] Add `_ARCHIVE_MEMBER_TEXT_EXTRACTORS: dict[str, Callable[[Path], ExtractedText]]`
       that maps a member's file extension to the extractor that handles it
       for the path-on-disk case. The keys are extensions with the leading
       dot, lowercased. The values are the existing `_extract_pdf`,
       `_extract_doc`, `_extract_mhtml`, etc.
-- [ ] Add a small helper `_extract_member_to_tempfile(name: str, data: bytes)
+- [x] Add a small helper `_extract_member_to_tempfile(name: str, data: bytes)
       -> Path` that writes a member's bytes to a tempdir with the right
       extension and returns the path. Used by the pdf / doc / ebook
       branches that need a real file on disk.
-- [ ] Add the inner-bytes extractors: `_extract_member_html(data)`,
+- [x] Add the inner-bytes extractors: `_extract_member_html(data)`,
       `_extract_member_text(data)` — small wrappers. `_extract_member_html`
       delegates to `_xmlish_text` (which already handles xml and tag
       stripping). `_extract_member_text` decodes utf-8 with errors="replace"
       and runs the same whitespace collapse the existing extractors do.
-- [ ] Add `_extract_zip_archive(path: Path) -> ExtractedText`:
+- [x] Add `_extract_zip_archive(path: Path) -> ExtractedText`:
     - Try `zipfile.ZipFile(path)`. On `BadZipFile`, return
       `ExtractedText("", "error: bad zip")`.
     - Walk `infolist()`. Skip directories. Skip members whose extension
@@ -79,13 +104,13 @@ and bound the worst case from a zip-bomb or a runaway archive.
       separators. Collapse whitespace the same way the existing
       extractors do (`re.sub(r"\s+", " ", " ".join(parts)).strip()`).
     - Return `ExtractedText(text, "ok" if text else "empty")`.
-- [ ] Wire `.zip` into the dispatcher in `extract_text()` (line 498).
+- [x] Wire `.zip` into the dispatcher in `extract_text()` (line 498).
       The branch is one line: `if extension == ".zip": return
       _extract_zip_archive(path)`.
 
 ## Phase 2 — `.bz2` and `.7z`
 
-- [ ] Add `_extract_bz2(path: Path) -> ExtractedText`:
+- [x] Add `_extract_bz2(path: Path) -> ExtractedText`:
     - If `shutil.which("python3")` is None (shouldn't happen), return
       `"unsupported"`.
     - Open with `bz2.open(path, "rb")` and read all bytes.
@@ -100,7 +125,7 @@ and bound the worst case from a zip-bomb or a runaway archive.
     - Else, treat the decompressed bytes as a single virtual member.
       Detect its type by the file name's suffix (`path.stem`), then
       route via the same per-member extractor table.
-- [ ] Add `_extract_7z(path: Path) -> ExtractedText`:
+- [x] Add `_extract_7z(path: Path) -> ExtractedText`:
     - If `shutil.which("7z")` is None, return `"unsupported: 7z not
       found"`.
     - Run `7z l -slt <path>` to list members with sizes. Parse the
@@ -111,76 +136,76 @@ and bound the worst case from a zip-bomb or a runaway archive.
     - For each member: extract to a tempdir using
       `7z x -so <path> <member>`, then route the extracted file by its
       extension through the same per-member extractor table.
-- [ ] Wire `.bz2` and `.7z` into the dispatcher in `extract_text()`.
+- [x] Wire `.bz2` and `.7z` into the dispatcher in `extract_text()`.
       Each is a one-line branch.
 
 ## Phase 3 — Tests in `tests/test_library_folders.py`
 
-- [ ] `test_zip_extractor_indexes_text_member`: build a zip with one
+- [x] `test_zip_extractor_indexes_text_member`: build a zip with one
       `.txt` member containing "target word", call `extract_text` (or
       refresh + search), assert the search hits the archive.
-- [ ] `test_zip_extractor_filters_noise_members`: zip with one
+- [x] `test_zip_extractor_filters_noise_members`: zip with one
       `.html` containing "target word" and one `.mp3`; assert the mp3
       is ignored and the html drives the hit.
-- [ ] `test_zip_extractor_handles_bad_zip`: write garbage to a file
+- [x] `test_zip_extractor_handles_bad_zip`: write garbage to a file
       with `.zip` extension; assert the extractor returns
       `"error: bad zip"` and does not crash.
-- [ ] `test_zip_extractor_enforces_member_count_cap`: build a zip with
+- [x] `test_zip_extractor_enforces_member_count_cap`: build a zip with
       more than `ARCHIVE_MAX_MEMBERS` members (use a small
       `_TEST_OVERRIDE` constant to lower the cap for tests); assert
       the extractor returns `"error: archive too large"`.
-- [ ] `test_zip_extractor_enforces_size_cap`: build a zip with a single
+- [x] `test_zip_extractor_enforces_size_cap`: build a zip with a single
       member whose uncompressed size exceeds `ARCHIVE_MAX_UNCOMPRESSED`
       (use the override); same assertion.
-- [ ] `test_zip_extractor_enforces_wallclock_cap`: monkeypatch
+- [x] `test_zip_extractor_enforces_wallclock_cap`: monkeypatch
       `time.monotonic` to fake elapsed time past the cap; assert
       `"error: archive timed out"`.
-- [ ] `test_zip_extractor_skips_encrypted_members`: build a zip with
+- [x] `test_zip_extractor_skips_encrypted_members`: build a zip with
       one encrypted member; assert the extractor returns
       `"empty"` (or similar) and does not raise.
-- [ ] `test_zip_extractor_routes_pdf_member`: monkeypatch
+- [x] `test_zip_extractor_routes_pdf_member`: monkeypatch
       `_extract_pdf` to return a fixed string; build a zip with one
       `.pdf` member; assert the patched function was called and the
       text made it into the result.
-- [ ] `test_zip_extractor_does_not_recurse_into_nested_zips`: build a
+- [x] `test_zip_extractor_does_not_recurse_into_nested_zips`: build a
       zip whose only member is itself a zip; assert the inner zip is
       skipped and the outer returns `"empty"`.
-- [ ] `test_zip_extractor_concatenates_multiple_text_members`: zip
+- [x] `test_zip_extractor_concatenates_multiple_text_members`: zip
       with two html members; assert both texts appear in the result.
-- [ ] `test_bz2_extractor_handles_inner_tar`: build a `.bz2` file
+- [x] `test_bz2_extractor_handles_inner_tar`: build a `.bz2` file
       containing a tar with one `.html` member; assert the text is
       recovered. Also test bz2 wrapping a single text file (fallback
       path).
-- [ ] `test_7z_extractor_handles_inner_text`: build a `.7z` file with
+- [x] `test_7z_extractor_handles_inner_text`: build a `.7z` file with
       one `.txt` member; assert the text is recovered. Skip if `7z`
       is not on PATH.
 
 ## Phase 4 — Validation bundle (per `kamma/tech.md`)
 
-- [ ] `uv run ruff check tools/library_folders.py tests/test_library_folders.py`
-- [ ] `uv run pyright tools/library_folders.py tests/test_library_folders.py`
-- [ ] `uv run pyrefly check --search-path . tools/library_folders.py tests/test_library_folders.py`
-- [ ] `uv run pytest tests/test_library_folders.py -q`
-- [ ] If any tool flags something, fix it before handing back for review.
+- [x] `uv run ruff check tools/library_folders.py tests/test_library_folders.py`
+- [x] `uv run pyright tools/library_folders.py tests/test_library_folders.py`
+- [x] `uv run pyrefly check --search-path . tools/library_folders.py tests/test_library_folders.py`
+- [x] `uv run pytest tests/test_library_folders.py -q`
+- [x] If any tool flags something, fix it before handing back for review.
 
 ## Phase 5 — Documentation
 
-- [ ] Update `kamma/tech.md`: under "Library folders search", add a bullet
+- [x] Update `kamma/tech.md`: under "Library folders search", add a bullet
       noting that `.zip`, `.bz2`, and `.7z` archives are now extracted
       with caps of 5,000 members, 2 GB uncompressed, and 300 s
       wall-clock per archive.
-- [ ] Update `README.md`: add a one-line note in the library-folders
+- [x] Update `README.md`: add a one-line note in the library-folders
       section saying archives are now searchable.
 
 ## Phase 6 — Hand back
 
-- [ ] Do not run `just lf-refresh-retry`. The handoff's "Don't" list
+- [x] Do not run `just lf-refresh-retry`. The handoff's "Don't" list
       is explicit. The user runs it.
-- [ ] Do not commit. The handoff says no git without explicit
+- [x] Do not commit. The handoff says no git without explicit
       permission.
-- [ ] Update `kamma/threads/library-folders-archives/plan.md` to mark
+- [x] Update `kamma/threads/library-folders-archives/plan.md` to mark
       each task as `[x]` as it completes.
-- [ ] Hand back to the user for kamma 3-review.
+- [x] Hand back to the user for kamma 3-review.
 
 ## Open risks and what the second agent should look at
 

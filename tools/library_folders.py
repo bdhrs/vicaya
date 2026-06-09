@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import bz2
 import hashlib
+import io
 import os
 import re
 import shutil
 import sqlite3
 import subprocess
 import sys
+import tarfile
 import tempfile
+import time
 import unicodedata
 import zipfile
 from dataclasses import dataclass
@@ -88,6 +92,11 @@ NOISE_EXTENSIONS = {
     ".woff",
     ".woff2",
 }
+
+ARCHIVE_EXTENSIONS = {".zip", ".bz2", ".7z"}
+ARCHIVE_MAX_MEMBERS = 5000
+ARCHIVE_MAX_UNCOMPRESSED = 2 * 1024**3
+ARCHIVE_MAX_WALLCLOCK = 300.0
 
 
 def _load_dotenv(path: Path = _REPO_ROOT / ".env") -> None:
@@ -484,6 +493,150 @@ def _extract_ebook(path: Path) -> ExtractedText:
     return ExtractedText(text=text, status="ok" if text.strip() else "empty")
 
 
+def _skip_member(extension: str) -> bool:
+    return (
+        not extension
+        or extension in NOISE_EXTENSIONS
+        or extension in ARCHIVE_EXTENSIONS
+    )
+
+
+def _route_member_bytes(name: str, data: bytes) -> str:
+    """Extract text from one archive member by routing it through ``extract_text``."""
+    extension = Path(name).suffix.lower()
+    if _skip_member(extension):
+        return ""
+    with tempfile.TemporaryDirectory() as tmp:
+        member_path = Path(tmp) / f"member{extension}"
+        try:
+            member_path.write_bytes(data)
+            return extract_text(member_path).text
+        except OSError:
+            return ""
+
+
+def _archive_result(parts: list[str]) -> ExtractedText:
+    text = re.sub(r"\s+", " ", " ".join(part for part in parts if part)).strip()
+    return ExtractedText(text=text, status="ok" if text else "empty")
+
+
+def _extract_zip_archive(path: Path) -> ExtractedText:
+    start = time.monotonic()
+    parts: list[str] = []
+    member_count = 0
+    total_uncompressed = 0
+    try:
+        with zipfile.ZipFile(path) as archive:
+            for info in archive.infolist():
+                if info.is_dir() or info.flag_bits & 0x1:
+                    continue
+                if _skip_member(Path(info.filename).suffix.lower()):
+                    continue
+                member_count += 1
+                total_uncompressed += info.file_size
+                if (
+                    member_count > ARCHIVE_MAX_MEMBERS
+                    or total_uncompressed > ARCHIVE_MAX_UNCOMPRESSED
+                ):
+                    return ExtractedText(text="", status="error: archive too large")
+                if time.monotonic() - start > ARCHIVE_MAX_WALLCLOCK:
+                    return ExtractedText(text="", status="error: archive timed out")
+                try:
+                    data = archive.read(info)
+                except Exception:
+                    continue
+                text = _route_member_bytes(info.filename, data)
+                if text:
+                    parts.append(text)
+    except zipfile.BadZipFile:
+        return ExtractedText(text="", status="error: bad zip")
+    return _archive_result(parts)
+
+
+def _extract_bz2(path: Path) -> ExtractedText:
+    start = time.monotonic()
+    try:
+        with bz2.open(path, "rb") as handle:
+            data = handle.read(ARCHIVE_MAX_UNCOMPRESSED + 1)
+    except (OSError, EOFError, ValueError):
+        return ExtractedText(text="", status="error: bad bz2")
+    if len(data) > ARCHIVE_MAX_UNCOMPRESSED:
+        return ExtractedText(text="", status="error: archive too large")
+    try:
+        with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+            parts: list[str] = []
+            member_count = 0
+            for member in tar.getmembers():
+                if not member.isfile():
+                    continue
+                if _skip_member(Path(member.name).suffix.lower()):
+                    continue
+                member_count += 1
+                if member_count > ARCHIVE_MAX_MEMBERS:
+                    return ExtractedText(text="", status="error: archive too large")
+                if time.monotonic() - start > ARCHIVE_MAX_WALLCLOCK:
+                    return ExtractedText(text="", status="error: archive timed out")
+                handle = tar.extractfile(member)
+                if handle is None:
+                    continue
+                text = _route_member_bytes(member.name, handle.read())
+                if text:
+                    parts.append(text)
+        return _archive_result(parts)
+    except tarfile.TarError:
+        return _archive_result([_route_member_bytes(path.stem, data)])
+
+
+def _extract_7z(path: Path) -> ExtractedText:
+    seven_zip = shutil.which("7z")
+    if seven_zip is None:
+        return ExtractedText(text="", status="unsupported: 7z not found")
+    start = time.monotonic()
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            result = subprocess.run(
+                [seven_zip, "x", "-y", "-bd", f"-o{tmp}", str(path)],
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=ARCHIVE_MAX_WALLCLOCK,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return ExtractedText(text="", status="error: archive timed out")
+        if result.returncode != 0:
+            message = (result.stderr or "7z failed").strip().splitlines()
+            detail = message[-1] if message else "7z failed"
+            return ExtractedText(text="", status=f"error: {detail}")
+        parts: list[str] = []
+        member_count = 0
+        total_uncompressed = 0
+        for member_path in sorted(Path(tmp).rglob("*")):
+            if not member_path.is_file():
+                continue
+            if _skip_member(member_path.suffix.lower()):
+                continue
+            member_count += 1
+            try:
+                total_uncompressed += member_path.stat().st_size
+            except OSError:
+                continue
+            if (
+                member_count > ARCHIVE_MAX_MEMBERS
+                or total_uncompressed > ARCHIVE_MAX_UNCOMPRESSED
+            ):
+                return ExtractedText(text="", status="error: archive too large")
+            if time.monotonic() - start > ARCHIVE_MAX_WALLCLOCK:
+                return ExtractedText(text="", status="error: archive timed out")
+            try:
+                extracted = extract_text(member_path)
+            except Exception:
+                continue
+            if extracted.text.strip():
+                parts.append(extracted.text)
+    return _archive_result(parts)
+
+
 def extract_text(path: Path) -> ExtractedText:
     extension = path.suffix.lower()
     if extension in TEXT_EXTENSIONS:
@@ -517,6 +670,12 @@ def extract_text(path: Path) -> ExtractedText:
         return _extract_mhtml(path)
     if extension in EBOOK_CONVERT_EXTENSIONS:
         return _extract_ebook(path)
+    if extension == ".zip":
+        return _extract_zip_archive(path)
+    if extension == ".bz2":
+        return _extract_bz2(path)
+    if extension == ".7z":
+        return _extract_7z(path)
     return ExtractedText(text="", status=f"unsupported: {extension or 'no extension'}")
 
 

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import bz2
+import io
 import json
 import os
 import shutil
 import sqlite3
 import subprocess
 import sys
+import tarfile
 import time
 import zipfile
 from pathlib import Path
@@ -801,3 +804,185 @@ def test_library_folders_cli_commands_return_expected_json(tmp_path):
     )
     assert duplicate_report["status"] == "ok"
     assert "normalized_filename" in duplicate_report["groups"]
+
+
+def _write_zip(path: Path, members: dict[str, bytes | str]) -> None:
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, payload in members.items():
+            archive.writestr(name, payload)
+
+
+def test_zip_extractor_indexes_text_member(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    _write_zip(root / "bundle.zip", {"notes.txt": "ziptext target word"})
+    config = LibraryFoldersConfig(roots=[root], index=tmp_path / "folder.sqlite")
+
+    refresh(config)
+
+    assert [hit["relative_path"] for hit in search("ziptext", config)] == ["bundle.zip"]
+
+
+def test_zip_extractor_filters_noise_members(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    _write_zip(
+        root / "bundle.zip",
+        {
+            "page.html": "<html><body>htmldriven target</body></html>",
+            "audio.mp3": "mp3onlyword should be ignored",
+        },
+    )
+    config = LibraryFoldersConfig(roots=[root], index=tmp_path / "folder.sqlite")
+
+    refresh(config)
+
+    assert [hit["relative_path"] for hit in search("htmldriven", config)] == ["bundle.zip"]
+    assert search("mp3onlyword", config) == []
+
+
+def test_zip_extractor_handles_bad_zip(tmp_path):
+    bad = tmp_path / "broken.zip"
+    bad.write_bytes(b"this is not a zip archive")
+
+    extracted = library_folders.extract_text(bad)
+
+    assert extracted.status == "error: bad zip"
+    assert extracted.text == ""
+
+
+def test_zip_extractor_enforces_member_count_cap(tmp_path, monkeypatch):
+    monkeypatch.setattr(library_folders, "ARCHIVE_MAX_MEMBERS", 2)
+    path = tmp_path / "many.zip"
+    _write_zip(path, {f"file{i}.txt": f"word{i}" for i in range(3)})
+
+    extracted = library_folders.extract_text(path)
+
+    assert extracted.status == "error: archive too large"
+
+
+def test_zip_extractor_enforces_size_cap(tmp_path, monkeypatch):
+    monkeypatch.setattr(library_folders, "ARCHIVE_MAX_UNCOMPRESSED", 10)
+    path = tmp_path / "big.zip"
+    _write_zip(path, {"big.txt": "x" * 50})
+
+    extracted = library_folders.extract_text(path)
+
+    assert extracted.status == "error: archive too large"
+
+
+def test_zip_extractor_enforces_wallclock_cap(tmp_path, monkeypatch):
+    ticks = iter([0.0, 1000.0, 1000.0, 1000.0])
+    monkeypatch.setattr(library_folders.time, "monotonic", lambda: next(ticks))
+    path = tmp_path / "slow.zip"
+    _write_zip(path, {"a.txt": "alpha", "b.txt": "beta"})
+
+    extracted = library_folders.extract_text(path)
+
+    assert extracted.status == "error: archive timed out"
+
+
+def test_zip_extractor_skips_encrypted_members(tmp_path):
+    if shutil.which("7z") is None:
+        pytest.skip("7z not installed")
+    src = tmp_path / "secret.txt"
+    src.write_text("encrypted target", encoding="utf-8")
+    path = tmp_path / "secret.zip"
+    subprocess.run(
+        ["7z", "a", "-tzip", "-psecret", "-mem=AES256", str(path), str(src)],
+        check=True,
+        capture_output=True,
+    )
+
+    extracted = library_folders.extract_text(path)
+
+    assert extracted.status == "empty"
+    assert extracted.text == ""
+
+
+def test_zip_extractor_routes_pdf_member(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        library_folders,
+        "_extract_pdf",
+        lambda _path: library_folders.ExtractedText(text="pdfmember target", status="ok"),
+    )
+    path = tmp_path / "withpdf.zip"
+    _write_zip(path, {"doc.pdf": b"%PDF-1.4 fake bytes"})
+
+    extracted = library_folders.extract_text(path)
+
+    assert "pdfmember target" in extracted.text
+    assert extracted.status == "ok"
+
+
+def test_zip_extractor_does_not_recurse_into_nested_zips(tmp_path):
+    inner = io.BytesIO()
+    with zipfile.ZipFile(inner, "w") as nested:
+        nested.writestr("hidden.txt", "nested target")
+    path = tmp_path / "outer.zip"
+    _write_zip(path, {"inner.zip": inner.getvalue()})
+
+    extracted = library_folders.extract_text(path)
+
+    assert extracted.status == "empty"
+    assert "nested target" not in extracted.text
+
+
+def test_zip_extractor_concatenates_multiple_text_members(tmp_path):
+    path = tmp_path / "two.zip"
+    _write_zip(
+        path,
+        {
+            "one.html": "<html><body>firstword here</body></html>",
+            "two.html": "<html><body>secondword here</body></html>",
+        },
+    )
+
+    extracted = library_folders.extract_text(path)
+
+    assert "firstword" in extracted.text
+    assert "secondword" in extracted.text
+
+
+def test_bz2_extractor_handles_inner_tar(tmp_path):
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        payload = b"<html><body>tarbz target</body></html>"
+        info = tarfile.TarInfo("doc.html")
+        info.size = len(payload)
+        tar.addfile(info, io.BytesIO(payload))
+    path = tmp_path / "docs.bz2"
+    path.write_bytes(bz2.compress(buf.getvalue()))
+
+    extracted = library_folders.extract_text(path)
+
+    assert extracted.status == "ok"
+    assert "tarbz target" in extracted.text
+
+
+def test_bz2_extractor_handles_single_file_fallback(tmp_path):
+    path = tmp_path / "note.txt.bz2"
+    path.write_bytes(bz2.compress(b"plainbz target word"))
+
+    extracted = library_folders.extract_text(path)
+
+    assert extracted.status == "ok"
+    assert "plainbz target" in extracted.text
+
+
+def test_7z_extractor_handles_inner_text(tmp_path):
+    if shutil.which("7z") is None:
+        pytest.skip("7z not installed")
+    src = tmp_path / "payload.txt"
+    src.write_text("sevenzip target word", encoding="utf-8")
+    path = tmp_path / "bundle.7z"
+    subprocess.run(
+        ["7z", "a", str(path), str(src)],
+        check=True,
+        capture_output=True,
+    )
+
+    extracted = library_folders.extract_text(path)
+
+    assert extracted.status == "ok"
+    assert "sevenzip target" in extracted.text
