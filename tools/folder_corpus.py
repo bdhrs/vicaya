@@ -20,6 +20,7 @@ from xml.etree import ElementTree
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 ROOT_ENV = "VICAYA_FOLDER_CORPUS_ROOT"
 INDEX_ENV = "VICAYA_FOLDER_CORPUS_INDEX"
+EXCLUDE_ENV = "VICAYA_FOLDER_CORPUS_EXCLUDE"
 SCHEMA_VERSION = "1"
 TEXT_EXTENSIONS = {".txt", ".md"}
 HTML_EXTENSIONS = {".htm", ".html"}
@@ -63,6 +64,7 @@ class FolderCorpusConfig:
     root: Path | None
     index: Path | None
     missing: tuple[str, ...] = ()
+    exclude: tuple[Path, ...] = ()
 
     @property
     def available(self) -> bool:
@@ -86,11 +88,27 @@ def _env_path(key: str) -> Path | None:
     return Path(os.path.expanduser(value))
 
 
+def _env_excludes(key: str) -> tuple[Path, ...]:
+    value = os.environ.get(key)
+    if not value:
+        return ()
+    return tuple(
+        Path(os.path.expanduser(entry.strip()))
+        for entry in value.split(",")
+        if entry.strip()
+    )
+
+
 def default_config() -> FolderCorpusConfig:
     root = _env_path(ROOT_ENV)
     index = _env_path(INDEX_ENV)
     missing = tuple(key for key, value in ((ROOT_ENV, root), (INDEX_ENV, index)) if value is None)
-    return FolderCorpusConfig(root=root, index=index, missing=missing)
+    return FolderCorpusConfig(
+        root=root,
+        index=index,
+        missing=missing,
+        exclude=_env_excludes(EXCLUDE_ENV),
+    )
 
 
 def _shared_helper(name: str) -> Callable[[str], str]:
@@ -212,6 +230,7 @@ def check(config: FolderCorpusConfig | None = None) -> dict[str, Any]:
         "index_available": index_available,
         "index_error": index_error,
         "fts5": fts5_available(),
+        "exclude_paths": [str(path) for path in config.exclude],
         "document_count": document_count,
     }
 
@@ -220,10 +239,22 @@ def _accepted_file(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() not in NOISE_EXTENSIONS
 
 
-def _iter_files(root: Path, limit: int | None) -> list[Path]:
+def _is_excluded(path: Path, exclude: tuple[Path, ...]) -> bool:
+    return any(path.is_relative_to(excluded) for excluded in exclude)
+
+
+def _iter_files(
+    root: Path,
+    limit: int | None,
+    exclude: tuple[Path, ...] = (),
+) -> list[Path]:
     files: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+        dirnames[:] = sorted(
+            d
+            for d in dirnames
+            if not d.startswith(".") and not _is_excluded(Path(dirpath) / d, exclude)
+        )
         for filename in sorted(filenames):
             path = Path(dirpath) / filename
             if not _accepted_file(path):
@@ -498,7 +529,7 @@ def refresh(
         }
     index.parent.mkdir(parents=True, exist_ok=True)
     indexed_at = _utc_now()
-    files = _iter_files(root, limit)
+    files = _iter_files(root, limit, config.exclude)
     extracted_count = 0
     metadata_only = 0
     skipped = 0

@@ -16,6 +16,7 @@ import pytest
 
 from tools import folder_corpus
 from tools.folder_corpus import (
+    EXCLUDE_ENV,
     INDEX_ENV,
     ROOT_ENV,
     FolderCorpusConfig,
@@ -60,6 +61,80 @@ def test_default_config_expands_home(monkeypatch):
     assert config.root == Path.home() / "folder-corpus-source"
     assert config.index == Path.home() / "folder-corpus-index.sqlite"
     assert config.available
+
+
+def test_default_config_parses_comma_separated_excludes(monkeypatch):
+    monkeypatch.setenv(ROOT_ENV, "~/folder-corpus-source")
+    monkeypatch.setenv(INDEX_ENV, "~/folder-corpus-index.sqlite")
+    monkeypatch.setenv(EXCLUDE_ENV, "~/folder-corpus-source/skip , /abs/other ,")
+
+    config = default_config()
+
+    assert config.exclude == (
+        Path.home() / "folder-corpus-source" / "skip",
+        Path("/abs/other"),
+    )
+
+
+def test_default_config_without_excludes_is_empty(monkeypatch):
+    monkeypatch.setenv(ROOT_ENV, "~/folder-corpus-source")
+    monkeypatch.setenv(INDEX_ENV, "~/folder-corpus-index.sqlite")
+    monkeypatch.delenv(EXCLUDE_ENV, raising=False)
+
+    assert default_config().exclude == ()
+
+
+def test_refresh_skips_excluded_subfolders(tmp_path):
+    root = tmp_path / "root"
+    (root / "keep").mkdir(parents=True)
+    (root / "skip" / "nested").mkdir(parents=True)
+    (root / "keep" / "a.txt").write_text("keep target", encoding="utf-8")
+    (root / "skip" / "b.txt").write_text("skip target", encoding="utf-8")
+    (root / "skip" / "nested" / "c.txt").write_text("nested target", encoding="utf-8")
+    index = tmp_path / "folder.sqlite"
+    config = FolderCorpusConfig(root=root, index=index, exclude=(root / "skip",))
+
+    report = refresh(config)
+
+    assert report["indexed"] == 1
+    with sqlite3.connect(index) as conn:
+        rel_paths = [row[0] for row in conn.execute("SELECT rel_path FROM documents")]
+    assert rel_paths == ["keep/a.txt"]
+
+
+def test_unbounded_refresh_removes_newly_excluded_rows(tmp_path):
+    root = tmp_path / "root"
+    (root / "keep").mkdir(parents=True)
+    (root / "skip").mkdir()
+    (root / "keep" / "a.txt").write_text("keep target", encoding="utf-8")
+    (root / "skip" / "b.txt").write_text("skip target", encoding="utf-8")
+    index = tmp_path / "folder.sqlite"
+
+    refresh(FolderCorpusConfig(root=root, index=index))
+    with sqlite3.connect(index) as conn:
+        before = {row[0] for row in conn.execute("SELECT rel_path FROM documents")}
+
+    report = refresh(FolderCorpusConfig(root=root, index=index, exclude=(root / "skip",)))
+    with sqlite3.connect(index) as conn:
+        after = [row[0] for row in conn.execute("SELECT rel_path FROM documents")]
+
+    assert before == {"keep/a.txt", "skip/b.txt"}
+    assert report["deleted"] == 1
+    assert after == ["keep/a.txt"]
+
+
+def test_check_reports_exclude_paths(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    config = FolderCorpusConfig(
+        root=root,
+        index=tmp_path / "folder.sqlite",
+        exclude=(root / "skip", Path("/abs/other")),
+    )
+
+    report = check(config)
+
+    assert report["exclude_paths"] == [str(root / "skip"), "/abs/other"]
 
 
 def test_initialize_schema_creates_public_tables():

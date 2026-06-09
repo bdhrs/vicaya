@@ -51,7 +51,7 @@ After touching any `.py` file, run the concrete scoped bundle before finalizing:
 - Vault: path in `$VICAYA_VAULT_PATH`, vault name `$VICAYA_VAULT_NAME`
 - Optional PDF output: path in `$VICAYA_PDF_PATH`
 - Calibre library: path in `$VICAYA_CALIBRE_LIBRARY`
-- Folder corpus root: path in `$VICAYA_FOLDER_CORPUS_ROOT`; folder corpus index: local SQLite path in `$VICAYA_FOLDER_CORPUS_INDEX`
+- Folder corpus root: path in `$VICAYA_FOLDER_CORPUS_ROOT`; folder corpus index: local SQLite path in `$VICAYA_FOLDER_CORPUS_INDEX`; optional comma-separated skip list in `$VICAYA_FOLDER_CORPUS_EXCLUDE` (folders pruned during refresh, e.g. a nested Calibre library)
 - YouTube cache: `data/youtube_cache/` (gitignored, grows over time)
 - Channel allowlist: `data/youtube_channels.md`
 
