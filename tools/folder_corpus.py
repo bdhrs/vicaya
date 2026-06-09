@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any, Callable, cast
 from xml.etree import ElementTree
 
+from tqdm import tqdm
+
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 ROOT_ENV = "VICAYA_FOLDER_CORPUS_ROOT"
@@ -541,7 +543,14 @@ def refresh(
     seen_rel_paths: set[str] = set()
     with sqlite3.connect(index) as conn:
         initialize_schema(conn)
-        for path in files:
+        progress = tqdm(
+            files,
+            desc="folder-corpus refresh",
+            unit="file",
+            smoothing=0,
+            disable=not sys.stderr.isatty(),
+        )
+        for path in progress:
             rel_path = path.relative_to(root).as_posix()
             try:
                 stat = path.stat()
