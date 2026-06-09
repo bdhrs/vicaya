@@ -7,15 +7,15 @@ a Markdown skill file). Lower-context staged runs use the sibling skills
 `vicaya-0-scope`, `vicaya-1-gather`, `vicaya-2-synthesize-review`, and
 `vicaya-3-complete`, which route back to exact sections in the main skill. It
 queries the user's Obsidian vault, a local CST canon SQLite database, the Early
-Buddhist Connections (EBC) reference vault, their Calibre library, a local
+Buddhist Connections (EBC) reference vault, their library folders, a local
 GRETIL Sanskrit corpus, YouTube Dhamma talks, and the open web — in that order
 — cross-checks the synthesis with a second model, and writes a single
 structured Markdown note into the vault. The goal is to make deep Pāḷi research
 fast, citation-complete, and cumulative.
 
 ## Who it's for
-A single user: a practitioner with a local Obsidian vault, a Calibre
-library of Buddhist texts, and the CST canon database.
+A single user: a practitioner with a local Obsidian vault, library folders
+of Buddhist texts, and the CST canon database.
 
 ## One-off or ongoing
 Ongoing. Each research run adds a note to the vault; the corpus grows

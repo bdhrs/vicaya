@@ -1,6 +1,6 @@
 ---
 name: vicaya
-description: Run a structured Pāḷi/Buddhist research session across the user's local sources (Obsidian vault, CST canon SQLite, Calibre library, unmanaged folder corpus) plus web search, cross-checked with Gemini, and write a single linked note into the Obsidian vault. Invoke when the user types /vicaya <question> or asks for "research on X", "look into X across my sources", "find what the suttas say about X", or any multi-source research request that should land as a permanent vault note.
+description: Run a structured Pāḷi/Buddhist research session across the user's local sources (Obsidian vault, CST canon SQLite, library folders) plus web search, cross-checked with Gemini, and write a single linked note into the Obsidian vault. Invoke when the user types /vicaya <question> or asks for "research on X", "look into X across my sources", "find what the suttas say about X", or any multi-source research request that should land as a permanent vault note.
 ---
 
 # Research skill
@@ -31,7 +31,7 @@ These rules apply to every run, by every agent. They are part of the skill, not 
 2. **No process or workflow logging inside the research note.** No "Improvements made" sections, no "the helper failed and I switched to X", no "this was missed in the first pass". Notes contain content; process belongs in the terminal report only (Phase 7's final summary), and self-improvement edits go into this `SKILL.md` file.
 3. **Pāḷi spelling conventions differ per source:**
    - **Canon SQLite (`tipitaka-translation-data.db`) and the Obsidian vault** use exact Pāḷi diacritics (`paṭiccasamuppāda`, `dukkha`, `nibbāna`). Search verbatim. If 0 hits, suspect a bug or the alternate niggahita (`ṃ` vs `ṁ`), not loose spelling.
-   - **Calibre library** uses ASCII Pāḷi (`paticcasamuppada`). The `search_calibre` helper strips diacritics from queries automatically.
+   - **Library folders** index contains Calibre metadata labels with ASCII Pāḷi (`paticcasamuppada`). Diacritics in queries are handled automatically.
 4. **Obsidian CLI requires the Obsidian desktop app to be running.** If a CLI command fails with "unable to find Obsidian", launch the desktop app yourself in the background and wait ~5 seconds before retrying. On Linux that's typically `setsid obsidian </dev/null >/dev/null 2>&1 &` (or the absolute path to the binary on your system); on macOS, `open -a Obsidian`. Don't ask the user to open it.
 5. **Don't ask the user to run shell commands you can run yourself.** Read-only inspection, launching local applications, running helper scripts via `uv run` — all yours to do. Only ask when something genuinely requires the user: interactive logins, granting permissions, installing system packages, etc.
 6. **Citations are non-negotiable.** Every claim has a reference. A claim without a citation is a hallucination waiting to happen.
@@ -69,8 +69,7 @@ All user-specific paths come from the project's `.env` file (see `.env.example` 
 - Helper module: `<repo>/tools/research_sources.py`
 - Canon db: read-only SQLite at `$VICAYA_CANON_DB`.
 - DPD dictionary db: read-only SQLite at `$VICAYA_DPD_DB` — Pāḷi word meanings, grammar, roots, and inflected-form resolution. See the **DPD dictionary database** section below for the two lookup paths.
-- Calibre library: `$VICAYA_CALIBRE_LIBRARY`, the library root containing `metadata.db`. Metadata search reads `metadata.db` directly in read-only SQLite mode. FTS indexing may or may not be complete depending on when the library was last indexed (14k books takes days to index from scratch). The helper checks FTS status automatically and falls back to metadata search if indexing is incomplete or times out — don't try to force FTS. When FTS is active, snippets are returned with hits; when metadata-only, you get titles/authors/comments. Both are useful; note which mode is active in the scratch.
-- Folder corpus: `$VICAYA_FOLDER_CORPUS_ROOT` is an unmanaged document tree, and `$VICAYA_FOLDER_CORPUS_INDEX` is its local SQLite FTS index. This source is independent of Calibre: normal search reads the index only; source files are touched only during `folder-corpus-refresh` or manual inspection.
+- Library folders: `$VICAYA_LIBRARY_FOLDERS` (pipe-separated paths) are indexed into `$VICAYA_LIBRARY_FOLDERS_INDEX`, a local SQLite FTS5 database. Calibre libraries are recognised automatically — author and tag metadata (`Calibre #id | Authors: … | Tags: …`) is prepended to each book's FTS text, making tag/author searches work through the unified index. Normal search reads the index only; source files are touched only during `library-folders-refresh` or manual inspection.
 - Cross-check uses an OpenRouter model chain (see Phase 6; current lead `deepseek/deepseek-v4-flash` — paid but ~$0.0001/call). Requires `OPENROUTER_API_KEY` in env / `.env`, or an OpenRouter key in `~/.local/share/opencode/auth.json`. When unavailable the helper returns a `# SELF_REVIEW:` sentinel and the agent runs the checklist on its own synthesis.
 - **Book code → source XML map**: `/home/bodhirasa/MyFiles/3_Active/dpd-db/tools/pali_text_files.py` maps every canon book code (e.g. `s0201m_mul`) to its source XML file in the DPD database. Consult this when you need to know which raw XML file a given book code corresponds to, or when debugging why a search returns no results for a book you expect to exist.
 - **EBC vault** (Early Buddhist Connections): `$VICAYA_EBC_VAULT_PATH` — a separate, read-only Obsidian vault of curated EBT material. Supplies per-sutta Āgama-parallel metadata, multiple parallel English translations of each sutta, Chinese-Āgama translations (Patton + BDK), and a Pātimokkha rule/commentary set. See the **EBC vault** section below.
@@ -95,11 +94,10 @@ Subcommands (each prints JSON to stdout):
 | `search-vault QUERY` | `--folder PATH` `--limit N` | Obsidian vault full-text search |
 | `search-canon QUERY` | `--books PAT...` `--lang pali\|english\|any` `--limit N` | Default books: sutta mūla (`s*_mul`) |
 | `resolve-citation BOOK_CODE PARANUM` | — | Returns `Citation` JSON |
-| `search-calibre QUERY` | `--tags T...` `--limit N` | Diacritics stripped automatically |
-| `folder-corpus-check` | — | Probe configured unmanaged folder corpus root/index. Does not walk the source tree. |
-| `folder-corpus-refresh` | `--limit N` | Refresh the folder corpus SQLite index. This is the only command that walks the source tree. |
-| `search-folder-corpus QUERY` | `--limit N` `--include-duplicates` | Search the local folder corpus index. Exact duplicates are collapsed by default. |
-| `folder-corpus-duplicates` | `--samples N` | Read-only duplicate diagnostic from the local index. |
+| `library-folders-check` | — | Probe configured library folders root/index. Does not walk the source tree. |
+| `library-folders-refresh` | `--limit N` | Refresh the library folders SQLite index. This is the only command that walks the source tree. |
+| `search-library-folders QUERY` | `--limit N` `--include-duplicates` | Search the library folders index. Exact duplicates are collapsed by default. |
+| `library-folders-duplicates` | `--samples N` | Read-only duplicate diagnostic from the local index. |
 | `lookup-book VALUE` | — | Translate any CST book identifier into the others (filename, table, Pāḷi title, gui code, DPD code) |
 | `cross-check` | `--timeout N`; **prompt on stdin** | OpenRouter model chain (see `data/openrouter_models.json`) → `# SELF_REVIEW:` sentinel on failure. Output is post-processed: every sutta citation is stamped `[VERIFIED]` or `[REJECTED — not in sutta_info]`. Use this in Phase 6. |
 | `verify-citation REF` | — | Confirm a human sutta reference (`MN60`, `SN 46.42`, `Sn 4.8`) exists in `dpd.db sutta_info`. Exits 1 if not. Existence-only; says nothing about content claims. |
@@ -107,7 +105,6 @@ Subcommands (each prints JSON to stdout):
 | `get-ebc-overview SUTTA_CODE` | — | Parsed EBC overview card: PTS ref, titles, themes, training, formula, **named Āgama parallels**, partial parallels. Accepts `MN10`, `mn 10`, `mn-10`, `DN22`, `MA98`, etc. Returns `EBCOverview` JSON or exits 1 if missing. |
 | `get-agama SUTTA_CODE` | `--max N` | **Always call this immediately after `get-ebc-overview`.** Resolves every code in `parallels_agama`, reads the Patton (preferred) or BDK translation file, and returns the full text in `parallels_found`. Codes with no file on disk appear in `parallels_missing` — never silently dropped. Default max 5. |
 | `search-ebc QUERY` | `--folder PATH` `--limit N` | Fixed-string grep across the EBC vault (markdown only). Returns `VaultHit`s. `--folder` accepts a subdir like `+Suttas/Overviews Suttas/MN` or `+Vinaya/Patimokkha/bmc1`. |
-| `calibre-check` | — | Probe whether the Calibre library's `metadata.db` is reachable read-only. Exits 0 if ok, 1 if unavailable or unreadable, with a specific message. Use at Phase 3 start. |
 | `sc-parallels CITATION` | `--no-text` | Look up parallels for a citation (e.g. `mn18`, `sn35.28`) in the offline SuttaCentral archive. Returns `SCParallel` objects: `ref`, `resemblance` (bool, `~` prefix), `paragraph_range`, `text_pali`, `text_lzh`, `text_san`, `text_pra`, `translation_en`, `text_gaps` (list — explicit when text isn't in the partial archive). Parallel *identification* is comprehensive; text retrieval is best-effort. |
 | `sc-search QUERY` | `--lang pli\|lzh\|san\|pra\|en` `--limit N` | Fixed-string grep across SuttaCentral offline root texts in one language. `lzh` = Literary Chinese Āgamas. Returns `VaultHit`s with the matched JSON segment. |
 
@@ -120,8 +117,7 @@ Every helper returns dataclasses serialised to JSON by the CLI. Field names are 
 - **VaultHit**: `path` (str), `snippet` (str), `line` (int | null)
 - **CanonHit**: `book_code` (str, e.g. `s0201m_mul`), `paranum` (str), `pali` (str), `english` (str). **No `snippet` field** — quote from `pali` / `english` directly. XML/TEI markup is stripped automatically; text is plain UTF-8.
 - **Citation**: `machine` (e.g. `s0201m_mul:23`), `human` (e.g. `MN60 Apaṇṇakasuttaṃ para 97`), `pitaka`, `text_type`, `paranum`.
-- **CalibreHit**: `book_id` (int), `title` (str), `authors` (str), `tags` (list[str]), `location` (str), `snippet` (str — populated only when FTS is ready).
-- **Folder corpus hit**: plain dict with `document_id`, `title`, `relative_path`, `source_path`, `extension`, `snippet`, `extraction_status`, `duplicate_count`, `duplicate_paths`, `possible_duplicate_of`, and `source_available`.
+- **Library folders hit**: plain dict with `document_id`, `title`, `relative_path`, `source_path`, `extension`, `snippet`, `extraction_status`, `duplicate_count`, `duplicate_paths`, `possible_duplicate_of`, and `source_available`.
 - **YouTubeHit**: `video_id` (str), `title` (str), `channel` (str), `channel_id` (str), `duration` (float | null, seconds), `url` (str), `tier` (str — `trusted` | `probationary`; `excluded` never appears here, those are filtered out).
 - **YouTubeTranscript**: `video_id` (str), `lang` (str, e.g. `"en"`), `is_auto` (bool — **true means Pāḷi terms are unreliable; paraphrase, don't quote**), `segments` (list of `{start, duration, text}`), `fetched` (ISO date).
 - **EBCOverview**: `code` (str), `path` (str — absolute path to the overview file), `pts` (str, e.g. `"M i 55"`), `titles` (list — Pāḷi + English), `nikaya` (list), `chapter` (list), `themes` (list), `topics` (list), `training` (list), `formula` (list), `audience` (list), `teacher` (list), `parallels_agama` (list of bare codes, e.g. `["MA98", "EA12.1"]`), `parallels_partial` (list).
@@ -483,14 +479,14 @@ Gethin, Rupert. "Bhavaṅga and Rebirth According to the Abhidhamma." In *The Bu
   (Calibre #10228)
 ```
 
-Journal article (if available via Calibre or web):
+Journal article (if available via library folders or web):
 ```
 Anālayo, Bhikkhu. "The Luminous Mind in Theravāda and Dharmaguptaka Discourses."
   *Journal of the Oxford Centre for Buddhist Studies* 13 (2017): 10–51.
   (Calibre #8904)
 ```
 
-When publisher / year / page range are not available from the Calibre metadata, include
+When publisher / year / page range are not available from the library folders metadata, include
 what is available and omit the rest — do not guess or invent publication details.
 
 #### Online sources
@@ -584,7 +580,7 @@ Nikāya material has at least partial parallels).
 - **EBC vault** (`get-ebc-overview <code>` then `get-agama <code>`) — always call
   both. `get-agama` returns the full Patton or BDK translation text for each named
   Āgama parallel; `parallels_missing` lists codes with no file available.
-- **Calibre `authors:Analayo`** — Bhikkhu Anālayo's *Comparative Study of the
+- **Library folders — search "Analayo"** — Bhikkhu Anālayo's *Comparative Study of the
   Majjhima-Nikāya* and related work is the standard T3 reference. Tags
   `Chinese Canon (Tripitaka)`, `Sanskrit Canon`, `Tibetan Canon`, `Comparative
   Studies`. Corporate author `84000` for Tibetan canon.
@@ -598,7 +594,7 @@ moments of consciousness, classifications of phenomena, the structure of
 liberation, kamma mechanics.
 *Where to search:* canon DB `abh*_mul` (mūla) and `abh*_att` (commentary).
 Visuddhimagga (`e0101n_mul`, `e0102n_mul`) often functions as the practical
-Abhidhamma reference. Calibre tag `Abhidhamma`; authors Bhikkhu Bodhi
+Abhidhamma reference. Library folders — tag `Abhidhamma`; authors Bhikkhu Bodhi
 (*Comprehensive Manual of Abhidhamma*), Nyanaponika Thera, Y. Karunadasa.
 *Satisfying hit:* a canonical Abhidhamma classification or Visuddhimagga
 treatment, cited with a paragraph or page reference.
@@ -620,7 +616,7 @@ it.
 *Where to search:* canon DB `*_att` (aṭṭhakathā) and `*_tik` (ṭīkā). Mūla +
 commentary together: `--books "s02*_mul" "s02*_att"`. Sub-commentaries:
 `--books "*_tik"`. Visuddhimagga (`e0101n_mul`, `e0102n_mul`) is the great
-commentarial summa. Calibre tags `Commentary`, `Atthakatha`.
+commentarial summa. Library folders — tag `Commentary`, tag `Atthakatha`.
 *Satisfying hit:* a Buddhaghosa, Dhammapāla, or ṭīkā gloss cited with
 paragraph reference; explicit note when the commentary diverges from a
 plausible reading of the mūla.
@@ -631,12 +627,11 @@ plausible reading of the mūla.
 *Applies to:* any question where a comparative-school reading enriches the
 analysis (philosophy of mind, emptiness, bodhicitta, tantric practice,
 buddha-nature, ālaya-vijñāna, two truths, etc.).
-*Where to search:* Calibre tags `Mahayana`, `Mahayana Sutra`, `Madhyamaka`,
+*Where to search:* library folders — search for tag `Mahayana`, `Mahayana Sutra`, `Madhyamaka`,
 `Tibetan Buddhism`, `Zen Buddhism`, `Vajrayana` (verify against
 `data/calibre_tags.csv`). Corporate author `84000` (the Tibetan translation
 project, 36 books). Tag `Yogacara` may not exist verbatim — consult the csv,
-fall back to free-text search `comments:yogacara` or
-`comments:"consciousness-only"`. Web: 84000.co, Lotsawa House, Berzin Archives.
+fall back to free-text search. Web: 84000.co, Lotsawa House, Berzin Archives.
 *Satisfying hit:* a school-specific position cited to a primary text or a
 recognised secondary source; explicit comparison to the Theravāda reading
 where the question warrants it.
@@ -654,7 +649,7 @@ debates the suttas engage (e.g. ātman, fire-imagery, varṇa), shared lexicon
   light HTML markup). Use `Path(hit.path).stem` to derive the text name (e.g.
   `avs___u` from `avs___u.htm`). Scope to a subfamily with `--folder` (e.g.
   `--folder 1_veda`). Only available when `VICAYA_GRETIL_PATH` is configured.
-- **Calibre**: tag `Sanskrit Text`; verify against `data/calibre_tags.csv` whether
+- **Library folders**: tag `Sanskrit Text`; verify against `data/calibre_tags.csv` whether
   `Hinduism`, `Jainism`, `Vedic`, `Upanishads`, `Indology`, `Indian Religion` exist
   as tags — use what is present, free-text otherwise. Authors: Patrick Olivelle,
   Johannes Bronkhorst, Richard Gombrich (esp. *How Buddhism Began*), Karel Werner.
@@ -662,7 +657,7 @@ debates the suttas engage (e.g. ātman, fire-imagery, varṇa), shared lexicon
   *Encyclopædia of Indian Religions*.
 
 *Satisfying hit:* a verbatim IAST passage from GRETIL with text name + line number,
-**or** a Sanskrit / Vedic / Jain passage via Calibre or scholar's analysis showing
+**or** a Sanskrit / Vedic / Jain passage via library folders or scholar's analysis showing
 the term, debate, or image at issue; explicit note when the Buddhist position responds
 to or departs from the precedent. Note: searching by English translation theme is
 often more productive than searching IAST terms directly.
@@ -671,7 +666,7 @@ often more productive than searching IAST terms directly.
 *Applies to:* questions where cross-religious comparison is genuinely
 illuminating — contemplative practice, mystical phenomenology, ethics,
 soteriology. Apply selectively; do not force.
-*Where to search:* Calibre tags `Comparative Religion`, `Comparative Studies`,
+*Where to search:* library folders — search for tag `Comparative Religion`, `Comparative Studies`,
 `Christianity`, `Mysticism`, `Daoism`, `Sufism` (verify against the csv).
 Authors: Thomas Merton, Aldous Huxley, Bernadette Roberts, Daniel Ingram
 (cross-traditional contemplative writing). Web: standard comparative religion
@@ -684,7 +679,7 @@ proper attribution; explicit note on where the analogy breaks down.
 **9. Modern teachers — living and recent (20th–21st c.) lineage holders and lay teachers.**
 *Applies to:* every practical or applied question; most doctrinal questions
 benefit from modern framing.
-*Where to search:* Calibre — Thai Forest (`Ajahn Chah`, `Ajahn Brahmavamso`,
+*Where to search:* library folders — Thai Forest (`Ajahn Chah`, `Ajahn Brahmavamso`,
 `Thanissaro Bhikkhu`, `Ajahn Sumedho`, `Ajahn Amaro`), Burmese (`Mahasi
 Sayadaw`, `Pa-Auk Sayadaw`, `Sayadaw U Tejaniya`), Sri Lankan (`Nyanaponika
 Thera`, `Bhikkhu Bodhi`, `Bhikkhu Anālayo`), Goenka tradition (`Vipassana
@@ -702,7 +697,7 @@ distinct lineages so the modern voice is not monochromatic.
 *Applies to:* questions about institutional structure, monastic economics,
 gender, ethnic Buddhism, modern Buddhism in society, conversion, reform
 movements.
-*Where to search:* Calibre — consult `data/calibre_tags.csv` for `Sociology`,
+*Where to search:* library folders — consult `data/calibre_tags.csv` for `Sociology`,
 `Anthropology`, `Religious Studies`, `Buddhist Studies` clusters. Authors:
 Melford Spiro, Stanley Tambiah, Donald Lopez, David McMahan (*The Making of
 Buddhist Modernism*), Heinz Bechert. Web: *Journal of Buddhist Ethics*,
@@ -714,7 +709,7 @@ named scholar.
 *Applies to:* questions about mind, defilements, meditation effects,
 suffering, healing, identity, the relation between *citta* / *mano* /
 *viññāṇa* and modern constructs.
-*Where to search:* Calibre tag `Psychology` (668 books, well-populated), plus
+*Where to search:* library folders — search for tag `Psychology` (668 books, well-populated), plus
 `Buddhist Psychology` (verify in csv), `Phenomenology`. Authors: Jack Engler,
 John Welwood, Mark Epstein, Daniel Goleman, Rick Hanson, Tara Brach, Bhikkhu
 Anālayo (*Satipaṭṭhāna* + meditation studies), Y. Karunadasa.
@@ -726,7 +721,7 @@ term it engages, cited to a book or paper.
 ethics, time, causation, personal identity, free will, language; also
 **constructed selfhood, phenomenal experience, and anattā** (phenomenology is
 directly relevant to Buddhist self-theory and mind-construction topics).
-*Where to search:* Calibre tag `Philosophy` (631 books). Authors: Mark Siderits,
+*Where to search:* library folders — search for tag `Philosophy` (631 books). Authors: Mark Siderits,
 Jay Garfield, Evan Thompson, Jonardon Ganeri, Steven Collins (*Selfless
 Persons*, *Nirvana and Other Buddhist Felicities*), Charles Goodman, Owen
 Flanagan. **Phenomenology specifically:** Thomas Metzinger (*Being No One*,
@@ -742,7 +737,7 @@ philosopher.
 **13. Cognitive science — neuroscience, contemplative science, embodied/enactive cognition.**
 *Applies to:* meditation, attention, awareness, perception, default-mode
 network, embodied self, predictive processing, contemplative training studies.
-*Where to search:* Calibre tags `Cognitive Science`, `Neuroscience`,
+*Where to search:* library folders — search for tag `Cognitive Science`, `Neuroscience`,
 `Consciousness`. Authors: Francisco Varela, Evan Thompson (*Mind in Life*,
 *Waking, Dreaming, Being*), Antoine Lutz, Richard Davidson, Wendy Hasenkamp,
 Cliff Saron, Judson Brewer. Web: *Mind & Life Institute*, *Frontiers in Human
@@ -753,7 +748,7 @@ with the Buddhist construct it engages, cited.
 **14. Archaeology — material culture, sites, inscriptions, art history.**
 *Applies to:* questions about early Buddhist history, Aśokan period, monastic
 architecture, relics, the historical Buddha, regional spread, dating debates.
-*Where to search:* Calibre — consult `data/calibre_tags.csv` for `Archaeology`,
+*Where to search:* library folders — consult `data/calibre_tags.csv` for `Archaeology`,
 `Art History`, `Inscriptions`, `Material Culture`. Authors: Gregory Schopen
 (esp. *Bones, Stones, and Buddhist Monks*), Lars Fogelin, Robert DeCaroli, Akira
 Hirakawa (early Mahāyāna archaeology). Web: ASI publications, *South Asian
@@ -765,7 +760,7 @@ cited to a named scholar or archaeological report.
 *Applies to:* questions about sectarian splits, councils, transmission to Sri
 Lanka / China / Tibet / SE Asia, modern reform movements, the historical
 Buddha, dating of texts.
-*Where to search:* Calibre tag `History` (808 books, well-populated). Authors:
+*Where to search:* library folders — search for tag `History` (808 books, well-populated). Authors:
 Étienne Lamotte (*History of Indian Buddhism*), Erich Frauwallner, Hirakawa
 Akira, Andrew Skilton (*A Concise History of Buddhism*), Richard Gombrich,
 Heinz Bechert, Donald Lopez. Web: *Journal of the International Association of
@@ -781,7 +776,7 @@ one-school picture and parallel recensions materially change the analysis.
 - `sc-search <term> --lang lzh` to grep the offline Chinese Āgama root texts directly.
 - `sc-search <term> --lang san` / `--lang pra` for Sanskrit/Prakrit fragments.
 - EBC vault `Agamas Dhamma pearls/` (Patton translations) and `Agamas BDK/` (BDK translations).
-- Calibre `authors:Analayo`, `authors:Bingenheimer` (SA), `authors:Choong` (EA), tags `Comparative Studies`, `Chinese Canon (Tripitaka)`.
+- Library folders — search "Analayo", "Bingenheimer" (SA), "Choong" (EA), tags `Comparative Studies`, `Chinese Canon (Tripitaka)`.
 **Hard rule — machine-translated Chinese is comprehension-only.** When no
 published translation exists, machine translation may be used as a reading aid
 to assess relevance. It must **never** be quoted in the vault note as a
@@ -1117,7 +1112,7 @@ This surfaces chapter-level collections the keyword search misses.
 
 Table-name suffixes: `_mul` = mūla, `_att` = aṭṭhakathā, `_tik` = ṭīkā, `_nrf` = non-canonical reference.
 
-**Diacritics in direct SQL.** The canon db stores NFC UTF-8 with native Pāḷi diacritics. Direct SQL `LIKE` must use the real characters (`ñ`, `ā`, `ṭ`, etc.). Example: `WHERE pali_text LIKE '%papañca%'` → hits correctly. `WHERE pali_text LIKE '%papanca%'` → 0 hits. The ASCII-stripping rule applies *only* to Calibre; never strip diacritics for canon SQL.
+**Diacritics in direct SQL.** The canon db stores NFC UTF-8 with native Pāḷi diacritics. Direct SQL `LIKE` must use the real characters (`ñ`, `ā`, `ṭ`, etc.). Example: `WHERE pali_text LIKE '%papañca%'` → hits correctly. `WHERE pali_text LIKE '%papanca%'` → 0 hits. The ASCII-insensitivity rule applies to the library folders FTS index (and it handles diacritics automatically); never strip diacritics for canon SQL.
 
 → **Phase 2 exit:** `scratch-gate 2`.
 
@@ -1167,39 +1162,25 @@ Chinese is a reading aid for the agent only — never quote it as a translation.
 
 ### Phase 3 — Library search
 
-**Phase 3 preflight — check the library is reachable before querying:**
+**Phase 3 preflight — check the library folders index is reachable before querying:**
 
 ```bash
-uv run tools/research_sources.py calibre-check
+uv run tools/research_sources.py library-folders-check
 ```
 
-If this exits 1, the library path is missing, `metadata.db` is missing, or the
-database cannot be opened read-only. The message tells you which. Proceed
-without Calibre and note the gap rather than retrying blindly.
+If this exits 1, the index path is missing or the database cannot be opened. The message tells you which. Proceed without the index and note the gap rather than retrying blindly.
 
-The user's Calibre library is whole-library non-fiction (Buddhism, religion, psychology). The tag vocabulary is in `<repo>/data/calibre_tags.csv` (~2k tags).
+The library folders index covers all configured library paths including Calibre books. The tag vocabulary is in `<repo>/data/calibre_tags.csv` (~2k tags).
 
 **Tag vocabulary first.** Before guessing technical terms, list the real tag vocabulary:
 ```bash
-uv run tools/research_sources.py search-calibre "" --tags <candidate> --limit 1
-# Or: grep -i "<concept>" data/calibre_tags.csv
+# grep -i "<concept>" data/calibre_tags.csv
 ```
-Pick the closest existing tag — don't invent terms like `Yogacara` if the library
-uses `Yogācāra` or `Consciousness-Only` instead. When in doubt, use the csv.
-
-Pick up to 3 tags relevant to the question (e.g. `Abhidhamma`, `Buddhism`, `Vipassana`, `Meditation`). Tag names are exact strings; matching is case- and diacritic-insensitive.
+Pick the closest existing tag. When in doubt, use the csv.
 
 ```bash
-uv run tools/research_sources.py search-calibre "<term>" --tags Buddhism --limit 20
+uv run tools/research_sources.py search-library-folders "<term>" --limit 20
 ```
-
-**Parallel-agent note.** Normal metadata search is lock-free because it reads
-`metadata.db` read-only. FTS still goes through `calibredb`, so concurrent agents,
-the Calibre GUI, or another `calibredb` process can still cause FTS/fallback lock
-contention. The helper automatically retries lock errors with backoff; persistent
-contention is an availability gap, not evidence that the library has no matching
-books. Fallback: use book IDs from earlier hits to extract content directly with
-the format-appropriate tool (see below).
 
 **Format-agnostic extraction.** Books are in any format — PDF, epub, MOBI, doc,
 txt, AZW3, or others. Never assume epub. Per-format extraction:
@@ -1216,62 +1197,29 @@ mkdir -p temp
 | epub | `mkdir -p "$RUN_TEMP/epub_extract" && find "$RUN_TEMP/epub_extract" -mindepth 1 -depth -delete && unzip -q /path/to/book.epub -d "$RUN_TEMP/epub_extract" && rg "<term>" "$RUN_TEMP/epub_extract"/` |
 | Any format | `mkdir -p "$RUN_TEMP" && ebook-convert /path/to/book.<ext> "$RUN_TEMP/book.txt" && rg "<term>" "$RUN_TEMP/book.txt"` |
 
-`ebook-convert` (ships with Calibre) is the universal fallback. The book's Calibre
-path is in the metadata returned by `search-calibre` or from the library's folder.
+`ebook-convert` (ships with Calibre) is the universal fallback. The book's source
+path is in the metadata returned by `search-library-folders` or from the library's folder.
 
-**`authors:` zero-hit fallback.** If a known author returns 0 via `authors:`, the
-query may have gone down a different path than title/FTS. Fall back: search by title
-keyword or a distinctive term from the book, and read the `authors` field from the
-returned hits. E.g. `search-calibre "Armstrong" --limit 5` then inspect `authors`.
+**Zero-hit fallback.** If a known author returns 0, try searching by title keyword
+or a distinctive term from the book, and inspect the `title`/`relative_path` fields
+from the returned hits. E.g. `search-library-folders "Armstrong" --limit 5`.
 
-If FTS isn't ready (the helper handles this silently), you'll get metadata hits — book titles whose name/author/comments match. Still useful; note them as "potentially relevant reading" rather than quoting.
+Snippets come back with each hit when FTS text is indexed — quote them with book + author attribution. If `extraction_status` is not `"ok"`, extract manually with `pdftotext` or `ebook-convert`.
 
-If FTS *is* ready, snippets come back with each hit — quote them with book + author attribution.
+#### Library folders search guidelines
 
-#### Calibre search guidelines (library shape, read before searching)
+The library folders index is an FTS5 database. All Calibre books are included with their author and tag metadata prepended. Search the index using natural language or tag/author terms (e.g. `"Bhikkhu Bodhi"`, `"Buddhism"` — these appear as literal prefix text in the FTS rows). Zero results mean no match; try broader terms or check `library-folders-check`.
 
-The library currently holds **12,501 books**, **2,140 tags**, **6,042 author
-entries**, **607 series**, and **21 languages**. Searches frequently miss
-because the agent guesses the wrong tag, the wrong author form, or scopes too
-narrowly. The next several subsections fix this.
+**Hard rule:** search results are evidence, not a complete survey. Always run `search-library-folders` before concluding a topic has no library coverage.
 
-**1. `calibredb --search` syntax cheat sheet.** The helper passes its
-expression straight to Calibre. The grammar is:
+#### Query conventions — different from the canon DB
 
-| Form | Meaning |
-|---|---|
-| `nibbana` | free-text match across all fields |
-| `title:nibbana` | scope to title |
-| `authors:Analayo` | scope to authors |
-| `tags:Nibbana` | tag contains "Nibbana" (loose) — also catches `Parinibbana` |
-| `tags:"=Nibbana"` | tag equals "Nibbana" exactly (what the helper uses) |
-| `series:"Wheel Publication"` | scope to series |
-| `publisher:"Pali Text Society"` | scope to publisher |
-| `comments:jhana` | scope to the comments / description field |
-| `languages:eng` | scope to language code |
-| `A and B` / `A or B` / `not A` | boolean joins |
-| `"two words"` | quoted phrase |
+- **FTS is case- and diacritic-insensitive.** `nibbāna`, `nibbana`, and `Nibbana` return identical results. Use ASCII for consistency; do not waste a second round trying the diacritic form.
+- **Do NOT apply Pāḷi stem truncation here.** The stem-truncation rule applies to the canon SQLite only. In the library folders FTS, truncated stems match compound tokens (`jhān'aṅga`), HTML entities (`nibban&agrave;na`), and abbreviations — not the full word. Use the complete ASCII Pāḷi term: `satipatthana` not `satipaṭṭhān`; `paticcasamuppada` not `paṭiccasamuppād`.
+- **Multi-word English queries work as implicit AND.** `"four foundations of mindfulness"`, `meditation retreat laypeople`, `dependent origination` all return precise results. Combine Pāḷi and English when a concept has both: `nibbana liberation`.
+- **Extraction is a build-time concern, not a query-time concern.** All formats (PDF, EPUB, MOBI, DOC, etc.) are extracted into the FTS index during `library-folders-refresh`. A hit with `extraction_status: "ok"` has its full text in the index — use the FTS snippet. If `extraction_status` is not `"ok"`, that is a refresh gap, not something to fix at query time; note it in Critical Gaps.
 
-**2. Diacritics and case do not matter.** Calibre's metadata search is
-already case- and diacritic-insensitive. Verified live:
-`title:paticcasamuppada`, `title:Paticcasamuppada`, and
-`title:paṭiccasamuppāda` all return the same 13 hits. The helper still
-strips diacritics for safety, but **do not waste a second round trying the
-other form** — if `paticcasamuppada` returned 0, `paṭiccasamuppāda` will
-also return 0. (This refines Hard Rule 3 for Calibre specifically; the canon
-SQLite and the vault still demand exact diacritics.)
-
-**3. Tag matching: exact vs. loose.** The helper uses **exact match**
-(`tags:"=Nibbana"`) which returns 52 books. Loose match (`tags:Nibbana`)
-returns 60 — the extra 8 come from `Parinibbana` and the stray
-diacritic-form `Nibbāna`. Exact is the default because it's more precise.
-**To widen when results are thin:** pass multiple related tags to the helper
-(`--tags Nibbana Parinibbana Nibbida`), or drop tags entirely and rely on
-free-text + post-filter on the returned `tags` field.
-
-**4. Tag vocabulary clusters (the realistic shape).** The vocab is
-fragmented — there is no single canonical form for many concepts. Always
-consider the cluster, not just the first name that comes to mind.
+**Tag vocabulary clusters.** The vocab is fragmented — there is no single canonical form for many concepts. Always consider the cluster, not just the first name that comes to mind.
 
 | Cluster | Tags to consider together |
 |---|---|
@@ -1291,7 +1239,7 @@ Philosophy 631, Meditation 574, Pali Canon (Tipitaka) 552, Tibetan Buddhism
 538, Pali Text 514, dhamma talk 434, Doctrine 415, Mindfulness 390. The full
 list is in `data/calibre_tags.csv`.
 
-**5. Author naming conventions (strip the title).** The library mixes many
+**Author naming conventions (strip the title).** The library mixes many
 honorific patterns: "Bhikkhu X" (58 entries), "X Bhikkhu" (25), "Ajahn X"
 (38), "X Sayadaw" (22), "Ven. X" (98), "Dr. X" (56). Top authors: Piya Tan
 (1,293), Bhikkhu Anālayo (410), Vipassana Research Institute (249), Pali
@@ -1299,60 +1247,24 @@ Text Society (114), Anandajoti Bhikkhu (104), Bhikkhu Bodhi (79),
 Thanissaro Bhikkhu (76), Ajahn Brahmavamso (58), Ajahn Chah (49), Mahasi
 Sayadaw (45), Bhikkhu Sujato (31), Nyanaponika Thera (28).
 
-Rule: **search the distinguishing element, not the title.** Use
-`authors:Analayo`, not `authors:"Bhikkhu Analayo"`. Use `authors:Bodhi`, not
-`authors:"Bhikkhu Bodhi"`. (Case and diacritics still don't matter.)
+Search the distinguishing element, not the title — e.g. search `"Analayo"`, not `"Bhikkhu Analayo"`. Case and diacritics are handled automatically.
 
-Corporate / canonical "authors" exist and are useful seed entries when the
-human author is unknown: `Samyutta Nikaya` (55 books listed under this
-"author"), `Pali Text Society` (114), `Vipassana Research Institute` (249),
-`84000` (36 — the Tibetan translation project), `Wikipedia` (69).
+**Search ladder — descend when hits are thin.** Don't give up after one
+search returning zero:
 
-**6. The `series:` field is unused but valuable.** 607 distinct series.
-When a topic implies a known imprint, scope with it. Useful series:
+1. **Tag/author phrase.** `search-library-folders "Bhikkhu Bodhi nibbana"` — FTS5 ranks author+tag prefix text highly.
+2. **Free-text phrase.** `search-library-folders "jhana absorption"`.
+3. **Widen via synonym tag cluster** from the table above. Try related tag terms as free-text.
+4. **Known-author search.** `search-library-folders "Analayo"` or `search-library-folders "Bhikkhu Bodhi"`.
 
-- `A Very Short Introduction` (339) — Oxford pocket intros
-- `Vipassana Research Institute` (224)
-- `Wheel Publication` (134) — BPS short pamphlets
-- `Pali Text Society Editions` (110)
-- `Buddhist Studies Review` (68)
-- `BDK English Tripiṭaka Series` (60)
-- `Journal of the Pali Text Society` (49)
-- `Bodhi Leaves` (48)
-- `Kangyur` (36)
-- `Insight Journal` (34)
+If all rungs return nothing, the topic is genuinely absent from the
+index — note it as a gap in *Open Threads*, do not invent a citation.
 
-The current helper does not expose `--series` as a flag, but the free-text
-helper invocation can include a series clause via `comments:` or by passing
-the series name as the query and post-filtering.
-
-**7. Search ladder — descend when hits are thin.** Don't give up after one
-search returning zero. Walk down these rungs in order:
-
-1. **Tag-scoped phrase.** `search-calibre "jhana" --tags Meditation` — narrow and high-precision.
-2. **Free-text phrase, no tags.** `search-calibre "jhana absorption"` — Calibre searches title/author/comments simultaneously.
-3. **Drop the tag restriction** if step 1 returned 0. The book may be tagged with a sibling concept (e.g. `Mindfulness` instead of `Meditation`).
-4. **Widen via synonym tag cluster** from the table above. Pass several related tags. E.g. for *Nibbāna* topics, pass `--tags Nibbana Parinibbana` together.
-5. **Known-author search.** If you know an authority on the topic (e.g. Bhikkhu Anālayo on early Buddhism, Bhikkhu Bodhi on the Nikāyas, Piya Tan on sutta translations), do an `authors:` scoped search.
-
-If all five rungs return nothing, the topic is genuinely absent from the
-library — note it as a gap in *Open Threads*, do not invent a citation.
-
-#### Folder corpus search
-
-**Both Calibre and the folder corpus must always be queried.** They are independent sources — never substitute one for the other, and never skip either because the other returned results. What to do with the results is the agent's judgment; the searches themselves are mandatory.
+**The library folders index must always be queried.** Never skip it because other sources returned results. What to do with the results is the agent's judgment; the search itself is mandatory.
 
 ```bash
-uv run tools/research_sources.py folder-corpus-check
-uv run tools/research_sources.py search-folder-corpus "<term>" --limit 20
+uv run tools/research_sources.py search-library-folders "<term>" --limit 20
 ```
-
-**Query conventions — different from both Calibre and the canon DB:**
-
-- **FTS is case- and diacritic-insensitive.** `nibbāna`, `nibbana`, and `Nibbana` return identical results. Use ASCII for consistency; do not waste a second round trying the diacritic form.
-- **Do NOT apply Pāḷi stem truncation here.** The stem-truncation rule applies to the canon SQLite only. In the folder corpus FTS, truncated stems match compound tokens (`jhān'aṅga`), HTML entities (`nibban&agrave;na`), and abbreviations — not the full word. Use the complete ASCII Pāḷi term: `satipatthana` not `satipaṭṭhān`; `paticcasamuppada` not `paṭiccasamuppād`.
-- **Multi-word English queries work as implicit AND.** `"four foundations of mindfulness"`, `meditation retreat laypeople`, `dependent origination` all return precise results. Combine Pāḷi and English when a concept has both: `nibbana liberation`.
-- **Extraction is a build-time concern, not a query-time concern.** All formats (PDF, EPUB, MOBI, DOC, etc.) are extracted into the FTS index during `folder-corpus-refresh`. A hit with `extraction_status: "ok"` has its full text in the index — use the FTS snippet. If `extraction_status` is not `"ok"`, that is a refresh gap, not something to fix at query time; note it in Critical Gaps.
 
 Exact byte duplicates and identical normalized extracted text are already
 collapsed in default search results; use `--include-duplicates` only when you
@@ -1499,7 +1411,7 @@ Append answers to the scratchpad under `## Devil's Advocate`. Then draft.
 
 **Use all relevant evidence.** If you collected 15 canon hits and 6 library sources, all of them go in the note — not a representative sample. Drop a hit only if it is a verbatim duplicate of one already quoted. Paraphrase only when the full text is unavailable. Prefer blockquotes (Rule P1) over inline summaries everywhere.
 
-**Track every rejection.** Each time you decide not to use a source — whether a canon paragraph, a Calibre book, a web page, or a YouTube video — note it immediately with a one-line reason. These go into `## Sources Investigated, Not Used` in the final note. Common reasons: duplicate, metadata-only (no content to quote), URL blocked, auto-captions too degraded to paraphrase, out of scope, wrong sutta. Do not discard sources silently.
+**Track every rejection.** Each time you decide not to use a source — whether a canon paragraph, a library book, a web page, or a YouTube video — note it immediately with a one-line reason. These go into `## Sources Investigated, Not Used` in the final note. Common reasons: duplicate, metadata-only (no content to quote), URL blocked, auto-captions too degraded to paraphrase, out of scope, wrong sutta. Do not discard sources silently.
 
 **Recursive citation check.** As you draft, watch for sources that are load-bearing — a teacher, text, or sutta that the argument depends on but that hasn't been searched yet. If you find one, pause and loop back to Phase 2 or 3 for that specific entity before continuing. Up to two loop-backs per run; don't spiral beyond that. If after the loop-back the source still can't be found, note the gap honestly in Open Threads.
 
@@ -1588,8 +1500,8 @@ is complete. Never write a partial or draft note to the vault.
 - Is every position from the perspective map represented by at least one block-quoted canon passage?
 - Is every *applicable* angle from the Phase 1 triage represented by at least one citation, and is every *non-applicable* angle logged in `## Angles Not Pursued` with a one-line reason?
 - Are all pertinent canon hits in the Canon Evidence (T1) section — not a curated sample?
-- Have I searched Calibre for every plausible tag cluster, not just the first match?
-- Have I searched the folder corpus (mandatory alongside Calibre), and handled `possible_duplicate_of` / `source_available` correctly?
+- Have I searched the library folders for every plausible tag/author cluster, not just the first match?
+- Have I handled `possible_duplicate_of` / `source_available` correctly in library folders results?
 - Have I pulled transcripts for the most relevant Dhamma talks, not just noted the video titles?
 - Have I fetched and read the most promising web sources, not just linked to search results?
 - Is the draft approaching ~12 pages (~3,500 words)? If not, the answer is almost always: I have not surfaced enough sources.
@@ -1788,7 +1700,7 @@ library_refs:
   - "223: On Meditation — Ajahn Chah"
 ```
 
-The `book_id` must come from `CalibreHit.book_id` — never invent an ID.
+The `book_id` must come from the `document_id` in a library folders hit — never invent an ID.
 
 **Rule F5 — `agent` field and footer line: self-identify accurately.**
 
@@ -1929,7 +1841,7 @@ If fewer than 10, omit this section entirely.
 
 - **Helper raises `FileNotFoundError`**: a path is wrong — tell the user, don't fudge.
 - **Canon search returns 0 hits**: try lang="any" and/or broader book scope before giving up.
-- **Calibre returns 0 hits**: first distinguish empty from error — `calibre-check` exits 1 when the library path or `metadata.db` is unavailable or unreadable. If the library is reachable and truly empty: try fewer/looser tags; check `data/calibre_tags.csv` for the right vocabulary; try `authors:` with a known authority. If FTS snippets are unavailable or time out, treat metadata-only hits as usable source-discovery evidence and extract text directly with `pdftotext` or `ebook-convert` on known book files.
+- **Library folders returns 0 hits**: first distinguish empty from error — `library-folders-check` exits 1 when the index path is missing or unreadable. If the index is reachable and truly empty: try fewer/looser terms; check `data/calibre_tags.csv` for the right tag vocabulary; try an author's surname as the query. Extract content directly with `pdftotext` or `ebook-convert` on known book files when needed.
 - **`cross-check` returns `# SELF_REVIEW:`**: OpenRouter is unreachable. Run the embedded checklist on your own synthesis as described in Phase 6; do not retry the helper. Common root causes: no `OPENROUTER_API_KEY` set (check `.env`), an empty / malformed `data/openrouter_models.json`, or every free model in the chain simultaneously rate-limited (rare). (Note: the legacy `gemini-cross-check` subcommand returns a `# ERROR:` line on failure instead — same response: skip the section and continue.)
 - **Obsidian create fails**: print the rendered markdown to the terminal so the user can save it manually.
 - **PDF URL — WebFetch returns garbled or empty content**: WebFetch cannot decode PDF binary. Instead, save the file under this run's repo-local temp directory and extract with `pdftotext`:
@@ -1953,7 +1865,7 @@ vault search next time.
 - **The note's primary job is to surface sources.** The user wants a research map they can follow themselves — every relevant canon passage, every library book, every credible web source, every Dhamma talk. The Findings section orients them; the Evidence sections are the point. A note with thin evidence and expansive analysis has failed. A note with comprehensive evidence and concise analysis has succeeded.
 - **"Don't pad" means:** don't add summary paragraphs the user can derive from reading the evidence themselves. It does **not** mean "keep it short." It means every line must earn its place — either as a direct quote, a citation, or a sentence that cannot be inferred from the sources alone.
 - **Direct quotes over paraphrase.** When you have canon text, quote it in full with the blockquote format (Rule P1). Paraphrasing is a fallback for when you cannot retrieve the text — not the default. If you found 15 relevant canon hits, all 15 go in the Canon Evidence section.
-- **Target depth: ~12 pages (~3,500 words), measured by source coverage.** This is the length at which the user has reported finding the notes most useful. Reach it by surfacing more sources, not by writing more prose per source. If a draft is short, the right fix is: did I search for all relevant canon passages? did I exhaust the Calibre library? did I pull transcripts from the most relevant Dhamma talks? — not: did I write enough sentences about each position?
+- **Target depth: ~12 pages (~3,500 words), measured by source coverage.** This is the length at which the user has reported finding the notes most useful. Reach it by surfacing more sources, not by writing more prose per source. If a draft is short, the right fix is: did I search for all relevant canon passages? did I exhaust the library folders index? did I pull transcripts from the most relevant Dhamma talks? — not: did I write enough sentences about each position?
 - **Template is structure, not length.** The note template shows section headings and citation formats. It is not a short form to fill in one pass. The Evidence sections in particular should be as long as the sources warrant.
 - Quote Pāḷi in IAST as it appears in the canon db (don't transliterate).
 - Critical Gaps is for honest self-assessment, formatted as a severity table (`blocker` / `gap` / `nit`). Each row names one claim or missing perspective and the specific search that would close it. Not a catch-all for "more research could be done".

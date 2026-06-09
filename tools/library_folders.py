@@ -1,4 +1,4 @@
-"""Manage a local SQLite index for an unmanaged folder corpus."""
+"""Manage a local SQLite index for one or more library folders."""
 
 from __future__ import annotations
 
@@ -10,20 +10,21 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import unicodedata
 import zipfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import Any, Callable
 from xml.etree import ElementTree
 
 from tqdm import tqdm
 
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-SOURCES_ENV = "VICAYA_FOLDER_CORPUS_SOURCES"
-INDEX_ENV = "VICAYA_FOLDER_CORPUS_INDEX"
-EXCLUDE_ENV = "VICAYA_FOLDER_CORPUS_EXCLUDE"
+SOURCES_ENV = "VICAYA_LIBRARY_FOLDERS"
+INDEX_ENV = "VICAYA_LIBRARY_FOLDERS_INDEX"
+EXCLUDE_ENV = "VICAYA_LIBRARY_FOLDERS_EXCLUDE"
 SCHEMA_VERSION = "2"
 TEXT_EXTENSIONS = {".txt", ".md", ".json", ".jsonl", ".py"}
 HTML_EXTENSIONS = {".htm", ".html", ".shtml", ".xhtml", ".xht", ".xml"}
@@ -41,6 +42,9 @@ EBOOK_CONVERT_EXTENSIONS = {
 }
 FILENAME_HINT_STOP_NAMES = {"metadata", "picasa", "index", "contents", "cover", "title"}
 FILENAME_HINT_SKIP_EXTENSIONS = {".ini", ".opf"}
+_XML_TAG_RE = re.compile(r"<[^>]+>")
+_XML_ENTITY_MAP = {"&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&apos;": "'"}
+
 NOISE_EXTENSIONS = {
     ".aac",
     ".apnx",
@@ -101,7 +105,7 @@ _load_dotenv()
 
 
 @dataclass(frozen=True)
-class FolderCorpusConfig:
+class LibraryFoldersConfig:
     roots: list[Path]
     index: Path | None
     missing: tuple[str, ...] = ()
@@ -151,7 +155,7 @@ def _env_excludes(key: str) -> tuple[Path, ...]:
     )
 
 
-def default_config() -> FolderCorpusConfig:
+def default_config() -> LibraryFoldersConfig:
     roots = _env_sources(SOURCES_ENV)
     index = _env_path(INDEX_ENV)
     missing = tuple(
@@ -159,7 +163,7 @@ def default_config() -> FolderCorpusConfig:
         for key, ok in ((SOURCES_ENV, bool(roots)), (INDEX_ENV, index is not None))
         if not ok
     )
-    return FolderCorpusConfig(
+    return LibraryFoldersConfig(
         roots=roots,
         index=index,
         missing=missing,
@@ -167,34 +171,19 @@ def default_config() -> FolderCorpusConfig:
     )
 
 
-def _shared_helper(name: str) -> Callable[[str], str]:
-    import importlib
-
-    for module in (
-        sys.modules.get("__main__"),
-        sys.modules.get("tools.research_sources"),
-        sys.modules.get("research_sources"),
-    ):
-        helper = getattr(module, name, None)
-        if callable(helper):
-            return cast(Callable[[str], str], helper)
-    for module_name in ("tools.research_sources", "research_sources"):
-        try:
-            module = importlib.import_module(module_name)
-        except ModuleNotFoundError:
-            continue
-        helper = getattr(module, name, None)
-        if callable(helper):
-            return cast(Callable[[str], str], helper)
-    raise RuntimeError(f"could not load shared helper {name}")
-
-
-def _strip_xml(text: str) -> str:
-    return _shared_helper("_strip_xml")(text)
+def _strip_xml(s: str) -> str:
+    if not s:
+        return s
+    out = _XML_TAG_RE.sub("", s)
+    for k, v in _XML_ENTITY_MAP.items():
+        out = out.replace(k, v)
+    return re.sub(r"\s+", " ", out).strip()
 
 
 def _strip_diacritics(text: str) -> str:
-    return _shared_helper("_strip_diacritics")(text)
+    return "".join(
+        c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn"
+    )
 
 
 def _utc_now() -> str:
@@ -280,7 +269,7 @@ def _connect_readonly(index: Path) -> sqlite3.Connection:
     return sqlite3.connect(f"file:{index}?mode=ro", uri=True)
 
 
-def check(config: FolderCorpusConfig | None = None) -> dict[str, Any]:
+def check(config: LibraryFoldersConfig | None = None) -> dict[str, Any]:
     config = config or default_config()
     index = config.index
     roots_info = [
@@ -697,7 +686,7 @@ def _delete_missing_documents(conn: sqlite3.Connection, seen_source_paths: set[s
 
 
 def refresh(
-    config: FolderCorpusConfig | None = None,
+    config: LibraryFoldersConfig | None = None,
     *,
     limit: int | None = None,
     retry_failed: bool = False,
@@ -734,7 +723,7 @@ def refresh(
         initialize_schema(conn)
         progress = tqdm(
             files,
-            desc="folder-corpus refresh",
+            desc="library-folders refresh",
             unit="file",
             smoothing=0,
             disable=not sys.stderr.isatty(),
@@ -857,12 +846,13 @@ def _union(parent: dict[int, int], left: int, right: int) -> None:
         parent[right_root] = left_root
 
 
-def _exact_duplicate_map(conn: sqlite3.Connection) -> dict[int, list[tuple[int, str]]]:
+def _exact_duplicate_map(conn: sqlite3.Connection) -> dict[int, list[tuple[int, str, str]]]:
     rows = conn.execute(
-        "SELECT id, source_path, content_hash, text_hash FROM documents"
+        "SELECT id, source_path, rel_path, content_hash, text_hash FROM documents"
     ).fetchall()
     parent = {int(row["id"]): int(row["id"]) for row in rows}
     source_paths = {int(row["id"]): str(row["source_path"]) for row in rows}
+    rel_paths = {int(row["id"]): str(row["rel_path"]) for row in rows}
     for key in ("content_hash", "text_hash"):
         groups: dict[str, list[int]] = {}
         for row in rows:
@@ -879,12 +869,12 @@ def _exact_duplicate_map(conn: sqlite3.Connection) -> dict[int, list[tuple[int, 
     components: dict[int, list[int]] = {}
     for doc_id in parent:
         components.setdefault(_find(parent, doc_id), []).append(doc_id)
-    duplicate_map: dict[int, list[tuple[int, str]]] = {}
+    duplicate_map: dict[int, list[tuple[int, str, str]]] = {}
     for ids in components.values():
         if len(ids) < 2:
             continue
         members = sorted(
-            ((doc_id, source_paths[doc_id]) for doc_id in ids),
+            ((doc_id, source_paths[doc_id], rel_paths[doc_id]) for doc_id in ids),
             key=lambda item: item[1],
         )
         for doc_id in ids:
@@ -919,12 +909,12 @@ def _filename_hint_key(filename: str, extension: str) -> str:
 
 def _weak_duplicate_hints(
     conn: sqlite3.Connection,
-    exact_duplicate_map: dict[int, list[tuple[int, str]]],
+    exact_duplicate_map: dict[int, list[tuple[int, str, str]]],
 ) -> dict[int, list[dict[str, Any]]]:
     rows = conn.execute("SELECT id, source_path, filename, extension FROM documents").fetchall()
     source_paths = {int(row["id"]): str(row["source_path"]) for row in rows}
     exact_sets = {
-        doc_id: {member_id for member_id, _ in members}
+        doc_id: {member_id for member_id, *_ in members}
         for doc_id, members in exact_duplicate_map.items()
     }
     grouped: dict[tuple[str, str], list[int]] = {}
@@ -999,7 +989,7 @@ def _group_rows(
 
 
 def duplicates(
-    config: FolderCorpusConfig | None = None,
+    config: LibraryFoldersConfig | None = None,
     *,
     samples: int = 5,
 ) -> dict[str, Any]:
@@ -1069,7 +1059,7 @@ def duplicates(
 
 def search(
     query: str,
-    config: FolderCorpusConfig | None = None,
+    config: LibraryFoldersConfig | None = None,
     *,
     limit: int = 20,
     include_duplicates: bool = False,
@@ -1108,7 +1098,7 @@ def search(
                 "snippet": row["snippet"],
                 "extraction_status": row["extraction_status"],
                 "duplicate_count": len(duplicate_members) if duplicate_members else 1,
-                "duplicate_paths": [path for _, path in duplicate_members],
+                "duplicate_paths": [rel for _, _src, rel in duplicate_members],
                 "possible_duplicate_of": weak_hints.get(int(row["id"]), []),
                 "source_available": Path(row["source_path"]).exists(),
             }

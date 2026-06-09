@@ -3,8 +3,8 @@
 A research tool for Pāḷi and Buddhist topics.
 
 You ask a question. The tool searches your Obsidian vault, the Pāḷi canon
-(suttas, Vinaya, Abhidhamma, commentaries, sub-commentaries), your Calibre
-library, unmanaged folder corpora, YouTube talks, and the open web. It drafts an answer with full
+(suttas, Vinaya, Abhidhamma, commentaries, sub-commentaries), your library
+folders, YouTube talks, and the open web. It drafts an answer with full
 citations, has a second model review the draft, and saves a single Markdown
 note into your vault under `Vicaya/`. Notes link back to existing notes
 on related topics, so the vault accumulates as a connected body of work.
@@ -22,8 +22,7 @@ Each source is optional — if the tool or path isn't configured it is silently 
 |---|---|
 | **Obsidian vault** | Your existing research notes |
 | **Pāḷi canon** | Local SQLite DB — CST text, translations, commentaries |
-| **Calibre library** | Your book collection; metadata via read-only `metadata.db`, full-text via Calibre FTS when indexed |
-| **Folder corpus** | Unmanaged document tree indexed into a local SQLite FTS database; separate from Calibre |
+| **Library folders** | One or more document trees (including Calibre libraries) indexed into a local SQLite FTS database; Calibre metadata (author, tags) is auto-detected and included |
 | **Sanskrit (GRETIL)** | Local clone of the GRETIL corpus — Vedic, Epic, Upaniṣadic, and philosophical Sanskrit texts in IAST plain text |
 | **YouTube** | Dhamma talks and sutta studies via a curated channel allowlist |
 | **Web** | General search and page fetch |
@@ -33,8 +32,8 @@ Each source is optional — if the tool or path isn't configured it is silently 
 
 1. `cp .env.example .env` and edit the paths to match your vault, library,
    and canon database.
-2. Install whichever of these you want to use: `obsidian` CLI, `calibredb`
-   (Calibre 9+, for full-text snippets), `yt-dlp`, `sqlite3`, `gemini` CLI.
+2. Install whichever of these you want to use: `obsidian` CLI, `yt-dlp`, `sqlite3`, `gemini` CLI.
+   For richer text extraction from library folders: `pdftotext`, `ebook-convert` (ships with Calibre).
 3. `uv sync` to install Python dependencies.
 4. Symlink the main skill folder into your agents' skills directories. Using
    symlinks ensures that changes made in this repository are immediately
@@ -62,72 +61,40 @@ Each source is optional — if the tool or path isn't configured it is silently 
 
 Full setup notes are in [`skill/vicaya/SKILL.md`](skill/vicaya/SKILL.md).
 
-### Calibre full-text search (optional but recommended)
+### Library folders search
 
-The skill always searches Calibre book metadata by reading the library's
-`metadata.db` directly in read-only mode. To also search inside book content
-(EPUB/PDF), enable FTS indexing once:
+Configure one or more document trees to index together into a single SQLite FTS
+database. A Calibre library is just another library folder: when Vicaya detects
+a `metadata.db` inside a folder it automatically prepends author and tag metadata
+to each book's FTS text, so tag/author searches work through the unified index.
 
-1. Open Calibre with your library.
-2. Click the **FT** button at the left edge of the search bar.
-3. Select **Enable indexing for this library**.
-4. Leave Calibre open while indexing runs — large libraries take several days.
-   Indexing pauses on quit and resumes next time you open Calibre.
-
-Calibre does not need to be open for the skill to *search* once the index is
-built. It only needs to be open while the initial indexing is in progress.
-
-| Scenario | Calibre GUI needed? |
-|---|---|
-| FTS indexing is running | **Yes** — indexing only runs while the GUI is open |
-| Searching full text after index is built | No — `calibredb fts_search` queries the stored index directly |
-| Metadata search (no FTS) | No — Vicaya reads `<library>/metadata.db` read-only |
-
-> Note: The old path `Preferences → Searching → Full text search` was removed
-> in Calibre 9. Use the **FT** button in the search bar instead.
-
-| Platform | `calibredb` path after Calibre install |
-|---|---|
-| macOS | Added to PATH automatically by the Calibre installer |
-| Linux (AppImage) | `~/.local/bin/calibredb` or wherever you extracted the AppImage |
-| Linux (apt/rpm) | `/usr/bin/calibredb` |
-| Windows | Added to PATH by the installer; may need a new terminal after install |
-
-### Folder corpus search (optional)
-
-The folder corpus source indexes an unmanaged document tree without reading
-Calibre metadata or calling `calibredb`. Configure:
-
-- `VICAYA_FOLDER_CORPUS_ROOT`: the source tree, which may be local, external, or server-mounted.
-- `VICAYA_FOLDER_CORPUS_INDEX`: a local SQLite index path outside this repository.
-- `VICAYA_FOLDER_CORPUS_EXCLUDE` (optional): comma-separated folders to skip
-  during refresh — for example a Calibre library nested under the root that is
-  already searchable via `search-calibre`. Excluded subtrees are never walked,
-  and a later unbounded refresh drops any rows previously indexed under them.
+- `VICAYA_LIBRARY_FOLDERS`: one or more source paths, pipe-separated (`|`). May be local, external, or server-mounted.
+- `VICAYA_LIBRARY_FOLDERS_INDEX`: a local SQLite index path outside this repository.
+- `VICAYA_LIBRARY_FOLDERS_EXCLUDE` (optional): comma-separated folders to skip during refresh. Excluded subtrees are never walked, and a later unbounded refresh drops any rows previously indexed under them.
 
 Normal research search uses only the SQLite index. Source files are touched
-during `folder-corpus-refresh` or later manual inspection, not during
-`search-folder-corpus`.
+during `library-folders-refresh` or later manual inspection, not during
+`search-library-folders`.
 
 Build and verify the index after setting `.env`:
 
 ```bash
-uv run tools/research_sources.py folder-corpus-check
-uv run tools/research_sources.py folder-corpus-refresh
-uv run tools/research_sources.py folder-corpus-refresh --retry-failed
-uv run tools/research_sources.py search-folder-corpus "dhamma" --limit 5
-uv run tools/research_sources.py folder-corpus-duplicates --samples 10
+uv run tools/research_sources.py library-folders-check
+uv run tools/research_sources.py library-folders-refresh
+uv run tools/research_sources.py library-folders-refresh --retry-failed
+uv run tools/research_sources.py search-library-folders "dhamma" --limit 5
+uv run tools/research_sources.py library-folders-duplicates --samples 10
 ```
 
 If [`just`](https://github.com/casey/just) is installed, the same commands have
 short recipes (run `just` to list them):
 
 ```bash
-just fc-check                      # read-only preflight: config + index health (run before refreshing)
-just fc-refresh                    # build/update the index by walking the tree (skips unchanged files; slow first run; add --limit N to bound it)
-just fc-refresh-retry              # like fc-refresh, but also re-extracts previously-failed files (run once after adding extractor support)
-just fc-search "dhamma" --limit 5  # full-text search the index
-just fc-dups --samples 10          # read-only duplicate diagnostic
+just lf-check                      # read-only preflight: config + index health (run before refreshing)
+just lf-refresh                    # build/update the index by walking the tree (skips unchanged files; slow first run; add --limit N to bound it)
+just lf-refresh-retry              # like lf-refresh, but also re-extracts previously-failed files (run once after adding extractor support)
+just lf-search "dhamma" --limit 5  # full-text search the index
+just lf-dups --samples 10          # read-only duplicate diagnostic
 ```
 
 The first unbounded refresh may take a long time on a large or mounted tree
@@ -135,12 +102,11 @@ because it must walk and hash every accepted file. Search covers files where
 text extraction succeeds; metadata-only files are still tracked for path,
 hash, and duplicate diagnostics but are not searchable by body text. Optional
 local tools such as `pdftotext`, `textutil`, `antiword`, `catdoc`, and
-`ebook-convert` (Calibre — handles the Kindle/Mobipocket family `.mobi`,
-`.azw3`, `.azw`, `.prc`, `.lit`, `.pdb`, `.chm`, plus `.rtf`) improve extraction
-coverage when installed. A normal refresh skips files whose size and mtime are
-unchanged, so after installing a new extractor (or upgrading this tool) re-run
-with `--retry-failed` / `just fc-refresh-retry` once to re-extract the
-previously-failed files; later refreshes skip them again.
+`ebook-convert` (ships with Calibre — handles the Kindle/Mobipocket family
+`.mobi`, `.azw3`, `.azw`, `.prc`, `.lit`, `.pdb`, `.chm`, plus `.rtf`) improve
+extraction coverage when installed. A normal refresh skips files whose size and
+mtime are unchanged, so after installing a new extractor re-run with
+`--retry-failed` / `just lf-refresh-retry` once; later refreshes skip them again.
 
 Duplicate handling is conservative. Exact byte duplicates and identical
 normalized extracted text are collapsed by default; `--include-duplicates`
@@ -185,7 +151,7 @@ Run the following and note what is missing:
 ```bash
 which uv          # Python package manager — required
 which obsidian    # Obsidian CLI — optional (vault search)
-which calibredb   # Calibre — optional (full-text library snippets)
+which ebook-convert  # Calibre — optional (extracts Kindle/Mobipocket ebooks in library folders)
 which yt-dlp      # yt-dlp — optional (YouTube search)
 which gemini      # Gemini CLI — optional (cross-check model)
 python3 --version # system Python — only needed if uv is absent
@@ -204,9 +170,8 @@ tool the user does not need — the skill degrades gracefully.
 # yt-dlp (YouTube search + transcript)
 pip install -U yt-dlp          # or: uv tool install yt-dlp
 
-# Calibre CLI — install Calibre from https://calibre-ebook.com/download
-# needed for full-text snippets; metadata search reads metadata.db directly
-# then calibredb is available in PATH automatically.
+# Calibre (optional — provides ebook-convert for Kindle/Mobipocket extraction in library folders)
+# Install Calibre from https://calibre-ebook.com/download; ebook-convert is included.
 
 # Gemini CLI — requires Google AI Studio API key
 npm install -g @google/gemini-cli   # or follow https://github.com/google-gemini/gemini-cli
@@ -222,13 +187,9 @@ Some sources require a desktop application to be open:
 | Source | Requirement | Impact if not running |
 |---|---|---|
 | **Obsidian vault** | Obsidian desktop app must be running | Vault search and note-write are disabled; note is written directly to disk instead |
-| **Calibre FTS** | Calibre must be open *during initial indexing only* | Indexing pauses; once index is built, Calibre does not need to be open for searches |
-
-Tell the user about these requirements after setup is complete. Specifically:
+Tell the user about these requirements after setup is complete:
 - If `VICAYA_VAULT_PATH` is configured: remind them to keep Obsidian open when
   running `/vicaya`.
-- If `VICAYA_CALIBRE_LIBRARY` is configured: walk them through the FT button
-  steps above and tell them to leave Calibre open until indexing finishes.
 
 ### 1 — Python environment
 
@@ -251,11 +212,9 @@ automatically before writing:
 # Obsidian vault — find the vault directory (contains .obsidian/)
 find ~ -maxdepth 4 -name ".obsidian" -type d 2>/dev/null | head -5
 
-# Calibre library — contains metadata.db
-find ~ -maxdepth 5 -name "metadata.db" 2>/dev/null | grep -i calibre | head -5
-
-# Optional unmanaged folder corpus — ask before choosing a large source tree.
-# The index path should be local and outside this repository.
+# Library folders — find candidate root paths (may include Calibre libraries)
+# Ask the user which directories to include before setting VICAYA_LIBRARY_FOLDERS.
+# The index path (VICAYA_LIBRARY_FOLDERS_INDEX) should be local and outside this repository.
 
 # Canon DB — tipitaka-translation-data.db (from dpd-db project)
 find ~ -maxdepth 8 -name "tipitaka-translation-data.db" 2>/dev/null | head -3
@@ -284,10 +243,9 @@ Example layout (adjust to actual paths):
 ```
 VICAYA_VAULT_NAME=Obsidian
 VICAYA_VAULT_PATH=~/Obsidian
-VICAYA_CALIBRE_LIBRARY=~/Calibre Library
-VICAYA_FOLDER_CORPUS_ROOT=
-VICAYA_FOLDER_CORPUS_INDEX=
-VICAYA_FOLDER_CORPUS_EXCLUDE=
+VICAYA_LIBRARY_FOLDERS=
+VICAYA_LIBRARY_FOLDERS_INDEX=
+VICAYA_LIBRARY_FOLDERS_EXCLUDE=
 VICAYA_CANON_DB=~/path/to/dpd-db/resources/tipitaka_translation_db/tipitaka-translation-data.db
 VICAYA_DPD_DB=~/path/to/dpd-db/dpd.db
 VICAYA_GRETIL_PATH=~/MyFiles/2_Resources/gretil
@@ -359,8 +317,8 @@ uv run tools/research_sources.py resolve-citation s0202m_mul 97
 uv run tools/research_sources.py search-canon "dukkha" --limit 3
 # Expected: list of CanonHit objects
 
-# Check optional folder corpus configuration
-uv run tools/research_sources.py folder-corpus-check
+# Check optional library folders configuration
+uv run tools/research_sources.py library-folders-check
 # Expected: JSON status; unavailable is fine when the source is not configured
 ```
 
@@ -372,7 +330,7 @@ ready to use: `/vicaya <your question>` in Claude Code.
 ```
 vicaya/
 ├── tools/research_sources.py   # source helpers + CLI subcommands
-├── tools/folder_corpus.py       # unmanaged folder-corpus SQLite index/search
+├── tools/library_folders.py     # library folders SQLite index/search
 ├── tests/                       # pytest suite
 ├── data/
 │   ├── calibre_tags.csv         # tag vocabulary

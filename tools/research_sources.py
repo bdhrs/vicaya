@@ -4,7 +4,6 @@ Five functions that the skill calls in sequence:
     search_vault         - Obsidian vault full-text search
     search_canon         - SQL search across CST + translations
     resolve_citation     - Book-code + paranum -> human-readable sutta reference
-    search_calibre       - Calibre library search (metadata always, FTS if indexed)
     gemini_cross_check   - Pipe a synthesis to Gemini for a second opinion
 
 Each helper subprocesses the relevant CLI tool. Returns plain Python data; no printing.
@@ -20,21 +19,10 @@ import os
 import re as _re
 import sqlite3
 import subprocess
-import unicodedata
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
-
-
-def _strip_diacritics(s: str) -> str:
-    """Strip combining marks. Used for Calibre searches (ASCII Pāḷi convention).
-
-    Canon db and Obsidian vault retain exact diacritics; do not strip there.
-    """
-    return "".join(
-        c for c in unicodedata.normalize("NFD", s) if not unicodedata.combining(c)
-    )
 
 
 # CST text columns carry inline TEI/XML markup (<hi rend="...">, <pb/>, <note>, etc.)
@@ -86,7 +74,6 @@ def _env_path(key: str, default: str | None = None) -> Path | None:
 
 DEFAULT_VAULT_NAME = os.environ.get("VICAYA_VAULT_NAME", "Obsidian")
 DEFAULT_VAULT_PATH = _env_path("VICAYA_VAULT_PATH", "~/Obsidian")
-DEFAULT_CALIBRE_LIBRARY = _env_path("VICAYA_CALIBRE_LIBRARY")
 DEFAULT_CANON_DB = _env_path("VICAYA_CANON_DB")
 DEFAULT_DPD_DB = _env_path("VICAYA_DPD_DB")
 DEFAULT_EBC_VAULT_PATH = _env_path(
@@ -142,16 +129,6 @@ class Citation:
     pitaka: str
     text_type: str
     paranum: str
-
-
-@dataclass
-class CalibreHit:
-    book_id: int
-    title: str
-    authors: str
-    tags: list[str]
-    location: str = ""
-    snippet: str = ""
 
 
 @dataclass
@@ -463,408 +440,6 @@ def resolve_citation(
         machine=machine, human=human,
         pitaka=pitaka, text_type=_TEXT_TYPE_LABELS.get(text_type, ""), paranum=paranum,
     )
-
-
-# ---------- Calibre search ----------
-
-
-class CalibreUnavailable(RuntimeError):
-    """Calibre CLI call failed in a way distinct from "no results".
-
-    Common causes: library locked by the desktop GUI, another `calibredb`
-    process holding it, the binary missing, or a timeout. Callers can catch
-    this to retry, fall back, or surface a clear error rather than silently
-    treating it as zero hits.
-    """
-
-
-_CALIBRE_LOCK_HINTS = (
-    "another calibre",
-    "is being used by",
-    "is locked",
-    "database is locked",
-    "could not be opened",
-)
-
-_CALIBRE_LOCK_FILE = Path("/tmp/vicaya-calibre.lock")
-_CALIBRE_FTS_TIMEOUT = 20
-
-
-def _is_calibre_lock_error(stderr: str) -> bool:
-    s = (stderr or "").lower()
-    return any(h in s for h in _CALIBRE_LOCK_HINTS)
-
-
-@contextmanager
-def _calibre_serialize(warn_after: float = 30.0, give_up_after: float = 120.0):
-    """Cross-process mutex so concurrent vicaya agents don't collide on calibredb.
-
-    calibredb refuses to run if another calibredb (or the Calibre GUI) is active.
-    An OS-level flock on a shared sentinel file queues agents fairly — the lock
-    is released automatically if a holder crashes.
-
-    Non-blocking poll loop so we can:
-      - log the holding PID to stderr once we've waited > `warn_after` seconds,
-        making contention visible rather than silent;
-      - raise CalibreUnavailable after `give_up_after` seconds rather than
-        hanging forever if calibredb is genuinely stuck.
-    """
-    import sys
-    import time
-    _CALIBRE_LOCK_FILE.touch(exist_ok=True)
-    with open(_CALIBRE_LOCK_FILE, "r+") as fh:
-        start = time.monotonic()
-        warned = False
-        while True:
-            try:
-                fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except BlockingIOError:
-                waited = time.monotonic() - start
-                if waited > give_up_after:
-                    holder = (fh.read() or "").strip() or "unknown"
-                    raise CalibreUnavailable(
-                        f"calibredb lock held by PID {holder} for >{give_up_after:.0f}s; giving up"
-                    )
-                if not warned and waited > warn_after:
-                    fh.seek(0)
-                    holder = (fh.read() or "").strip() or "unknown"
-                    print(
-                        f"[vicaya] waiting on calibredb lock held by PID {holder} "
-                        f"(>{warn_after:.0f}s)…",
-                        file=sys.stderr,
-                    )
-                    warned = True
-                time.sleep(0.25)
-        try:
-            fh.seek(0)
-            fh.truncate()
-            fh.write(str(os.getpid()))
-            fh.flush()
-            yield
-        finally:
-            fh.seek(0)
-            fh.truncate()
-            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
-
-
-def _run_calibre(
-    cmd: list[str], timeout: int, retries: int = 3, *, raise_timeout: bool = False
-) -> subprocess.CompletedProcess:
-    """Run a calibredb command with retry/backoff on lock-style failures.
-
-    Raises CalibreUnavailable on persistent failure (timeout, missing binary,
-    or lock not released after retries). Returns the CompletedProcess on
-    success — an empty stdout is a legitimate "no results" answer, not an error.
-    """
-    import time
-    delay = 0.5
-    last_err = ""
-    with _calibre_serialize():
-        for attempt in range(retries):
-            try:
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-            except FileNotFoundError as e:
-                raise CalibreUnavailable(f"calibredb not found: {e}") from e
-            except subprocess.TimeoutExpired as e:
-                if raise_timeout:
-                    raise
-                last_err = f"timeout after {timeout}s"
-                if attempt + 1 < retries:
-                    time.sleep(delay)
-                    delay *= 2
-                    continue
-                raise CalibreUnavailable(last_err) from e
-            if result.returncode == 0:
-                return result
-            last_err = (result.stderr or "").strip().splitlines()[-1:] or ["non-zero exit"]
-            last_err = last_err[0] if isinstance(last_err, list) else last_err
-            if _is_calibre_lock_error(result.stderr) and attempt + 1 < retries:
-                time.sleep(delay)
-                delay *= 2
-                continue
-            raise CalibreUnavailable(last_err)
-        raise CalibreUnavailable(last_err or "calibredb failed")
-
-
-def calibre_library_available(library: Path | None = None) -> tuple[bool, str]:
-    """Probe Calibre reachability without invoking FTS snippet search.
-
-    Returns (ok, message). `ok=False` means a search would fail right now —
-    typically because the GUI or another agent holds the lock. `ok=True` means
-    the library is reachable, not that FTS snippets are available: a broken or
-    timed-out FTS index degrades gracefully to metadata search in
-    `search_calibre`, so the probe deliberately does not exercise FTS.
-    """
-    library = library or DEFAULT_CALIBRE_LIBRARY
-    if library is None or not library.exists():
-        return False, f"library path not set or missing: {library}"
-    db = _calibre_metadata_db_path(library)
-    if not db.exists():
-        return False, f"metadata.db not found: {db}"
-    try:
-        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-        try:
-            con.execute("SELECT count(*) FROM books").fetchone()
-        finally:
-            con.close()
-        return True, "ok"
-    except sqlite3.Error as e:
-        return False, str(e)
-
-
-def _calibre_fts_available(library: Path) -> bool:
-    """Return True only if indexing is enabled AND complete (all books indexed).
-
-    Output format from `calibredb fts_index status`:
-        FTS Indexing is enabled
-        N of TOTAL books files indexed
-    Indexing is complete when N == TOTAL.
-    """
-    try:
-        with _calibre_serialize():
-            result = subprocess.run(
-                ["calibredb", "fts_index", "status", "--library-path", str(library)],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-    except subprocess.TimeoutExpired:
-        return False
-    if result.returncode != 0:
-        return False
-    out = result.stdout
-    if "enabled" not in out.lower():
-        return False
-    import re
-    m = re.search(r"(\d+)\s+of\s+(\d+)", out)
-    if not m:
-        return False
-    indexed, total = int(m.group(1)), int(m.group(2))
-    return total > 0 and indexed == total
-
-
-def search_calibre(
-    query: str,
-    tags: list[str] | None = None,
-    library: Path | None = None,
-    limit: int = 20,
-    timeout: int | None = None,
-) -> list[CalibreHit]:
-    """Search the Calibre library.
-
-    If `tags` is given, scope to books with any of those tags (OR).
-    If FTS is enabled, run a full-text search; if that exceeds the bounded
-    FTS budget, fall back to metadata search without snippets.
-
-    Diacritics are stripped from the query — the Calibre library uses ASCII Pāḷi.
-    `timeout` overrides the per-call subprocess budget (used by the fast preflight
-    probe); None keeps the generous search defaults.
-
-    Raises CalibreUnavailable on a CLI error (e.g. library locked by the GUI
-    or another agent). An empty list means the search ran but matched nothing.
-    """
-    library = library or DEFAULT_CALIBRE_LIBRARY
-    if library is None or not library.exists():
-        return []
-    query = _strip_diacritics(query)
-    metadata_timeout = timeout or 60
-    if _calibre_fts_available(library):
-        try:
-            return _calibre_fts_search(
-                query, tags, library, limit, timeout=timeout or _CALIBRE_FTS_TIMEOUT
-            )
-        except subprocess.TimeoutExpired:
-            import sys
-
-            print(
-                "[vicaya] Calibre FTS timed out; returned metadata hits without snippets",
-                file=sys.stderr,
-            )
-            return _calibre_hits_without_snippets(
-                _calibre_metadata_search(
-                    query, tags, library, limit, timeout=metadata_timeout
-                )
-            )
-    return _calibre_metadata_search(query, tags, library, limit, timeout=metadata_timeout)
-
-
-def _build_tag_search(tags: list[str] | None) -> str:
-    if not tags:
-        return ""
-    # 'tags:"=Buddhism" or tags:"=Pali"' style — exact match on tag name.
-    return " or ".join(f'tags:"={t}"' for t in tags)
-
-
-def _calibre_hits_without_snippets(hits: list[CalibreHit]) -> list[CalibreHit]:
-    return [
-        CalibreHit(
-            book_id=hit.book_id,
-            title=hit.title,
-            authors=hit.authors,
-            tags=list(hit.tags),
-            location=hit.location,
-            snippet="",
-        )
-        for hit in hits
-    ]
-
-
-def _calibre_fts_search(
-    query: str, tags: list[str] | None, library: Path, limit: int, timeout: int = 120
-) -> list[CalibreHit]:
-    cmd = [
-        "calibredb",
-        "fts_search",
-        query,
-        "--output-format",
-        "json",
-        "--include-snippets",
-        "--library-path",
-        str(library),
-    ]
-    tag_search = _build_tag_search(tags)
-    if tag_search:
-        cmd.extend(["--restrict-to", f"search:{tag_search}"])
-    result = _run_calibre(cmd, timeout=timeout, retries=3, raise_timeout=True)
-    if not result.stdout.strip():
-        return []
-    try:
-        rows = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return []
-    hits: list[CalibreHit] = []
-    for row in rows[:limit]:
-        hits.append(
-            CalibreHit(
-                book_id=int(row.get("book_id", 0)),
-                title=row.get("title", ""),
-                authors=row.get("authors", ""),
-                tags=row.get("tags", []) if isinstance(row.get("tags"), list) else [],
-                location=str(row.get("formats", row.get("book_id", ""))),
-                snippet=row.get("text", row.get("snippet", "")),
-            )
-        )
-    return hits
-
-
-def _calibre_metadata_db_path(library: Path) -> Path:
-    return library / "metadata.db"
-
-
-def _calibre_metadata_search(
-    query: str, tags: list[str] | None, library: Path, limit: int, timeout: int = 60
-) -> list[CalibreHit]:
-    """Search Calibre metadata via a read-only SQLite connection.
-
-    Reads `metadata.db` directly so concurrent agents never contend on the
-    calibredb lock. Matches the free-text query against title, author names,
-    tags, and comments; restricts to the given tag names when provided. Falls
-    back to the calibredb CLI path if the schema is not as expected.
-    """
-    db = _calibre_metadata_db_path(library)
-    if not db.exists():
-        return _calibre_metadata_search_cli(query, tags, library, limit, timeout=timeout)
-    where: list[str] = []
-    params: list[str] = []
-    if query:
-        like = f"%{query}%"
-        where.append(
-            "(b.title LIKE ?"
-            " OR EXISTS (SELECT 1 FROM books_authors_link bal JOIN authors a"
-            " ON a.id = bal.author WHERE bal.book = b.id AND a.name LIKE ?)"
-            " OR EXISTS (SELECT 1 FROM comments c WHERE c.book = b.id AND c.text LIKE ?)"
-            " OR EXISTS (SELECT 1 FROM books_tags_link btl JOIN tags t"
-            " ON t.id = btl.tag WHERE btl.book = b.id AND t.name LIKE ?))"
-        )
-        params.extend([like, like, like, like])
-    if tags:
-        placeholders = ", ".join("?" for _ in tags)
-        where.append(
-            "EXISTS (SELECT 1 FROM books_tags_link btl JOIN tags t ON t.id = btl.tag"
-            f" WHERE btl.book = b.id AND lower(t.name) IN ({placeholders}))"
-        )
-        params.extend(t.lower() for t in tags)
-    clause = (" WHERE " + " AND ".join(where)) if where else ""
-    sql = (
-        "SELECT b.id, b.title,"
-        " (SELECT group_concat(a.name, ' & ') FROM books_authors_link bal"
-        "  JOIN authors a ON a.id = bal.author WHERE bal.book = b.id) AS authors,"
-        " (SELECT group_concat(t.name, char(31)) FROM books_tags_link btl"
-        "  JOIN tags t ON t.id = btl.tag WHERE btl.book = b.id) AS tags,"
-        " (SELECT c.text FROM comments c WHERE c.book = b.id) AS comments"
-        f" FROM books b{clause} ORDER BY b.id LIMIT ?"
-    )
-    params.append(str(limit))
-    try:
-        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-        try:
-            rows = con.execute(sql, params).fetchall()
-        finally:
-            con.close()
-    except sqlite3.DatabaseError:
-        return _calibre_metadata_search_cli(query, tags, library, limit, timeout=timeout)
-    hits: list[CalibreHit] = []
-    for book_id, title, authors, tag_str, comments in rows:
-        hits.append(
-            CalibreHit(
-                book_id=int(book_id or 0),
-                title=title or "",
-                authors=authors or "",
-                tags=tag_str.split("\x1f") if tag_str else [],
-                location="",
-                snippet=(comments or "")[:300],
-            )
-        )
-    return hits
-
-
-def _calibre_metadata_search_cli(
-    query: str, tags: list[str] | None, library: Path, limit: int, timeout: int = 60
-) -> list[CalibreHit]:
-    # Calibre's default free-text search hits all fields. Compose as `query (tags:X or tags:Y)`.
-    parts: list[str] = []
-    if query:
-        parts.append(query)
-    tag_search = _build_tag_search(tags)
-    if tag_search:
-        parts.append(f"({tag_search})")
-    search_expr = " ".join(parts) if parts else "*"
-    cmd = [
-        "calibredb",
-        "list",
-        "--search",
-        search_expr,
-        "--fields",
-        "id,title,authors,tags,comments",
-        "--for-machine",
-        "--limit",
-        str(limit),
-        "--library-path",
-        str(library),
-    ]
-    result = _run_calibre(cmd, timeout=timeout)
-    if not result.stdout.strip():
-        return []
-    try:
-        rows = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return []
-    hits: list[CalibreHit] = []
-    for row in rows[:limit]:
-        hits.append(
-            CalibreHit(
-                book_id=int(row.get("id", 0)),
-                title=row.get("title", ""),
-                authors=", ".join(row.get("authors", []))
-                if isinstance(row.get("authors"), list)
-                else row.get("authors", ""),
-                tags=row.get("tags", []) if isinstance(row.get("tags"), list) else [],
-                location="",
-                snippet=(row.get("comments") or "")[:300],
-            )
-        )
-    return hits
 
 
 # ---------- YouTube search + transcripts ----------
@@ -2066,7 +1641,7 @@ _SCRATCH_PHASES: list[tuple[str, str, list[str]]] = [
         "text_gaps logged explicitly",
     ]),
     ("3", "Phase 3 — Library", [
-        "calibre-check called at phase start",
+        "library-folders-check called at phase start",
         "Tag-scoped searches per applicable angle",
         "Author searches for named scholars in perspective map",
         "0-hit queries logged",
@@ -2428,7 +2003,7 @@ def _maybe_autolog(cmd: str, argv: list[str], result_obj) -> None:
 #     uv run tools/research_sources.py search-canon "paṭiccasamuppāda" --books "s*_mul" --limit 10
 #     uv run tools/research_sources.py resolve-citation s0201m_mul 23
 #     uv run tools/research_sources.py search-vault "paṭiccasamuppāda" --limit 5
-#     uv run tools/research_sources.py search-calibre "dependent origination" --tags Buddhism
+#     uv run tools/research_sources.py search-library-folders "dependent origination" --limit 5
 #     echo "review this synthesis: ..." | uv run tools/research_sources.py gemini-cross-check
 
 
@@ -2445,14 +2020,14 @@ def _dump(obj) -> None:
     sys.stdout.write("\n")
 
 
-def _load_folder_corpus_module():
+def _load_library_folders_module():
     import importlib.util
     import sys
 
-    module_path = Path(__file__).with_name("folder_corpus.py")
-    spec = importlib.util.spec_from_file_location("vicaya_folder_corpus", module_path)
+    module_path = Path(__file__).with_name("library_folders.py")
+    spec = importlib.util.spec_from_file_location("vicaya_library_folders", module_path)
     if spec is None or spec.loader is None:
-        raise RuntimeError(f"could not load folder corpus module from {module_path}")
+        raise RuntimeError(f"could not load library folders module from {module_path}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
@@ -2481,11 +2056,6 @@ def _cli() -> int:
     pr = sub.add_parser("resolve-citation")
     pr.add_argument("book_code")
     pr.add_argument("paranum")
-
-    pl = sub.add_parser("search-calibre")
-    pl.add_argument("query")
-    pl.add_argument("--tags", nargs="*", default=None)
-    pl.add_argument("--limit", type=int, default=20)
 
     pg = sub.add_parser("gemini-cross-check",
                         help="Reads prompt from stdin to avoid shell quoting issues.")
@@ -2540,28 +2110,24 @@ def _cli() -> int:
                      help="Restrict to a subfolder of the GRETIL corpus (e.g. '1_veda').")
     pss.add_argument("--limit", type=int, default=20)
 
-    sub.add_parser("calibre-check",
-                   help="Probe the Calibre library; reports ok or the specific failure "
-                        "(e.g. locked by GUI or another agent). Use as a Phase 3 preflight.")
+    sub.add_parser("library-folders-check",
+                   help="Probe configured library folders paths and index health.")
 
-    sub.add_parser("folder-corpus-check",
-                   help="Probe configured unmanaged folder corpus paths and index health.")
-
-    pfr = sub.add_parser("folder-corpus-refresh",
-                         help="Refresh the configured unmanaged folder corpus index.")
+    pfr = sub.add_parser("library-folders-refresh",
+                         help="Refresh the configured library folders index.")
     pfr.add_argument("--limit", type=int, default=None)
     pfr.add_argument("--retry-failed", action="store_true",
                      help="Re-extract unchanged files whose previous extraction "
                           "did not succeed (e.g. after adding extractor support).")
 
-    psfc = sub.add_parser("search-folder-corpus",
-                          help="Search the configured unmanaged folder corpus index.")
+    psfc = sub.add_parser("search-library-folders",
+                          help="Search the configured library folders index.")
     psfc.add_argument("query")
     psfc.add_argument("--limit", type=int, default=20)
     psfc.add_argument("--include-duplicates", action="store_true")
 
-    pfd = sub.add_parser("folder-corpus-duplicates",
-                         help="Summarize duplicate clusters in the folder corpus index.")
+    pfd = sub.add_parser("library-folders-duplicates",
+                         help="Summarize duplicate clusters in the library folders index.")
     pfd.add_argument("--samples", type=int, default=5)
 
     psp = sub.add_parser("sc-parallels",
@@ -2633,16 +2199,6 @@ def _cli() -> int:
         result_for_autolog = resolve_citation(args.book_code, args.paranum)
         autolog_argv = [args.book_code, str(args.paranum)]
         _dump(result_for_autolog)
-    elif args.cmd == "search-calibre":
-        autolog_argv = [args.query] + (["--tags"] + list(args.tags) if args.tags else []) + ["--limit", str(args.limit)]
-        try:
-            result_for_autolog = search_calibre(args.query, tags=args.tags, limit=args.limit)
-        except CalibreUnavailable as e:
-            result_for_autolog = {"status": "unavailable", "reason": str(e), "hits": []}
-            _dump(result_for_autolog)
-            _maybe_autolog(args.cmd, autolog_argv, result_for_autolog)
-            return 1
-        _dump(result_for_autolog)
     elif args.cmd == "search-youtube":
         channels = {} if args.no_filter else None
         result_for_autolog = search_youtube(args.query, channels=channels, limit=args.limit)
@@ -2696,21 +2252,14 @@ def _cli() -> int:
         result_for_autolog = search_sanskrit(args.query, folder=args.folder, limit=args.limit)
         autolog_argv = [args.query] + (["--folder", args.folder] if args.folder else []) + ["--limit", str(args.limit)]
         _dump(result_for_autolog)
-    elif args.cmd == "calibre-check":
-        ok, msg = calibre_library_available()
-        result_for_autolog = {"ok": ok, "message": msg}
+    elif args.cmd == "library-folders-check":
+        library_folders = _load_library_folders_module()
+        result_for_autolog = library_folders.check()
         autolog_argv = []
         _dump(result_for_autolog)
-        _maybe_autolog(args.cmd, autolog_argv, result_for_autolog)
-        return 0 if ok else 1
-    elif args.cmd == "folder-corpus-check":
-        folder_corpus = _load_folder_corpus_module()
-        result_for_autolog = folder_corpus.check()
-        autolog_argv = []
-        _dump(result_for_autolog)
-    elif args.cmd == "folder-corpus-refresh":
-        folder_corpus = _load_folder_corpus_module()
-        result_for_autolog = folder_corpus.refresh(
+    elif args.cmd == "library-folders-refresh":
+        library_folders = _load_library_folders_module()
+        result_for_autolog = library_folders.refresh(
             limit=args.limit,
             retry_failed=args.retry_failed,
         )
@@ -2718,9 +2267,9 @@ def _cli() -> int:
         if args.retry_failed:
             autolog_argv.append("--retry-failed")
         _dump(result_for_autolog)
-    elif args.cmd == "search-folder-corpus":
-        folder_corpus = _load_folder_corpus_module()
-        result_for_autolog = folder_corpus.search(
+    elif args.cmd == "search-library-folders":
+        library_folders = _load_library_folders_module()
+        result_for_autolog = library_folders.search(
             args.query,
             limit=args.limit,
             include_duplicates=args.include_duplicates,
@@ -2729,9 +2278,9 @@ def _cli() -> int:
         if args.include_duplicates:
             autolog_argv.append("--include-duplicates")
         _dump(result_for_autolog)
-    elif args.cmd == "folder-corpus-duplicates":
-        folder_corpus = _load_folder_corpus_module()
-        result_for_autolog = folder_corpus.duplicates(samples=args.samples)
+    elif args.cmd == "library-folders-duplicates":
+        library_folders = _load_library_folders_module()
+        result_for_autolog = library_folders.duplicates(samples=args.samples)
         autolog_argv = ["--samples", str(args.samples)]
         _dump(result_for_autolog)
     elif args.cmd == "sc-parallels":

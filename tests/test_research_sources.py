@@ -1,7 +1,6 @@
 """Integration tests for research_sources helpers.
 
-Some tests hit real local systems (Obsidian CLI, SQLite canon db, Calibre FTS via
-calibredb); Calibre metadata tests use a hermetic temp `metadata.db`. Tests that
+Some tests hit real local systems (Obsidian CLI, SQLite canon db). Tests that
 need optional tools or data are skipped automatically when unavailable, so the
 suite stays green on a machine that doesn't have everything wired up yet.
 """
@@ -9,7 +8,6 @@ suite stays green on a machine that doesn't have everything wired up yet.
 from __future__ import annotations
 
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -18,17 +16,14 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tools.research_sources import (  # noqa: E402
-    DEFAULT_CALIBRE_LIBRARY,
     DEFAULT_CANON_DB,
     DEFAULT_DPD_DB,
     DEFAULT_GRETIL_PATH,
-    CalibreHit,
     CanonHit,
     VaultHit,
     gemini_cross_check,
     lookup_book,
     resolve_citation,
-    search_calibre,
     search_canon,
     search_sanskrit,
     search_vault,
@@ -38,13 +33,6 @@ from tools.research_sources import (  # noqa: E402
 
 obsidian_available = pytest.mark.skipif(
     shutil.which("obsidian") is None, reason="obsidian CLI not installed"
-)
-_calibre_library_present = (
-    DEFAULT_CALIBRE_LIBRARY is not None and DEFAULT_CALIBRE_LIBRARY.exists()
-)
-calibre_available = pytest.mark.skipif(
-    shutil.which("calibredb") is None or not _calibre_library_present,
-    reason="calibredb or library not available",
 )
 _canon_db_present = DEFAULT_CANON_DB is not None and DEFAULT_CANON_DB.exists()
 canon_available = pytest.mark.skipif(
@@ -194,32 +182,6 @@ class TestSearchVault:
         assert isinstance(hits, list)
         for h in hits:
             assert isinstance(h, VaultHit)
-
-
-# ---------- search_calibre ----------
-
-
-@calibre_available
-class TestSearchCalibre:
-    def test_metadata_search_by_tag(self):
-        from tools.research_sources import CalibreUnavailable
-        try:
-            hits = search_calibre("", tags=["Buddhism"], limit=3)
-        except CalibreUnavailable as e:
-            pytest.skip(f"calibre library locked: {e}")
-        assert isinstance(hits, list)
-        for h in hits:
-            assert isinstance(h, CalibreHit)
-            assert h.book_id > 0
-            assert h.title
-
-    def test_search_returns_calibre_hits(self):
-        from tools.research_sources import CalibreUnavailable
-        try:
-            hits = search_calibre("Buddha", limit=3)
-        except CalibreUnavailable as e:
-            pytest.skip(f"calibre library locked: {e}")
-        assert isinstance(hits, list)
 
 
 # ---------- gemini_cross_check ----------
@@ -498,6 +460,7 @@ class TestGetAgama:
         from tools.research_sources import _find_agama_path
 
         # SA1.167-style codes stored as sa1_167-unknown.md in sa-patton-1
+        assert DEFAULT_EBC_VAULT_PATH is not None
         path, translator = _find_agama_path("SA1.167", DEFAULT_EBC_VAULT_PATH)
         if path is not None:
             assert path.exists()
@@ -864,179 +827,6 @@ class TestScratchDossier:
         _maybe_autolog("search-vault", ["dukkha"], [])
 
         assert "search-vault" in path.read_text(encoding="utf-8")
-
-
-def _build_calibre_metadata_db(library: Path) -> Path:
-    """Create a minimal Calibre-shaped metadata.db for hermetic tests."""
-    import sqlite3
-    db = library / "metadata.db"
-    con = sqlite3.connect(db)
-    con.executescript(
-        """
-        CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT);
-        CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT);
-        CREATE TABLE books_authors_link (book INTEGER, author INTEGER);
-        CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT);
-        CREATE TABLE books_tags_link (book INTEGER, tag INTEGER);
-        CREATE TABLE comments (book INTEGER, text TEXT);
-        """
-    )
-    con.executemany("INSERT INTO books (id, title) VALUES (?, ?)", [
-        (1, "The Buddha's Teaching"),
-        (2, "Sanskrit Grammar"),
-    ])
-    con.executemany("INSERT INTO authors (id, name) VALUES (?, ?)", [(1, "Bhikkhu Bodhi"), (2, "Whitney")])
-    con.executemany("INSERT INTO books_authors_link (book, author) VALUES (?, ?)", [(1, 1), (2, 2)])
-    con.executemany("INSERT INTO tags (id, name) VALUES (?, ?)", [(1, "Buddhism"), (2, "Sanskrit")])
-    con.executemany("INSERT INTO books_tags_link (book, tag) VALUES (?, ?)", [(1, 1), (2, 2)])
-    con.executemany("INSERT INTO comments (book, text) VALUES (?, ?)", [
-        (1, "A study of dukkha and the path."),
-        (2, "Classical Sanskrit reference."),
-    ])
-    con.commit()
-    con.close()
-    return db
-
-
-class TestCalibreReadOnlySqlite:
-    """Metadata search and the preflight read metadata.db directly, never locking."""
-
-    def test_metadata_search_reads_sqlite_readonly(self, monkeypatch, tmp_path):
-        import tools.research_sources as rs
-        _build_calibre_metadata_db(tmp_path)
-        monkeypatch.setattr(rs, "_run_calibre", lambda *a, **k: pytest.fail("used calibredb"))
-
-        hits = rs._calibre_metadata_search("Buddha", None, tmp_path, limit=5)
-
-        assert len(hits) == 1
-        h = hits[0]
-        assert isinstance(h, rs.CalibreHit)
-        assert h.title == "The Buddha's Teaching"
-        assert h.authors == "Bhikkhu Bodhi"
-        assert h.tags == ["Buddhism"]
-        assert "dukkha" in h.snippet
-
-    def test_metadata_search_matches_author_and_comments(self, monkeypatch, tmp_path):
-        import tools.research_sources as rs
-        _build_calibre_metadata_db(tmp_path)
-        monkeypatch.setattr(rs, "_run_calibre", lambda *a, **k: pytest.fail("used calibredb"))
-
-        assert [h.book_id for h in rs._calibre_metadata_search("Whitney", None, tmp_path, 5)] == [2]
-        assert [h.book_id for h in rs._calibre_metadata_search("path", None, tmp_path, 5)] == [1]
-
-    def test_metadata_search_filters_by_tag(self, monkeypatch, tmp_path):
-        import tools.research_sources as rs
-        _build_calibre_metadata_db(tmp_path)
-        monkeypatch.setattr(rs, "_run_calibre", lambda *a, **k: pytest.fail("used calibredb"))
-
-        hits = rs._calibre_metadata_search("", ["Sanskrit"], tmp_path, limit=5)
-        assert [h.book_id for h in hits] == [2]
-
-    def test_metadata_search_falls_back_to_cli_on_schema_error(self, monkeypatch, tmp_path):
-        import tools.research_sources as rs
-        (tmp_path / "metadata.db").write_text("not a database", encoding="utf-8")
-        called = {}
-
-        def _cli(query, tags, library, limit, timeout=60):
-            called["hit"] = True
-            return [rs.CalibreHit(book_id=9, title="cli", authors="", tags=[])]
-
-        monkeypatch.setattr(rs, "_calibre_metadata_search_cli", _cli)
-        hits = rs._calibre_metadata_search("x", None, tmp_path, limit=5)
-        assert called.get("hit") and hits[0].book_id == 9
-
-
-class TestCalibreCheckHonesty:
-    """calibre-check must use a fast, lock-free read-only SQLite probe."""
-
-    def test_available_when_metadata_db_readable(self, monkeypatch, tmp_path):
-        import tools.research_sources as rs
-        _build_calibre_metadata_db(tmp_path)
-        monkeypatch.setattr(rs, "DEFAULT_CALIBRE_LIBRARY", tmp_path)
-        monkeypatch.setattr(rs, "_run_calibre", lambda *a, **k: pytest.fail("used calibredb lock"))
-        monkeypatch.setattr(rs, "search_calibre", lambda *a, **k: pytest.fail("used FTS search"))
-        ok, msg = rs.calibre_library_available()
-        assert ok and msg == "ok"
-
-    def test_unavailable_when_metadata_db_missing(self, monkeypatch, tmp_path):
-        import tools.research_sources as rs
-        monkeypatch.setattr(rs, "DEFAULT_CALIBRE_LIBRARY", tmp_path)
-        monkeypatch.setattr(rs, "_run_calibre", lambda *a, **k: pytest.fail("used calibredb lock"))
-        ok, msg = rs.calibre_library_available()
-        assert ok is False
-        assert "metadata.db not found" in msg
-
-    def test_unavailable_when_metadata_db_corrupt(self, monkeypatch, tmp_path):
-        import tools.research_sources as rs
-        (tmp_path / "metadata.db").write_text("not a database", encoding="utf-8")
-        monkeypatch.setattr(rs, "DEFAULT_CALIBRE_LIBRARY", tmp_path)
-        monkeypatch.setattr(rs, "_run_calibre", lambda *a, **k: pytest.fail("used calibredb lock"))
-        ok, msg = rs.calibre_library_available()
-        assert ok is False
-
-
-class TestCalibreFtsFallback:
-    def test_search_falls_back_to_metadata_when_fts_times_out(self, monkeypatch, tmp_path, capsys):
-        import tools.research_sources as rs
-
-        metadata_hits = [
-            rs.CalibreHit(
-                book_id=42,
-                title="Metadata result",
-                authors="Author",
-                tags=["Buddhism"],
-                location="42",
-                snippet="metadata comments are not FTS snippets",
-            )
-        ]
-        seen = {}
-
-        def _timeout(query, tags, library, limit, *, timeout):
-            seen["fts"] = (query, tags, library, limit, timeout)
-            raise subprocess.TimeoutExpired(["calibredb", "fts_search"], timeout)
-
-        def _metadata(query, tags, library, limit, *, timeout):
-            seen["metadata"] = (query, tags, library, limit, timeout)
-            return metadata_hits
-
-        monkeypatch.setattr(rs, "DEFAULT_CALIBRE_LIBRARY", tmp_path)
-        monkeypatch.setattr(rs, "_calibre_fts_available", lambda library: True)
-        monkeypatch.setattr(rs, "_calibre_fts_search", _timeout)
-        monkeypatch.setattr(rs, "_calibre_metadata_search", _metadata)
-
-        hits = rs.search_calibre("dhamma", tags=["Buddhism"], limit=5)
-
-        assert hits == [
-            rs.CalibreHit(
-                book_id=42,
-                title="Metadata result",
-                authors="Author",
-                tags=["Buddhism"],
-                location="42",
-                snippet="",
-            )
-        ]
-        assert seen["fts"] == ("dhamma", ["Buddhism"], tmp_path, 5, 20)
-        assert seen["metadata"] == ("dhamma", ["Buddhism"], tmp_path, 5, 60)
-        assert "FTS timed out" in capsys.readouterr().err
-
-    def test_search_keeps_calibre_unavailable_errors(self, monkeypatch, tmp_path):
-        import tools.research_sources as rs
-
-        def _locked(*a, **k):
-            raise rs.CalibreUnavailable("database is locked")
-
-        monkeypatch.setattr(rs, "DEFAULT_CALIBRE_LIBRARY", tmp_path)
-        monkeypatch.setattr(rs, "_calibre_fts_available", lambda library: True)
-        monkeypatch.setattr(rs, "_calibre_fts_search", _locked)
-        monkeypatch.setattr(
-            rs,
-            "_calibre_metadata_search",
-            lambda *a, **k: pytest.fail("fell back on a lock error"),
-        )
-
-        with pytest.raises(rs.CalibreUnavailable, match="locked"):
-            rs.search_calibre("dhamma")
 
 
 @canon_available
