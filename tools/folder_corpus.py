@@ -30,15 +30,26 @@ EPUB_EXTENSIONS = {".epub"}
 FILENAME_HINT_STOP_NAMES = {"metadata", "picasa", "index", "contents", "cover", "title"}
 FILENAME_HINT_SKIP_EXTENSIONS = {".ini", ".opf"}
 NOISE_EXTENSIONS = {
+    ".apnx",
     ".bmp",
+    ".class",
     ".css",
+    ".dat",
+    ".db",
+    ".dll",
+    ".ds_store",
+    ".exe",
     ".gif",
     ".ico",
+    ".idx",
     ".jpeg",
     ".jpg",
     ".js",
+    ".lnk",
     ".map",
+    ".opf",
     ".png",
+    ".pyc",
     ".svg",
     ".ttf",
     ".webp",
@@ -258,6 +269,8 @@ def _iter_files(
             if not d.startswith(".") and not _is_excluded(Path(dirpath) / d, exclude)
         )
         for filename in sorted(filenames):
+            if filename.startswith("."):
+                continue
             path = Path(dirpath) / filename
             if not _accepted_file(path):
                 continue

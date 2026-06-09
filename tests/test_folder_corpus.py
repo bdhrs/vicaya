@@ -273,6 +273,25 @@ def test_refresh_records_hash_read_errors_without_crashing(tmp_path, monkeypatch
     assert row[2].startswith("error: file read failed:")
 
 
+def test_refresh_skips_binary_noise_extensions(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "keep.txt").write_text("keep target", encoding="utf-8")
+    (root / "junk.exe").write_bytes(b"MZ binary")
+    (root / "thumb.db").write_bytes(b"db bytes")
+    (root / ".DS_Store").write_bytes(b"mac cruft")
+    (root / "shortcut.lnk").write_bytes(b"lnk bytes")
+    (root / "metadata.opf").write_text("<package/>", encoding="utf-8")
+    index = tmp_path / "folder.sqlite"
+
+    report = refresh(FolderCorpusConfig(root=root, index=index))
+
+    assert report["indexed"] == 1
+    with sqlite3.connect(index) as conn:
+        rel_paths = [row[0] for row in conn.execute("SELECT rel_path FROM documents")]
+    assert rel_paths == ["keep.txt"]
+
+
 def test_doc_extractor_tolerates_non_utf8_output():
     extracted = folder_corpus._run_doc_extractor(
         [sys.executable, "-c", r"import sys; sys.stdout.buffer.write(b'a\xedb')"],
