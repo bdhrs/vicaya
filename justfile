@@ -28,3 +28,7 @@ lf-search query *args:
 # Read-only duplicate diagnostic, e.g. `just lf-dups --samples 10`.
 lf-dups *args:
     uv run tools/research_sources.py library-folders-duplicates {{args}}
+
+# Migrate .env from folder-corpus/Calibre variable names to library-folders (run once after pulling the rename commit).
+migrate-env *args:
+    uv run scripts/migrate_env.py {{args}}
