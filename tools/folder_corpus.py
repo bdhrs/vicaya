@@ -315,7 +315,8 @@ def _extract_pdf(path: Path) -> ExtractedText:
         result = subprocess.run(
             ["pdftotext", "-layout", str(path), "-"],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=60,
             check=False,
         )
@@ -333,7 +334,8 @@ def _run_doc_extractor(command: list[str], label: str) -> ExtractedText:
         result = subprocess.run(
             command,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=60,
             check=False,
         )
@@ -564,7 +566,7 @@ def refresh(
             else:
                 try:
                     extracted = extract_text(path)
-                except OSError as e:
+                except Exception as e:
                     extracted = ExtractedText(text="", status=f"error: extraction failed: {e}")
                     errors.append({"relative_path": rel_path, "error": extracted.status})
             doc_id = _upsert_document(

@@ -273,6 +273,46 @@ def test_refresh_records_hash_read_errors_without_crashing(tmp_path, monkeypatch
     assert row[2].startswith("error: file read failed:")
 
 
+def test_doc_extractor_tolerates_non_utf8_output():
+    extracted = folder_corpus._run_doc_extractor(
+        [sys.executable, "-c", r"import sys; sys.stdout.buffer.write(b'a\xedb')"],
+        "stub",
+    )
+
+    assert extracted.status == "ok"
+    assert extracted.text.startswith("a")
+
+
+def test_refresh_continues_when_extraction_raises(tmp_path, monkeypatch):
+    root = tmp_path / "root"
+    root.mkdir()
+    bad = root / "bad.doc"
+    bad.write_text("bad doc bytes", encoding="utf-8")
+    (root / "good.txt").write_text("good target text", encoding="utf-8")
+    index = tmp_path / "folder.sqlite"
+    original_extract = folder_corpus.extract_text
+
+    def fail_extract(path: Path):
+        if path == bad:
+            raise UnicodeDecodeError("utf-8", b"\xed", 0, 1, "invalid continuation byte")
+        return original_extract(path)
+
+    monkeypatch.setattr(folder_corpus, "extract_text", fail_extract)
+
+    report = refresh(FolderCorpusConfig(root=root, index=index))
+
+    assert report["status"] == "ok"
+    assert report["indexed"] == 2
+    assert report["error_count"] == 1
+    assert report["errors"][0]["relative_path"] == "bad.doc"
+    with sqlite3.connect(index) as conn:
+        statuses = dict(
+            conn.execute("SELECT rel_path, extraction_status FROM documents")
+        )
+    assert statuses["bad.doc"].startswith("error: extraction failed:")
+    assert statuses["good.txt"] == "ok"
+
+
 def test_incremental_refresh_skips_unchanged_and_deletes_missing(tmp_path):
     root = tmp_path / "root"
     root.mkdir()
