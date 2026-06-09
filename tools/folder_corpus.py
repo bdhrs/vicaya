@@ -9,6 +9,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -24,13 +25,26 @@ ROOT_ENV = "VICAYA_FOLDER_CORPUS_ROOT"
 INDEX_ENV = "VICAYA_FOLDER_CORPUS_INDEX"
 EXCLUDE_ENV = "VICAYA_FOLDER_CORPUS_EXCLUDE"
 SCHEMA_VERSION = "1"
-TEXT_EXTENSIONS = {".txt", ".md"}
-HTML_EXTENSIONS = {".htm", ".html"}
+TEXT_EXTENSIONS = {".txt", ".md", ".json", ".jsonl", ".py"}
+HTML_EXTENSIONS = {".htm", ".html", ".shtml", ".xhtml", ".xht", ".xml"}
 EPUB_EXTENSIONS = {".epub"}
+MHTML_EXTENSIONS = {".mht", ".mhtml"}
+EBOOK_CONVERT_EXTENSIONS = {
+    ".mobi",
+    ".azw3",
+    ".azw",
+    ".prc",
+    ".lit",
+    ".pdb",
+    ".chm",
+    ".rtf",
+}
 FILENAME_HINT_STOP_NAMES = {"metadata", "picasa", "index", "contents", "cover", "title"}
 FILENAME_HINT_SKIP_EXTENSIONS = {".ini", ".opf"}
 NOISE_EXTENSIONS = {
+    ".aac",
     ".apnx",
+    ".avi",
     ".bmp",
     ".class",
     ".css",
@@ -39,20 +53,34 @@ NOISE_EXTENSIONS = {
     ".dll",
     ".ds_store",
     ".exe",
+    ".flac",
     ".gif",
     ".ico",
     ".idx",
     ".jpeg",
     ".jpg",
+    ".jpg-old",
     ".js",
     ".lnk",
+    ".m4a",
     ".map",
+    ".mkv",
+    ".mov",
+    ".mp3",
+    ".mp4",
+    ".ogg",
     ".opf",
     ".png",
     ".pyc",
+    ".ram",
     ".svg",
+    ".tif",
+    ".tiff",
     ".ttf",
+    ".wav",
     ".webp",
+    ".wma",
+    ".wmv",
     ".woff",
     ".woff2",
 }
@@ -376,6 +404,57 @@ def _extract_doc(path: Path) -> ExtractedText:
     return ExtractedText(text="", status="unsupported: doc extractor not found")
 
 
+def _extract_mhtml(path: Path) -> ExtractedText:
+    import email
+    from email import policy
+
+    try:
+        with path.open("rb") as fh:
+            message = email.message_from_binary_file(fh, policy=policy.default)
+    except Exception as e:
+        return ExtractedText(text="", status=f"error: {e}")
+    parts: list[str] = []
+    for part in message.walk():
+        if part.get_content_type() not in ("text/html", "text/plain"):
+            continue
+        try:
+            content = part.get_content()
+        except Exception:
+            continue
+        if isinstance(content, bytes):
+            content = content.decode("utf-8", errors="replace")
+        parts.append(content)
+    text = _strip_xml("\n".join(parts))
+    return ExtractedText(text=text, status="ok" if text.strip() else "empty")
+
+
+def _extract_ebook(path: Path) -> ExtractedText:
+    if shutil.which("ebook-convert") is None:
+        return ExtractedText(text="", status="unsupported: ebook-convert not found")
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "out.txt"
+        try:
+            result = subprocess.run(
+                ["ebook-convert", str(path), str(out)],
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=180,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return ExtractedText(text="", status="error: ebook-convert timed out")
+        if result.returncode != 0:
+            message = (result.stderr or "ebook-convert failed").strip().splitlines()
+            detail = message[-1] if message else "ebook-convert failed"
+            return ExtractedText(text="", status=f"error: {detail}")
+        try:
+            text = out.read_text(encoding="utf-8", errors="replace") if out.exists() else ""
+        except OSError as e:
+            return ExtractedText(text="", status=f"error: {e}")
+    return ExtractedText(text=text, status="ok" if text.strip() else "empty")
+
+
 def extract_text(path: Path) -> ExtractedText:
     extension = path.suffix.lower()
     if extension in TEXT_EXTENSIONS:
@@ -394,12 +473,21 @@ def extract_text(path: Path) -> ExtractedText:
             path,
             lambda name: name.lower().startswith("word/") and name.lower().endswith(".xml"),
         )
+    if extension == ".pptx":
+        return _extract_zip_members(
+            path,
+            lambda name: name.lower().startswith("ppt/slides/") and name.lower().endswith(".xml"),
+        )
     if extension == ".odt":
         return _extract_zip_members(path, lambda name: name.lower() == "content.xml")
     if extension == ".pdf":
         return _extract_pdf(path)
     if extension == ".doc":
         return _extract_doc(path)
+    if extension in MHTML_EXTENSIONS:
+        return _extract_mhtml(path)
+    if extension in EBOOK_CONVERT_EXTENSIONS:
+        return _extract_ebook(path)
     return ExtractedText(text="", status=f"unsupported: {extension or 'no extension'}")
 
 
@@ -497,20 +585,25 @@ def _replace_fts_text(conn: sqlite3.Connection, doc_id: int, text: str) -> None:
         )
 
 
-def _unchanged_document(
+def _should_skip(
     conn: sqlite3.Connection,
     *,
     rel_path: str,
     size: int,
     mtime: float,
+    retry_failed: bool,
 ) -> bool:
     row = conn.execute(
-        "SELECT size, mtime FROM documents WHERE rel_path = ?",
+        "SELECT size, mtime, extraction_status FROM documents WHERE rel_path = ?",
         (rel_path,),
     ).fetchone()
     if row is None:
         return False
-    return int(row[0]) == size and float(row[1]) == mtime
+    if int(row[0]) != size or float(row[1]) != mtime:
+        return False
+    if retry_failed and row[2] != "ok":
+        return False
+    return True
 
 
 def _delete_missing_documents(conn: sqlite3.Connection, seen_rel_paths: set[str]) -> int:
@@ -528,6 +621,7 @@ def refresh(
     config: FolderCorpusConfig | None = None,
     *,
     limit: int | None = None,
+    retry_failed: bool = False,
 ) -> dict[str, Any]:
     config = config or default_config()
     if config.root is None or config.index is None:
@@ -571,11 +665,12 @@ def refresh(
                 errors.append({"relative_path": rel_path, "error": f"stat failed: {e}"})
                 continue
             seen_rel_paths.add(rel_path)
-            if _unchanged_document(
+            if _should_skip(
                 conn,
                 rel_path=rel_path,
                 size=stat.st_size,
                 mtime=stat.st_mtime,
+                retry_failed=retry_failed,
             ):
                 skipped += 1
                 continue
@@ -629,6 +724,7 @@ def refresh(
         "error_count": len(errors),
         "errors": errors[:20],
         "limited": limit is not None and len(files) >= limit,
+        "retry_failed": retry_failed,
     }
 
 

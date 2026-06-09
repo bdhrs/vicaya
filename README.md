@@ -114,6 +114,7 @@ Build and verify the index after setting `.env`:
 ```bash
 uv run tools/research_sources.py folder-corpus-check
 uv run tools/research_sources.py folder-corpus-refresh
+uv run tools/research_sources.py folder-corpus-refresh --retry-failed
 uv run tools/research_sources.py search-folder-corpus "dhamma" --limit 5
 uv run tools/research_sources.py folder-corpus-duplicates --samples 10
 ```
@@ -123,7 +124,8 @@ short recipes (run `just` to list them):
 
 ```bash
 just fc-check                      # read-only preflight: config + index health (run before refreshing)
-just fc-refresh                    # build/update the index by walking the tree (slow first run; add --limit N to bound it)
+just fc-refresh                    # build/update the index by walking the tree (skips unchanged files; slow first run; add --limit N to bound it)
+just fc-refresh-retry              # like fc-refresh, but also re-extracts previously-failed files (run once after adding extractor support)
 just fc-search "dhamma" --limit 5  # full-text search the index
 just fc-dups --samples 10          # read-only duplicate diagnostic
 ```
@@ -132,8 +134,13 @@ The first unbounded refresh may take a long time on a large or mounted tree
 because it must walk and hash every accepted file. Search covers files where
 text extraction succeeds; metadata-only files are still tracked for path,
 hash, and duplicate diagnostics but are not searchable by body text. Optional
-local tools such as `pdftotext`, `textutil`, `antiword`, and `catdoc` improve
-extraction coverage when installed.
+local tools such as `pdftotext`, `textutil`, `antiword`, `catdoc`, and
+`ebook-convert` (Calibre — handles the Kindle/Mobipocket family `.mobi`,
+`.azw3`, `.azw`, `.prc`, `.lit`, `.pdb`, `.chm`, plus `.rtf`) improve extraction
+coverage when installed. A normal refresh skips files whose size and mtime are
+unchanged, so after installing a new extractor (or upgrading this tool) re-run
+with `--retry-failed` / `just fc-refresh-retry` once to re-extract the
+previously-failed files; later refreshes skip them again.
 
 Duplicate handling is conservative. Exact byte duplicates and identical
 normalized extracted text are collapsed by default; `--include-duplicates`

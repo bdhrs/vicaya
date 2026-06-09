@@ -361,6 +361,43 @@ def test_incremental_refresh_skips_unchanged_and_deletes_missing(tmp_path):
     assert remaining == ["keep.txt"]
 
 
+def test_retry_failed_reextracts_unchanged_failed_documents(tmp_path, monkeypatch):
+    root = tmp_path / "root"
+    root.mkdir()
+    gap = root / "book.newfmt"
+    gap.write_text("recoverable target text", encoding="utf-8")
+    (root / "plain.txt").write_text("plain target text", encoding="utf-8")
+    index = tmp_path / "folder.sqlite"
+    config = FolderCorpusConfig(root=root, index=index)
+
+    refresh(config)
+    with sqlite3.connect(index) as conn:
+        status = conn.execute(
+            "SELECT extraction_status FROM documents WHERE rel_path = 'book.newfmt'"
+        ).fetchone()[0]
+    assert status.startswith("unsupported:")
+
+    real_extract = folder_corpus.extract_text
+
+    def now_supported(path: Path):
+        if path == gap:
+            return folder_corpus.ExtractedText(text=gap.read_text(), status="ok")
+        return real_extract(path)
+
+    monkeypatch.setattr(folder_corpus, "extract_text", now_supported)
+
+    plain_skip = refresh(config)
+    assert plain_skip["skipped"] == 2
+    assert not search("recoverable", config)
+
+    retried = refresh(config, retry_failed=True)
+    assert retried["skipped"] == 1
+    assert retried["written"] == 1
+    assert [hit["relative_path"] for hit in search("recoverable", config)] == [
+        "book.newfmt"
+    ]
+
+
 def test_refresh_unavailable_root_mutates_nothing(tmp_path):
     root = tmp_path / "root"
     root.mkdir()
@@ -622,6 +659,111 @@ def test_doc_extraction_uses_available_optional_tool(tmp_path):
     assert len(hits) == 1
     assert hits[0]["duplicate_count"] == 2
     assert set(hits[0]["duplicate_paths"]) == {"a.doc", "b.doc"}
+
+
+def test_misc_text_and_html_extensions_are_indexed(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "data.json").write_text('{"k": "json target value"}', encoding="utf-8")
+    (root / "lines.jsonl").write_text('{"k": "jsonl target"}\n', encoding="utf-8")
+    (root / "page.shtml").write_text("<p>shtml target text</p>", encoding="utf-8")
+    (root / "doc.xml").write_text(
+        "<root><node>xml target text</node></root>", encoding="utf-8"
+    )
+    config = FolderCorpusConfig(root=root, index=tmp_path / "folder.sqlite")
+    refresh(config)
+
+    assert [hit["relative_path"] for hit in search("json target value", config)] == [
+        "data.json"
+    ]
+    assert [hit["relative_path"] for hit in search("jsonl", config)] == ["lines.jsonl"]
+    shtml_hits = search("shtml", config)
+    assert [hit["relative_path"] for hit in shtml_hits] == ["page.shtml"]
+    assert "<p>" not in shtml_hits[0]["snippet"]
+    assert [hit["relative_path"] for hit in search("xml target", config)] == ["doc.xml"]
+
+
+def test_refresh_skips_audio_and_image_noise_extensions(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "keep.txt").write_text("keep target", encoding="utf-8")
+    (root / "talk.mp3").write_bytes(b"ID3 audio bytes")
+    (root / "stream.ram").write_bytes(b"rtsp://audio")
+    (root / "scan.tif").write_bytes(b"II* image bytes")
+    (root / "photo.jpg-old").write_bytes(b"jpeg bytes")
+    index = tmp_path / "folder.sqlite"
+
+    report = refresh(FolderCorpusConfig(root=root, index=index))
+
+    assert report["indexed"] == 1
+    with sqlite3.connect(index) as conn:
+        rel_paths = [row[0] for row in conn.execute("SELECT rel_path FROM documents")]
+    assert rel_paths == ["keep.txt"]
+
+
+def test_mhtml_extraction_strips_html(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    mhtml = (
+        "From: <saved by browser>\n"
+        "MIME-Version: 1.0\n"
+        'Content-Type: multipart/related; boundary="BOUNDARY"\n'
+        "\n"
+        "--BOUNDARY\n"
+        "Content-Type: text/html; charset=utf-8\n"
+        "Content-Transfer-Encoding: quoted-printable\n"
+        "\n"
+        "<html><body><p>mhtml target text</p></body></html>\n"
+        "--BOUNDARY--\n"
+    )
+    (root / "archive.mht").write_text(mhtml, encoding="utf-8")
+    config = FolderCorpusConfig(root=root, index=tmp_path / "folder.sqlite")
+
+    refresh(config)
+
+    hits = search("mhtml target", config)
+    assert [hit["relative_path"] for hit in hits] == ["archive.mht"]
+    assert "<p>" not in hits[0]["snippet"]
+
+
+def test_pptx_extraction_reads_slide_xml(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    with zipfile.ZipFile(root / "deck.pptx", "w") as archive:
+        archive.writestr(
+            "ppt/slides/slide1.xml",
+            '<p:sld xmlns:a="urn"><a:t>pptx target text</a:t></p:sld>',
+        )
+    config = FolderCorpusConfig(root=root, index=tmp_path / "folder.sqlite")
+
+    refresh(config)
+
+    assert [hit["relative_path"] for hit in search("pptx target", config)] == [
+        "deck.pptx"
+    ]
+
+
+def test_ebook_extraction_uses_ebook_convert_when_available(tmp_path):
+    if shutil.which("ebook-convert") is None:
+        pytest.skip("ebook-convert not installed")
+    root = tmp_path / "root"
+    root.mkdir()
+    rtf = r"{\rtf1\ansi rtf target text\par}"
+    (root / "book.rtf").write_text(rtf, encoding="utf-8")
+    config = FolderCorpusConfig(root=root, index=tmp_path / "folder.sqlite")
+
+    refresh(config)
+
+    assert [hit["relative_path"] for hit in search("rtf target", config)] == ["book.rtf"]
+
+
+def test_ebook_extraction_reports_missing_tool(monkeypatch, tmp_path):
+    monkeypatch.setattr(folder_corpus.shutil, "which", lambda *_: None)
+
+    extracted = folder_corpus._extract_ebook(tmp_path / "book.mobi")
+
+    assert extracted.text == ""
+    assert extracted.status == "unsupported: ebook-convert not found"
 
 
 def test_folder_corpus_cli_commands_return_expected_json(tmp_path):

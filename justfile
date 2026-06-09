@@ -13,9 +13,13 @@ default:
 fc-check:
     uv run tools/research_sources.py folder-corpus-check
 
-# Build/update the index by walking and extracting the source tree (slow first run; add --limit N to bound it).
+# Build/update the index by walking and extracting the source tree (skips unchanged files; slow first run; add --limit N to bound it).
 fc-refresh *args:
     uv run tools/research_sources.py folder-corpus-refresh {{args}}
+
+# Like fc-refresh, but also re-extracts previously-failed files (run after adding extractor support, e.g. new ebook formats).
+fc-refresh-retry *args:
+    uv run tools/research_sources.py folder-corpus-refresh --retry-failed {{args}}
 
 # Full-text search the index, e.g. `just fc-search "dhamma" --limit 5`.
 fc-search query *args:

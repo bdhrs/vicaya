@@ -2550,6 +2550,9 @@ def _cli() -> int:
     pfr = sub.add_parser("folder-corpus-refresh",
                          help="Refresh the configured unmanaged folder corpus index.")
     pfr.add_argument("--limit", type=int, default=None)
+    pfr.add_argument("--retry-failed", action="store_true",
+                     help="Re-extract unchanged files whose previous extraction "
+                          "did not succeed (e.g. after adding extractor support).")
 
     psfc = sub.add_parser("search-folder-corpus",
                           help="Search the configured unmanaged folder corpus index.")
@@ -2707,8 +2710,13 @@ def _cli() -> int:
         _dump(result_for_autolog)
     elif args.cmd == "folder-corpus-refresh":
         folder_corpus = _load_folder_corpus_module()
-        result_for_autolog = folder_corpus.refresh(limit=args.limit)
+        result_for_autolog = folder_corpus.refresh(
+            limit=args.limit,
+            retry_failed=args.retry_failed,
+        )
         autolog_argv = ["--limit", str(args.limit)] if args.limit is not None else []
+        if args.retry_failed:
+            autolog_argv.append("--retry-failed")
         _dump(result_for_autolog)
     elif args.cmd == "search-folder-corpus":
         folder_corpus = _load_folder_corpus_module()
