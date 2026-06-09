@@ -100,6 +100,10 @@ Calibre metadata or calling `calibredb`. Configure:
 
 - `VICAYA_FOLDER_CORPUS_ROOT`: the source tree, which may be local, external, or server-mounted.
 - `VICAYA_FOLDER_CORPUS_INDEX`: a local SQLite index path outside this repository.
+- `VICAYA_FOLDER_CORPUS_EXCLUDE` (optional): comma-separated folders to skip
+  during refresh — for example a Calibre library nested under the root that is
+  already searchable via `search-calibre`. Excluded subtrees are never walked,
+  and a later unbounded refresh drops any rows previously indexed under them.
 
 Normal research search uses only the SQLite index. Source files are touched
 during `folder-corpus-refresh` or later manual inspection, not during
@@ -112,6 +116,16 @@ uv run tools/research_sources.py folder-corpus-check
 uv run tools/research_sources.py folder-corpus-refresh
 uv run tools/research_sources.py search-folder-corpus "dhamma" --limit 5
 uv run tools/research_sources.py folder-corpus-duplicates --samples 10
+```
+
+If [`just`](https://github.com/casey/just) is installed, the same commands have
+short recipes (run `just` to list them):
+
+```bash
+just fc-check                      # read-only preflight: config + index health (run before refreshing)
+just fc-refresh                    # build/update the index by walking the tree (slow first run; add --limit N to bound it)
+just fc-search "dhamma" --limit 5  # full-text search the index
+just fc-dups --samples 10          # read-only duplicate diagnostic
 ```
 
 The first unbounded refresh may take a long time on a large or mounted tree
@@ -266,6 +280,7 @@ VICAYA_VAULT_PATH=~/Obsidian
 VICAYA_CALIBRE_LIBRARY=~/Calibre Library
 VICAYA_FOLDER_CORPUS_ROOT=
 VICAYA_FOLDER_CORPUS_INDEX=
+VICAYA_FOLDER_CORPUS_EXCLUDE=
 VICAYA_CANON_DB=~/path/to/dpd-db/resources/tipitaka_translation_db/tipitaka-translation-data.db
 VICAYA_DPD_DB=~/path/to/dpd-db/dpd.db
 VICAYA_GRETIL_PATH=~/MyFiles/2_Resources/gretil
