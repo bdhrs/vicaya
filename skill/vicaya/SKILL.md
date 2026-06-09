@@ -1340,14 +1340,19 @@ library — note it as a gap in *Open Threads*, do not invent a citation.
 
 #### Folder corpus search
 
-If `folder-corpus-check` reports a configured index, search the folder corpus as
-a separate secondary-source search alongside Calibre. Do not treat it as Calibre
-metadata and do not call Calibre tools for it.
+**Both Calibre and the folder corpus must always be queried.** They are independent sources — never substitute one for the other, and never skip either because the other returned results. What to do with the results is the agent's judgment; the searches themselves are mandatory.
 
 ```bash
 uv run tools/research_sources.py folder-corpus-check
 uv run tools/research_sources.py search-folder-corpus "<term>" --limit 20
 ```
+
+**Query conventions — different from both Calibre and the canon DB:**
+
+- **FTS is case- and diacritic-insensitive.** `nibbāna`, `nibbana`, and `Nibbana` return identical results. Use ASCII for consistency; do not waste a second round trying the diacritic form.
+- **Do NOT apply Pāḷi stem truncation here.** The stem-truncation rule applies to the canon SQLite only. In the folder corpus FTS, truncated stems match compound tokens (`jhān'aṅga`), HTML entities (`nibban&agrave;na`), and abbreviations — not the full word. Use the complete ASCII Pāḷi term: `satipatthana` not `satipaṭṭhān`; `paticcasamuppada` not `paṭiccasamuppād`.
+- **Multi-word English queries work as implicit AND.** `"four foundations of mindfulness"`, `meditation retreat laypeople`, `dependent origination` all return precise results. Combine Pāḷi and English when a concept has both: `nibbana liberation`.
+- **Extraction is a build-time concern, not a query-time concern.** All formats (PDF, EPUB, MOBI, DOC, etc.) are extracted into the FTS index during `folder-corpus-refresh`. A hit with `extraction_status: "ok"` has its full text in the index — use the FTS snippet. If `extraction_status` is not `"ok"`, that is a refresh gap, not something to fix at query time; note it in Critical Gaps.
 
 Exact byte duplicates and identical normalized extracted text are already
 collapsed in default search results; use `--include-duplicates` only when you
@@ -1584,7 +1589,7 @@ is complete. Never write a partial or draft note to the vault.
 - Is every *applicable* angle from the Phase 1 triage represented by at least one citation, and is every *non-applicable* angle logged in `## Angles Not Pursued` with a one-line reason?
 - Are all pertinent canon hits in the Canon Evidence (T1) section — not a curated sample?
 - Have I searched Calibre for every plausible tag cluster, not just the first match?
-- Have I searched the folder corpus when configured, and handled `possible_duplicate_of` / `source_available` correctly?
+- Have I searched the folder corpus (mandatory alongside Calibre), and handled `possible_duplicate_of` / `source_available` correctly?
 - Have I pulled transcripts for the most relevant Dhamma talks, not just noted the video titles?
 - Have I fetched and read the most promising web sources, not just linked to search results?
 - Is the draft approaching ~12 pages (~3,500 words)? If not, the answer is almost always: I have not surfaced enough sources.
