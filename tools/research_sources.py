@@ -186,12 +186,15 @@ def search_vault(
     if folder:
         cmd.append(f"path={folder}")
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-    if result.returncode != 0 or not result.stdout.strip():
+    if result.returncode != 0:
+        raise RuntimeError(f"obsidian CLI exited {result.returncode}: {(result.stderr or result.stdout).strip()}")
+    stdout = result.stdout.strip()
+    if not stdout:
         return []
     try:
-        data = json.loads(result.stdout)
+        data = json.loads(stdout)
     except json.JSONDecodeError:
-        return []
+        raise RuntimeError(f"obsidian CLI returned non-JSON (app may not be running): {stdout[:200]}")
     hits: list[VaultHit] = []
     # Output shape: list of {file, matches: [{line, text}, ...]}
     if isinstance(data, list):

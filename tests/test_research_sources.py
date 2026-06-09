@@ -8,8 +8,10 @@ suite stays green on a machine that doesn't have everything wired up yet.
 from __future__ import annotations
 
 import shutil
+import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -905,3 +907,62 @@ class TestAnnotateCitations:
         # The label must not embed the English sutta name "Unfailing"
         assert "Unfailing" not in out
         assert "MN60 [VERIFIED]" in out
+
+
+# ---------- search_vault error handling ----------
+
+
+class TestSearchVaultErrorHandling:
+    def _mock_run(self, stdout: str, returncode: int = 0) -> MagicMock:
+        m = MagicMock()
+        m.stdout = stdout
+        m.stderr = ""
+        m.returncode = returncode
+        return m
+
+    def test_non_json_stdout_raises(self, monkeypatch):
+        """CLI exits 0 but prints plaintext → RuntimeError, not silent []."""
+        monkeypatch.setattr(
+            subprocess, "run",
+            lambda *a, **kw: self._mock_run("The CLI is unable to find Obsidian. Please make sure Obsidian is running and try again."),
+        )
+        with pytest.raises(RuntimeError, match="non-JSON"):
+            search_vault("dukkha")
+
+    def test_non_zero_exit_raises(self, monkeypatch):
+        """CLI exits non-zero → RuntimeError with the error message."""
+        monkeypatch.setattr(
+            subprocess, "run",
+            lambda *a, **kw: self._mock_run("fatal error", returncode=1),
+        )
+        with pytest.raises(RuntimeError, match="exited 1"):
+            search_vault("dukkha")
+
+    def test_empty_stdout_returns_empty_list(self, monkeypatch):
+        """Empty stdout (vault unreachable, no output) → []."""
+        monkeypatch.setattr(
+            subprocess, "run",
+            lambda *a, **kw: self._mock_run(""),
+        )
+        assert search_vault("dukkha") == []
+
+    def test_valid_json_empty_returns_empty_list(self, monkeypatch):
+        """Parsed empty JSON list → [] (genuine 0 hits)."""
+        monkeypatch.setattr(
+            subprocess, "run",
+            lambda *a, **kw: self._mock_run("[]"),
+        )
+        assert search_vault("dukkha") == []
+
+    def test_valid_json_hit_returns_vault_hits(self, monkeypatch):
+        """Well-formed JSON → VaultHit list."""
+        payload = '[{"file": "Vicaya/test.md", "matches": [{"text": "dukkha arises", "line": 3}]}]'
+        monkeypatch.setattr(
+            subprocess, "run",
+            lambda *a, **kw: self._mock_run(payload),
+        )
+        hits = search_vault("dukkha")
+        assert len(hits) == 1
+        assert hits[0].path == "Vicaya/test.md"
+        assert hits[0].snippet == "dukkha arises"
+        assert hits[0].line == 3

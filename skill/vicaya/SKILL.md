@@ -32,7 +32,11 @@ These rules apply to every run, by every agent. They are part of the skill, not 
 3. **Pāḷi spelling conventions differ per source:**
    - **Canon SQLite (`tipitaka-translation-data.db`) and the Obsidian vault** use exact Pāḷi diacritics (`paṭiccasamuppāda`, `dukkha`, `nibbāna`). Search verbatim. If 0 hits, suspect a bug or the alternate niggahita (`ṃ` vs `ṁ`), not loose spelling.
    - **Library folders** index contains Calibre metadata labels with ASCII Pāḷi (`paticcasamuppada`). Diacritics in queries are handled automatically.
-4. **Obsidian CLI requires the Obsidian desktop app to be running.** If a CLI command fails with "unable to find Obsidian", launch the desktop app yourself in the background and wait ~5 seconds before retrying. On Linux that's typically `setsid obsidian </dev/null >/dev/null 2>&1 &` (or the absolute path to the binary on your system); on macOS, `open -a Obsidian`. Don't ask the user to open it.
+4. **Obsidian CLI requires the Obsidian desktop app to be running.** If a `search-vault` command exits with a traceback containing "app may not be running", launch the desktop app yourself in the background and wait ~5 seconds before retrying. Use the OS-appropriate command — **never bare `obsidian`** (that resolves to the CLI, not the app, on Linux):
+   - **Linux:** `setsid xdg-open "obsidian://" >/dev/null 2>&1 &`
+   - **macOS:** `open -a Obsidian`
+   - **Windows:** `start "" "obsidian://"`
+   The `obsidian://` URI is registered by every standard Obsidian install across all platforms regardless of install method (apt, AppImage, flatpak, dmg, installer). Don't ask the user to open it.
 5. **Don't ask the user to run shell commands you can run yourself.** Read-only inspection, launching local applications, running helper scripts via `uv run` — all yours to do. Only ask when something genuinely requires the user: interactive logins, granting permissions, installing system packages, etc.
 6. **Citations are non-negotiable.** Every claim has a reference. A claim without a citation is a hallucination waiting to happen.
 7. **Auto-captions mishear Pāḷi.** YouTube's auto-generated captions mangle Pāḷi terms (e.g. "Suddhāso" → "saso", "Apaṇṇaka" → "apaka"). When a YouTube transcript's `is_auto` is true, **paraphrase and link to the timestamp** — never quote Pāḷi verbatim from auto-captions. Human-uploaded captions (`is_auto = false`) may be quoted with normal care.
