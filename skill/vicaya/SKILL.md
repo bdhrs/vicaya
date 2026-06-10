@@ -399,6 +399,21 @@ automatic per-run isolation instead.
 prints the missing gate plus its expected evidence list, so backfilling is
 mechanical, not interpretive.
 
+**Gate discipline** (each of these has caused a real run failure):
+
+- **Gates are written only by the helper.** Never write a `### PHASE N EXIT
+  GATE` header by hand — a bare header has no timestamp or checklist body and
+  later gate/verify calls will not honour it, forcing a full backfill. This
+  applies to every stage of a staged run, not just the final one.
+- **Backfill ascending.** If any gate call reports an earlier gate missing,
+  backfill with `scratch-gate <missing>` in ascending order (0, 1, 2, …) in one
+  uninterrupted pass, then continue. Do not interleave gating with re-running
+  searches.
+- **Backfill after gate is fine.** A gate is append-only history, not a lock.
+  If work for an already-gated phase completes later (e.g. a source became
+  reachable), log the new evidence under that phase with
+  `scratch-log <phase> …` — do not rewrite or duplicate the gate.
+
 Scratch files accumulate in `data/scratch/` (gitignored). Future runs on
 related topics should grep them for already-harvested sources before starting
 fresh queries.
@@ -876,6 +891,15 @@ uv run tools/research_sources.py search-vault "<key terms>" --limit 20
 Pull up to 4 search variations (Pāḷi term, English gloss, related concept). Summarise the top hits in your own working notes — you'll cite the most relevant ones in the final note via `[[wiki-links]]`.
 
 **If `search-vault` returns 0 on terms you'd expect to find**, fall back to `rg "<term>" <vault-path>` — the helper has a known diacritic/index bug that can silently miss files `rg` finds.
+
+**Enrichment runs.** If the vault search surfaces an existing Vicaya note on
+this same topic, this is an enrichment run, not a fresh compile. Read the
+existing note in full — its `## Critical Gaps` table is the ready-made research
+plan — and target the gaps. At Phase 7, update the existing note in place (keep
+its filename and `date`; add the new entries, then update the frontmatter refs,
+bibliography, and footer to match) rather than writing a near-duplicate sibling.
+When adding entries to a numbered series note, check every cross-reference
+between entries after renumbering — they do not update themselves.
 
 **EBC seed lookup** — if the question is anchored on one or more specific suttas (named in the user's question, or surfaced by the vault search), call `get-ebc-overview <code>` once per sutta. The returned `parallels_agama` and `parallels_partial` lists feed directly into the perspective map and the Phase 3 parallel-evidence search; the `themes`, `formula`, and `training` fields can suggest related suttas you might otherwise miss. This costs nothing and replaces a SuttaCentral parallel-table lookup.
 
@@ -1463,6 +1487,16 @@ should be complete. Organize entries into the five subsections as you write them
 Secondary Sources alphabetically by author surname. See the `## Bibliography` section
 above for format rules.
 
+**Deferred-draft handoff (very large dossiers).** When the dossier is too large
+to draft in the remaining context, do not gate Phase 5 on a rushed draft.
+Instead: (1) record a compact synthesis plan via
+`scratch-log 5 synthesis-plan … --summary "PHASE 5 SYNTHESIS PLAN: <outline,
+section order, source allocation>"`; (2) write whatever draft payload exists to
+`data/scratch/<slug>.phase5-draft.md` and log that path in the main scratch;
+(3) stop and hand off — the next pass resumes from the plan and draft file,
+completes the draft, and only then runs `scratch-gate 5`. Never leave a
+handoff-critical draft only in model context or under `temp/`.
+
 → **Phase 5 exit:** `scratch-gate 5` once the draft is in scratch and the Devil's Advocate answers are recorded.
 
 ### Phase 6 — Second-pass review (cross-check)
@@ -1521,6 +1555,12 @@ holds the in-progress work. Phase 7 is the *finalization and transfer* step: tak
 the comprehensive dossier, curate the strongest evidence into the structured note
 template below, and write the result to `$VICAYA_VAULT_PATH/Vicaya/` only when it
 is complete. Never write a partial or draft note to the vault.
+
+**Re-read the format requirements before drafting.** At Phase 7 start, re-read
+this entire section — the note template, the frontmatter rules, and the
+Pāḷi/English presentation rules in Style notes — *before* writing the first
+line of the draft. Drafting from memory of the template has produced notes in
+the wrong shape that needed a full rewrite before validation.
 
 **Before writing, run this source-coverage check:**
 - Is every position from the perspective map represented by at least one block-quoted canon passage?
@@ -1779,6 +1819,12 @@ web_refs:
 
 Write the note via the Obsidian CLI. Slugify the topic for the filename:
 
+**Multi-day runs keep the start date.** A run that crosses midnight or resumes
+on a later day carries the date the run began (the dossier's Phase 0 date) in
+the filename, the frontmatter `date`, and the footer — consistent with the
+retrieval dates already cited in the note. Do not let a late completion shift
+the date.
+
 ```bash
 TODAY=$(date +%Y-%m-%d)
 SLUG="<lowercase-hyphenated-slug>"
@@ -1869,6 +1915,12 @@ If fewer than 10, omit this section entirely.
 - **Canon search returns 0 hits**: try lang="any" and/or broader book scope before giving up.
 - **Library folders returns 0 hits**: first distinguish empty from error — `library-folders-check` exits 1 when the index path is missing or unreadable. If the index is reachable and truly empty: try fewer/looser terms; check `data/calibre_tags.csv` for the right tag vocabulary; try an author's surname as the query. Extract content directly with `pdftotext` or `ebook-convert` on known book files when needed.
 - **`cross-check` returns `# SELF_REVIEW:`**: OpenRouter is unreachable. Run the embedded checklist on your own synthesis as described in Phase 6; do not retry the helper. Common root causes: no `OPENROUTER_API_KEY` set (check `.env`), an empty / malformed `data/openrouter_models.json`, or every free model in the chain simultaneously rate-limited (rare). (Note: the legacy `gemini-cross-check` subcommand returns a `# ERROR:` line on failure instead — same response: skip the section and continue.)
+- **`scratch-gate 7` shows passed but the vault note is missing**: a prior
+  invocation gated before the vault write completed. Do not treat the run as
+  done and do not try to re-gate — write the complete note to the vault now,
+  log the write with `scratch-log 7 …`, and continue with validation, PDF, and
+  sync. The gate's `[REJECTED]`-scan is the substantive constraint, not its
+  timestamp.
 - **Obsidian create fails**: print the rendered markdown to the terminal so the user can save it manually.
 - **PDF URL — WebFetch returns garbled or empty content**: WebFetch cannot decode PDF binary. Instead, save the file under this run's repo-local temp directory and extract with `pdftotext`:
   ```bash

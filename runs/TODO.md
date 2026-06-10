@@ -31,18 +31,14 @@ window and resolved whole families of findings: per-run scratch isolation
 | #31 scratch-init does not write the Phase 0 gate (7 runs) | done | `feat: one-shot scratch-init records Phase 0 fields and writes gate 0` — scratch-init gains `--question-original/--question-polished/--scope-assumptions/--ambiguity`; with the three evidence fields present it fills the header and writes the Phase 0 gate (run starts at Phase 1); gate refusals now say "run scratch-gate N first"; SKILL.md + vicaya-0-scope updated; 7 regression tests |
 | #3 Canon / SQLite search failures (8 runs) | done | `fix: search canon on normalized text and auto-fill continuation-row paranums` — search-canon now matches on normalized text (TEI markup stripped, ṁ/ŋ→ṃ, NFC, whitespace collapsed, casefolded): "evaṃ me sutaṃ" 123→460 hits (MN book 1: 1→50), SuttaCentral-ṁ queries 0→460; empty paranum auto-filled from nearest preceding numbered row (pipes into resolve-citation); SKILL.md: fixed wrong `pali`/`english` column names in direct-SQL example, added multi-word-LIKE warning, english_translation trust caveat, pathavī/paṭhavī variant guidance, stem false-positive correction; 7 regression tests |
 | #12 NFD/NFC Unicode normalization in search_canon | done | same commit as #3 — query and stored text are both NFC-normalized before matching |
+| #5 Skill too long / restructure into kernel + reference | dropped (re-scoped) | The staged routers (`5b0cc50`) resolved the context problem in practice — zero context-exhaustion complaints in ~80 runs since the one failure (20260603-120425, which predates them). The kernel/reference restructure is not justified by current evidence; revisit only if context complaints recur. Residue shipped: route-list guard test (`tests/test_skill_routes.py`) so renaming a SKILL.md heading can no longer silently break a staged router — in `docs: close staged-run doc gaps and guard staged route lists` |
+| #36 Phase 7 / staged-run doc-gap cluster (8 runs) | done | `docs: close staged-run doc gaps and guard staged route lists` — SKILL.md now documents: gate discipline (helper-only gates, ascending backfill, backfill-after-gate), enrichment-run mode for existing-topic notes, deferred-draft handoff for very large dossiers, Phase 7 format re-read before drafting, multi-day note-date rule, and gate-7-passed-but-note-missing recovery; plus a one-line helper-only-gates reminder in the Stage 2 router |
 
 ## Remaining — prioritized
 
 ### High severity
 
-**#5 Skill too long / prescriptive.** SKILL.md is still 2069 lines. Fresh
-evidence: a 130-min run hit context exhaustion at Phase 7 partly from "long
-SKILL.md read" (20260603-120425); agents repeatedly follow stale secondary
-instructions while missing newer ones. The staged routers (`5b0cc50`) and
-structural gates address symptoms; the restructure into a short execution
-kernel + on-demand reference sections remains undone. (seen in 2 recent runs
-+ the original complaints)
+None open.
 
 ### Medium severity
 
@@ -100,17 +96,6 @@ but the helper accepts `4`; `scratch-log 4a` errors. Reported in the second
 run ever (20260528-143000) and again 12 days later (20260609-230046) — still
 unfixed. Quick win: accept aliases or print the valid phase list in the
 error. 
-
-**#36 Phase 7 / staged-run doc-gap cluster.** Small documented-nowhere rules
-that runs rediscover: multi-day runs — which date the note carries
-(20260602-213035); recovery path when gate 7 was passed but the vault note
-is missing (20260605-112400); gates must be written in ascending order in
-one pass (20260605-082000); Stage 2 must call `scratch-gate` — never write
-bare gate headers manually (20260605-055802); read completion.md at Phase 7
-start (20260603-044210); "backfill after gate" guidance (20260601-075124);
-enrichment-run mode when a prior note exists on the topic (20260604-091500);
-deferred-draft handoff pattern for very large dossiers (20260604-082408).
-One SKILL.md pass could close all of these.
 
 **#7 Phase exit criteria missing for non-scratch dimensions.** Unchanged —
 gate checklists are still tick-by-agent. Related fresh evidence: scratch-gate
@@ -254,9 +239,12 @@ location in SKILL.md. (seen in: 20260601-075124, 20260606-112752,
    remains on the table; with #29 fixed the verifier can now confirm
    verse-level citations, so this is unblocked.
 
-3. #5/#6/#19 still point at one root: 2069-line SKILL.md + prose rules. The
-   one-big-restructure (execution kernel + on-demand reference) is still the
-   right shape; the doc-gap cluster #36 could be folded into that pass.
+3. #5 was re-scoped and dropped (2026-06-10): the staged routers already
+   solved the context problem in practice, so the kernel/reference
+   restructure is shelved unless context complaints recur. The heading-based
+   routing is now guarded by `tests/test_skill_routes.py`. #36's doc gaps are
+   closed. #6 and #19 (structural control points, e.g. #33) remain the live
+   direction for prose-rule sprawl.
 
 4. Several "(stale — verify)" items (#9, #34-post-fix, UV_CACHE_DIR
    scratch-state loss) need one cheap verification run each before being
