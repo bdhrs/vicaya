@@ -24,8 +24,17 @@ from xml.etree import ElementTree
 
 from tqdm import tqdm
 
-
 _REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from tools._common import (  # noqa: E402
+    REPO_ROOT as _REPO_ROOT,
+    env_path as _env_path,
+    load_dotenv as _load_dotenv,
+    strip_xml as _strip_xml,
+)
+
 SOURCES_ENV = "VICAYA_LIBRARY_FOLDERS"
 INDEX_ENV = "VICAYA_LIBRARY_FOLDERS_INDEX"
 EXCLUDE_ENV = "VICAYA_LIBRARY_FOLDERS_EXCLUDE"
@@ -46,8 +55,6 @@ EBOOK_CONVERT_EXTENSIONS = {
 }
 FILENAME_HINT_STOP_NAMES = {"metadata", "picasa", "index", "contents", "cover", "title"}
 FILENAME_HINT_SKIP_EXTENSIONS = {".ini", ".opf"}
-_XML_TAG_RE = re.compile(r"<[^>]+>")
-_XML_ENTITY_MAP = {"&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&apos;": "'"}
 
 NOISE_EXTENSIONS = {
     ".aac",
@@ -99,17 +106,6 @@ ARCHIVE_MAX_UNCOMPRESSED = 2 * 1024**3
 ARCHIVE_MAX_WALLCLOCK = 300.0
 
 
-def _load_dotenv(path: Path = _REPO_ROOT / ".env") -> None:
-    if not path.exists():
-        return
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, val = line.partition("=")
-        os.environ.setdefault(key.strip(), val.strip().strip('"').strip("'"))
-
-
 _load_dotenv()
 
 
@@ -133,13 +129,6 @@ class LibraryFoldersConfig:
 class ExtractedText:
     text: str
     status: str
-
-
-def _env_path(key: str) -> Path | None:
-    value = os.environ.get(key)
-    if not value:
-        return None
-    return Path(os.path.expanduser(value))
 
 
 def _env_sources(key: str) -> list[Path]:
@@ -178,15 +167,6 @@ def default_config() -> LibraryFoldersConfig:
         missing=missing,
         exclude=_env_excludes(EXCLUDE_ENV),
     )
-
-
-def _strip_xml(s: str) -> str:
-    if not s:
-        return s
-    out = _XML_TAG_RE.sub("", s)
-    for k, v in _XML_ENTITY_MAP.items():
-        out = out.replace(k, v)
-    return re.sub(r"\s+", " ", out).strip()
 
 
 def _strip_diacritics(text: str) -> str:

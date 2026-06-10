@@ -12,64 +12,31 @@ Empty lists on no-results. Raises on tool-missing.
 
 from __future__ import annotations
 
-import fcntl
 import fnmatch
 import json
 import os
 import re as _re
 import sqlite3
 import subprocess
-from contextlib import contextmanager
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-
-# CST text columns carry inline TEI/XML markup (<hi rend="...">, <pb/>, <note>, etc.)
-# Strip all tags, decode common entities, and collapse whitespace before returning hits.
-_XML_TAG_RE = _re.compile(r"<[^>]+>")
-_XML_ENTITY_MAP = {"&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&apos;": "'"}
-
-
-def _strip_xml(s: str) -> str:
-    if not s:
-        return s
-    out = _XML_TAG_RE.sub("", s)
-    for k, v in _XML_ENTITY_MAP.items():
-        out = out.replace(k, v)
-    return _re.sub(r"\s+", " ", out).strip()
-
-
-# ---------- Configuration ----------
-#
-# All user-specific paths are configurable via environment variables.
-# A `.env` file in the project root is loaded automatically (KEY=value lines, no
-# quotes required, # for comments). See `.env.example` for the full schema.
-
+# Ensure repo root is on sys.path so `tools._common` resolves when this file
+# is executed directly as a script (not imported as part of the package).
 _REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
-
-def _load_dotenv(path: Path = _REPO_ROOT / ".env") -> None:
-    if not path.exists():
-        return
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
-            continue
-        key, _, val = line.partition("=")
-        key = key.strip()
-        val = val.strip().strip('"').strip("'")
-        os.environ.setdefault(key, val)
-
+from tools._common import (  # noqa: E402
+    REPO_ROOT as _REPO_ROOT,
+    env_path as _env_path,
+    load_dotenv as _load_dotenv,
+    strip_xml as _strip_xml,
+)
 
 _load_dotenv()
-
-
-def _env_path(key: str, default: str | None = None) -> Path | None:
-    val = os.environ.get(key, default)
-    return Path(os.path.expanduser(val)) if val else None
 
 
 DEFAULT_VAULT_NAME = os.environ.get("VICAYA_VAULT_NAME", "Obsidian")
@@ -1523,478 +1490,32 @@ def lookup_book(value: str) -> list[dict]:
     ]
 
 
-# ---------- Scratch dossier ----------
-#
-# Compaction defence: every helper call appends a structured entry to the run's
-# scratch file. Phase-end gates are hard-coded checklists; scratch-verify refuses
-# to advance past a missing gate. Agents never craft scratch markdown by hand.
+# ---------- Scratch dossier (delegated to tools/scratch.py) ----------
 
-
-_SCRATCH_DIR = Path(__file__).resolve().parents[1] / "data" / "scratch"
-
-# Phases auto-skipped for thematic (non-sutta-anchored) runs.
-_AUTO_SKIP_PHASES = ("2.5", "3b")
-
-
-def _run_key() -> str:
-    """A stable per-run identifier shared by every tool call in one research run.
-
-    Keyed to the agent process — the parent of the POSIX session leader. Every
-    helper subprocess an agent launches in one run resolves to the same key;
-    two parallel runs (whether Claude, Gemini, opencode, or any other agent)
-    have different agent processes and therefore different keys. This is what
-    makes per-run scratch state collision-proof without env vars, exports, or
-    inline pinning: there is no single shared pointer to hijack.
-    """
-    try:
-        sid = os.getsid(0)
-        out = subprocess.run(
-            ["ps", "-o", "ppid=", "-p", str(sid)],
-            capture_output=True, text=True, timeout=5,
-        ).stdout.strip()
-        if out:
-            return out
-    except Exception:
-        pass
-    try:
-        return str(os.getppid())
-    except Exception:
-        return "default"
-
-
-def _state_file() -> Path:
-    """Path to this run's active-state pointer, keyed to the agent process."""
-    return _SCRATCH_DIR / f".active-{_run_key()}.json"
-
-
-@contextmanager
-def _file_lock(target: Path):
-    """Serialize concurrent read-modify-write of `target` across processes.
-
-    A run's subagents all auto-log to the same scratch file; without this, two
-    concurrent appends race on the read→splice→write cycle and one clobbers the
-    other (a lost append). A blocking flock on a companion `.lock` file queues
-    the writers; each append is sub-millisecond, so contention is negligible.
-    Degrades to unlocked rather than crashing if the lock can't be created.
-    """
-    try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        fh = open(target.with_name(target.name + ".lock"), "w")
-    except Exception:
-        yield
-        return
-    try:
-        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
-        yield
-    finally:
-        try:
-            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
-        finally:
-            fh.close()
-
-
-def _read_state() -> dict:
-    try:
-        return json.loads(_state_file().read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-
-
-_STATE_PHASE_UNSET = object()
-
-
-def _write_state(scratch=None, phase=_STATE_PHASE_UNSET) -> None:
-    """Persist the active scratch path / phase so they survive between shell calls."""
-    try:
-        _SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
-        with _file_lock(_state_file()):
-            state = _read_state()
-            if scratch is not None:
-                state["scratch"] = str(scratch)
-            if phase is None:
-                state.pop("phase", None)
-            elif phase is not _STATE_PHASE_UNSET:
-                state["phase"] = str(phase)
-            _state_file().write_text(json.dumps(state), encoding="utf-8")
-    except Exception:
-        pass
-
-
-# (phase_id, title, expected_evidence)
-_SCRATCH_PHASES: list[tuple[str, str, list[str]]] = [
-    ("0", "Phase 0 — Request understanding", [
-        "question_polished recorded",
-        "scope_assumptions recorded",
-        "ambiguity_status set (clear|minor_uncertainty|unclear)",
-    ]),
-    ("1", "Phase 1 — Vault / EBC", [
-        "Angle triage recorded (applicable + not-applicable with reasons)",
-        "Vault hits list logged",
-        "Perspective map: 2–5 positions named (or 'no interpretive dispute')",
-        "Counter-perspective search targets logged",
-    ]),
-    ("2", "Phase 2 — Canon", [
-        "Mūla searches logged per applicable Nikāya/text class",
-        "Every hit has full pali + english + resolve-citation reference",
-        "0-hit queries logged with stems tried",
-        "Commentary/ṭīkā searched where doctrinal question",
-    ]),
-    ("2.5", "Phase 2.5 — SC Parallels", [
-        "sc-parallels called for each sutta-anchored citation",
-        "text_gaps logged explicitly",
-    ]),
-    ("3", "Phase 3 — Library", [
-        "library-folders-check called at phase start",
-        "Tag-scoped searches per applicable angle",
-        "Author searches for named scholars in perspective map",
-        "0-hit queries logged",
-    ]),
-    ("3b", "Phase 3b — Sanskrit", [
-        "GRETIL searched where comparative-religion angle applies (or 'not applicable')",
-    ]),
-    ("4", "Phase 4 — Web", [
-        "Web sources fetched with date + URL + summary",
-        "Wisdomlib / SuttaCentral / 84000 checked where applicable",
-    ]),
-    ("4b", "Phase 4b — YouTube", [
-        "Trusted-tier channels queried where modern-teacher angle applies",
-        "Transcript segments logged with timestamps",
-        "is_auto flagged per transcript",
-    ]),
-    ("4c", "Phase 4c — WisdomLib", [
-        "Terms looked up with tradition + source labels",
-    ]),
-    ("5", "Phase 5 — Synthesis", [
-        "scratch-verify exit 0 confirmed before drafting",
-        "Draft pasted under '## Phase 5 — Synthesis draft'",
-    ]),
-    ("6", "Phase 6 — Cross-check", [
-        "Cross-check raw output pasted verbatim (citations pre-annotated)",
-        "Every [REJECTED] claim dropped — not integrated",
-        "Integrations logged with source attribution",
-    ]),
-    ("7", "Phase 7 — Note written", [
-        "Vault path recorded (sets the path for the [REJECTED] hard gate)",
-        "PDF path or 'skipped' recorded",
-        "Zero [REJECTED] tags anywhere in the vault note (enforced by gate)",
-    ]),
-]
-
-_PHASE_INDEX = {pid: (i, title, evidence) for i, (pid, title, evidence) in enumerate(_SCRATCH_PHASES)}
-
-
-def _next_worked_phase(text: str, idx: int) -> str | None:
-    nxt = idx + 1
-    if _run_class(text) == "thematic":
-        while nxt < len(_SCRATCH_PHASES) and _SCRATCH_PHASES[nxt][0] in _AUTO_SKIP_PHASES:
-            nxt += 1
-    if nxt < len(_SCRATCH_PHASES):
-        return _SCRATCH_PHASES[nxt][0]
-    return None
-
-
-def _scratch_path(slug: str | None = None) -> Path:
-    """Resolve the scratch path. Explicit slug > env override > active-state file > error."""
-    if slug:
-        return _SCRATCH_DIR / f"{slug}.md"
-    env = os.environ.get("VICAYA_SCRATCH")
-    if env:
-        return Path(env)
-    state = _read_state().get("scratch")
-    if state:
-        return Path(state)
-    raise ValueError("no scratch path: set VICAYA_SCRATCH, run scratch-init, or pass a slug")
-
-
-def _run_class(text: str) -> str:
-    m = _re.search(r"\*\*Run class:\*\*\s*(\S+)", text)
-    return m.group(1) if m else "sutta-anchored"
-
-
-def scratch_init(slug: str, run_class: str = "sutta-anchored") -> Path:
-    """Create the scratch file with header + section skeleton. Idempotent — refuses to overwrite."""
-    _SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
-    path = _SCRATCH_DIR / f"{slug}.md"
-    if path.exists():
-        _write_state(path)
-        return path
-    lines = [
-        f"# Vicaya dossier — {slug}",
-        "**Question original:** <fill in>",
-        "**Question polished:** <fill in>",
-        "**Scope assumptions:** <fill in>",
-        "**Ambiguity status:** <clear|minor_uncertainty|unclear>",
-        f"**Slug:** {slug}",
-        f"**Run class:** {run_class}",
-        "**Vault note:** <set at Phase 7>",
-        "",
-        "## Phase log",
-        "",
-    ]
-    for _, title, _ in _SCRATCH_PHASES:
-        lines.append(f"## {title}")
-        lines.append("")
-    path.write_text("\n".join(lines), encoding="utf-8")
-    _write_state(path, "0")
-    return path
-
-
-def _phase_section_header(phase: str) -> str:
-    if phase not in _PHASE_INDEX:
-        raise ValueError(f"unknown phase {phase!r}; valid: {list(_PHASE_INDEX)}")
-    return f"## {_PHASE_INDEX[phase][1]}"
-
-
-def _append_under_phase(path: Path, phase: str, block: str) -> None:
-    """Append `block` immediately under the named phase's section heading."""
-    header = _phase_section_header(phase)
-    # Lock the whole read→splice→write so concurrent subagent appends to one
-    # run's scratch can't clobber each other (lost append).
-    with _file_lock(path):
-        text = path.read_text(encoding="utf-8")
-        if header not in text:
-            text = text.rstrip() + f"\n\n{header}\n\n{block.rstrip()}\n"
-            path.write_text(text, encoding="utf-8")
-            return
-        # Insert at the end of the section (before the next "## " or EOF).
-        lines = text.splitlines(keepends=True)
-        out: list[str] = []
-        i = 0
-        while i < len(lines):
-            out.append(lines[i])
-            if lines[i].rstrip() == header:
-                i += 1
-                # find end of this section
-                section_end = i
-                while section_end < len(lines) and not lines[section_end].startswith("## "):
-                    section_end += 1
-                # copy section body, then append our block
-                out.extend(lines[i:section_end])
-                if out and not out[-1].endswith("\n"):
-                    out.append("\n")
-                out.append(block.rstrip() + "\n\n")
-                i = section_end
-                continue
-            i += 1
-        path.write_text("".join(out), encoding="utf-8")
-
-
-def scratch_log(
-    phase: str,
-    tool: str,
-    args: list[str] | None = None,
-    summary: str | None = None,
-    results_file: Path | None = None,
-    hits: int | None = None,
-    scratch: Path | None = None,
-) -> Path:
-    """Append a single structured entry under the named phase."""
-    import datetime as _dt
-    path = scratch or _scratch_path()
-    if not path.exists():
-        raise FileNotFoundError(f"scratch not initialised: {path}; run scratch-init <slug>")
-    ts = _dt.datetime.now().isoformat(timespec="seconds")
-    body = [f"### {ts} · {tool}"]
-    if args:
-        body.append(f"- args: `{' '.join(args)}`")
-    if hits is not None:
-        body.append(f"- hits: {hits}")
-    if summary:
-        body.append(f"- summary: {summary}")
-    if results_file is not None and Path(results_file).exists():
-        body.append("- results:")
-        body.append("```json")
-        body.append(Path(results_file).read_text(encoding="utf-8").rstrip())
-        body.append("```")
-    _append_under_phase(path, phase, "\n".join(body))
-    return path
-
-
-def _gate_marker(phase: str) -> str:
-    return f"### PHASE {phase} EXIT GATE"
-
-
-def scratch_gate(phase: str, scratch: Path | None = None) -> dict:
-    """Append the canonical exit-gate checklist for `phase`.
-
-    Refuses if any earlier phase's gate is missing — returns {ok: False, missing: ...}
-    without writing.
-    """
-    import datetime as _dt
-    path = scratch or _scratch_path()
-    if not path.exists():
-        raise FileNotFoundError(f"scratch not initialised: {path}; run scratch-init <slug>")
-    if phase not in _PHASE_INDEX:
-        raise ValueError(f"unknown phase {phase!r}")
-    text = path.read_text(encoding="utf-8")
-    idx = _PHASE_INDEX[phase][0]
-    # Thematic (non-sutta-anchored) runs auto-skip SC-parallels (2.5) and Sanskrit
-    # (3b): inapplicable, so the agent shouldn't hand-log empty searches to pass them.
-    if _run_class(text) == "thematic":
-        for skip_id in _AUTO_SKIP_PHASES:
-            if _PHASE_INDEX[skip_id][0] < idx and _gate_marker(skip_id) not in text:
-                stitle = _PHASE_INDEX[skip_id][1]
-                _append_under_phase(
-                    path, skip_id,
-                    f"{_gate_marker(skip_id)}\n- AUTO-SKIPPED (thematic run): "
-                    f"{stitle} not applicable to a non-sutta-anchored question.",
-                )
-                text = path.read_text(encoding="utf-8")
-    # Verify every prior phase has a gate.
-    for prev_id, prev_title, prev_expected in _SCRATCH_PHASES[:idx]:
-        if _gate_marker(prev_id) not in text:
-            return {
-                "ok": False,
-                "missing_phase": prev_id,
-                "missing_title": prev_title,
-                "expected_evidence": prev_expected,
-                "message": (
-                    f"cannot write Phase {phase} gate: Phase {prev_id} "
-                    f"({prev_title}) gate is missing"
-                ),
-            }
-    # Already gated?
-    if _gate_marker(phase) in text:
-        return {"ok": True, "phase": phase, "note": "gate already present; not duplicated"}
-    # Phase 7 hard gate: scan the vault note for [REJECTED] tags.
-    if phase == "7":
-        vault_match = _re.search(r"\*\*Vault note:\*\*\s*(.+)", text)
-        if vault_match:
-            raw = vault_match.group(1).strip()
-            if raw and not raw.startswith("<"):
-                vault_path = Path(raw)
-                if vault_path.exists():
-                    note_text = vault_path.read_text(encoding="utf-8")
-                    if "[REJECTED" in note_text:
-                        offending = [
-                            line.strip() for line in note_text.splitlines()
-                            if "[REJECTED" in line
-                        ][:5]
-                        return {
-                            "ok": False,
-                            "phase": "7",
-                            "reason": "vault note contains [REJECTED] tags",
-                            "vault_note": str(vault_path),
-                            "offending_lines": offending,
-                            "message": (
-                                "Phase 7 gate refused: the vault note contains "
-                                "[REJECTED] citation tags. Remove those claims and "
-                                "the inline tags before gating."
-                            ),
-                        }
-    ts = _dt.datetime.now().isoformat(timespec="seconds")
-    _, title, evidence = _PHASE_INDEX[phase]
-    block_lines = [_gate_marker(phase), f"- timestamp: {ts}", f"- title: {title}"]
-    for item in evidence:
-        block_lines.append(f"- [ ] {item}")
-    _append_under_phase(path, phase, "\n".join(block_lines))
-    # Advance the active phase so the next phase's searches auto-log correctly
-    # without the agent re-exporting VICAYA_PHASE. Thematic runs skip over the
-    # auto-skipped phases so logs land on the next phase actually worked.
-    next_phase = _next_worked_phase(text, idx)
-    if next_phase is not None:
-        _write_state(phase=next_phase)
-    return {"ok": True, "phase": phase, "title": title}
-
-
-def scratch_verify(through: str | None = None, scratch: Path | None = None) -> dict:
-    """Verify that every phase up to `through` (or the highest gate written) has its gate.
-
-    Returns {ok, missing: [{phase, title, expected_evidence}]}.
-    """
-    path = scratch or _scratch_path()
-    if not path.exists():
-        return {"ok": False, "error": f"scratch not initialised: {path}"}
-    text = path.read_text(encoding="utf-8")
-    # Determine the boundary.
-    if through is not None:
-        if through not in _PHASE_INDEX:
-            return {"ok": False, "error": f"unknown phase {through!r}"}
-        upper = _PHASE_INDEX[through][0] + 1
-    else:
-        upper = 0
-        for i, (pid, _, _) in enumerate(_SCRATCH_PHASES):
-            if _gate_marker(pid) in text:
-                upper = i + 1
-    missing = []
-    for pid, title, expected in _SCRATCH_PHASES[:upper]:
-        if _gate_marker(pid) not in text:
-            missing.append({
-                "phase": pid,
-                "title": title,
-                "expected_evidence": expected,
-            })
-    return {"ok": not missing, "checked_through": upper, "missing": missing}
-
-
-def scratch_resume(slug: str | None = None, scratch: Path | None = None) -> dict:
-    """Print the last gate written and suggest the next phase."""
-    path = scratch or _scratch_path(slug)
-    if not path.exists():
-        return {"ok": False, "error": f"scratch not found: {path}"}
-    text = path.read_text(encoding="utf-8")
-    last = None
-    next_phase = _SCRATCH_PHASES[0][0]
-    for i, (pid, title, _) in enumerate(_SCRATCH_PHASES):
-        if _gate_marker(pid) in text:
-            last = {"phase": pid, "title": title}
-            next_phase = _next_worked_phase(text, i)
-    _write_state(path, next_phase)
-    return {"ok": True, "path": str(path), "last_gate": last, "next_phase": next_phase}
-
-
-def _maybe_autolog(cmd: str, argv: list[str], result_obj) -> None:
-    """Append a one-entry log for this helper invocation to the active scratch.
-
-    Scratch path and phase come from VICAYA_SCRATCH/VICAYA_PHASE if set, else the
-    active-state file written by scratch-init/scratch-gate. Failures are swallowed —
-    auto-logging must never break a search.
-    """
-    state = _read_state()
-    scratch = os.environ.get("VICAYA_SCRATCH") or state.get("scratch")
-    if not scratch:
-        return
-    if cmd in {"scratch-init", "scratch-log", "scratch-gate",
-               "scratch-verify", "scratch-resume", "scratch-which", "lookup-book"}:
-        return
-    try:
-        import datetime as _dt
-        import json as _json
-        from dataclasses import asdict as _asdict, is_dataclass as _is_dc
-        path = Path(scratch)
-        if not path.exists():
-            return
-        phase = os.environ.get("VICAYA_PHASE") or state.get("phase") or "?"
-        ts = _dt.datetime.now().isoformat(timespec="seconds")
-        hits: int | None = None
-        if isinstance(result_obj, list):
-            hits = len(result_obj)
-        body = [f"### {ts} · {cmd}"]
-        if argv:
-            body.append(f"- args: `{' '.join(argv)}`")
-        if hits is not None:
-            body.append(f"- hits: {hits}")
-
-        def _default(o):
-            if _is_dc(o) and not isinstance(o, type):
-                return _asdict(o)
-            return str(o)
-        try:
-            payload = _json.dumps(result_obj, ensure_ascii=False, indent=2, default=_default)
-            body.append("- results:")
-            body.append("```json")
-            body.append(payload)
-            body.append("```")
-        except Exception:
-            pass
-        if phase in _PHASE_INDEX:
-            _append_under_phase(path, phase, "\n".join(body))
-        else:
-            # Unknown phase: append at end of file.
-            with open(path, "a", encoding="utf-8") as fh:
-                fh.write("\n" + "\n".join(body) + "\n")
-    except Exception:
-        return
+from tools.scratch import (  # noqa: E402, F401
+    _SCRATCH_DIR,
+    _AUTO_SKIP_PHASES,
+    _run_key,
+    _state_file,
+    _file_lock,
+    _read_state,
+    _write_state,
+    _STATE_PHASE_UNSET,
+    _SCRATCH_PHASES,
+    _PHASE_INDEX,
+    _next_worked_phase,
+    _scratch_path,
+    _run_class,
+    scratch_init,
+    _phase_section_header,
+    _append_under_phase,
+    scratch_log,
+    _gate_marker,
+    scratch_gate,
+    scratch_verify,
+    scratch_resume,
+    _maybe_autolog,
+)
 
 
 # ---------- CLI ----------
@@ -2044,10 +1565,218 @@ def _cli() -> int:
     p = argparse.ArgumentParser(prog="research_sources")
     sub = p.add_subparsers(dest="cmd", required=True)
 
+    def _done(
+        autolog_argv: list[str] | None = None,
+        result_for_autolog: object = None,
+        *,
+        exit_code: int = 0,
+        autolog: bool = True,
+    ) -> tuple[int, list[str], object, bool]:
+        return exit_code, autolog_argv or [], result_for_autolog, autolog
+
+    def _handle_search_vault(args):
+        result = search_vault(args.query, folder=args.folder, limit=args.limit)
+        argv = (
+            [args.query]
+            + (["--folder", args.folder] if args.folder else [])
+            + ["--limit", str(args.limit)]
+        )
+        _dump(result)
+        return _done(argv, result)
+
+    def _handle_search_canon(args):
+        result = search_canon(
+            args.query,
+            books=args.books,
+            lang=args.lang,
+            limit=args.limit,
+        )
+        argv = (
+            [args.query]
+            + (["--books"] + list(args.books) if args.books else [])
+            + ["--lang", args.lang, "--limit", str(args.limit)]
+        )
+        _dump(result)
+        return _done(argv, result)
+
+    def _handle_resolve_citation(args):
+        result = resolve_citation(args.book_code, args.paranum)
+        _dump(result)
+        return _done([args.book_code, str(args.paranum)], result)
+
+    def _handle_search_youtube(args):
+        channels = {} if args.no_filter else None
+        result = search_youtube(args.query, channels=channels, limit=args.limit)
+        _dump(result)
+        return _done([args.query, "--limit", str(args.limit)], result)
+
+    def _handle_fetch_transcript(args):
+        tr = fetch_youtube_transcript(args.video_id, languages=tuple(args.lang))
+        if tr is None:
+            print("error: no transcript available", file=sys.stderr)
+            return _done(exit_code=1, autolog=False)
+        _dump(tr)
+        return _done([args.video_id, "--lang"] + list(args.lang), tr)
+
+    def _handle_lookup_book(args):
+        _dump(lookup_book(args.value))
+        return _done()
+
+    def _handle_gemini_cross_check(args):
+        prompt = sys.stdin.read()
+        if not prompt.strip():
+            print("error: empty prompt on stdin", file=sys.stderr)
+            return _done(exit_code=1, autolog=False)
+        text = gemini_cross_check(prompt, timeout=args.timeout)
+        sys.stdout.write(text + "\n")
+        return _done(["<stdin>"], {"output": text})
+
+    def _handle_cross_check(args):
+        prompt = sys.stdin.read()
+        if not prompt.strip():
+            print("error: empty prompt on stdin", file=sys.stderr)
+            return _done(exit_code=1, autolog=False)
+        text = cross_check(prompt, timeout=args.timeout)
+        sys.stdout.write(text + "\n")
+        return _done(["<stdin>"], {"output": text})
+
+    def _handle_get_ebc_overview(args):
+        result = get_ebc_overview(args.code)
+        if result is None:
+            print(f"error: no EBC overview for {args.code!r}", file=sys.stderr)
+            return _done(exit_code=1, autolog=False)
+        _dump(result)
+        return _done([args.code], result)
+
+    def _handle_get_agama(args):
+        result = get_agama_texts(args.code, max_parallels=args.max_parallels)
+        _dump(result)
+        return _done([args.code, "--max", str(args.max_parallels)], result)
+
+    def _handle_search_ebc(args):
+        result = search_ebc(args.query, folder=args.folder, limit=args.limit)
+        argv = (
+            [args.query]
+            + (["--folder", args.folder] if args.folder else [])
+            + ["--limit", str(args.limit)]
+        )
+        _dump(result)
+        return _done(argv, result)
+
+    def _handle_search_sanskrit(args):
+        result = search_sanskrit(args.query, folder=args.folder, limit=args.limit)
+        argv = (
+            [args.query]
+            + (["--folder", args.folder] if args.folder else [])
+            + ["--limit", str(args.limit)]
+        )
+        _dump(result)
+        return _done(argv, result)
+
+    def _handle_library_folders_check(_args):
+        library_folders = _load_library_folders_module()
+        result = library_folders.check()
+        _dump(result)
+        return _done([], result)
+
+    def _handle_library_folders_refresh(args):
+        library_folders = _load_library_folders_module()
+        result = library_folders.refresh(
+            limit=args.limit,
+            retry_failed=args.retry_failed,
+        )
+        argv = ["--limit", str(args.limit)] if args.limit is not None else []
+        if args.retry_failed:
+            argv.append("--retry-failed")
+        _dump(result)
+        return _done(argv, result)
+
+    def _handle_search_library_folders(args):
+        library_folders = _load_library_folders_module()
+        result = library_folders.search(
+            args.query,
+            limit=args.limit,
+            include_duplicates=args.include_duplicates,
+        )
+        argv = [args.query, "--limit", str(args.limit)]
+        if args.include_duplicates:
+            argv.append("--include-duplicates")
+        _dump(result)
+        return _done(argv, result)
+
+    def _handle_library_folders_duplicates(args):
+        library_folders = _load_library_folders_module()
+        result = library_folders.duplicates(samples=args.samples)
+        _dump(result)
+        return _done(["--samples", str(args.samples)], result)
+
+    def _handle_sc_parallels(args):
+        result = sc_parallels(args.citation, include_text=not args.no_text)
+        argv = [args.citation] + (["--no-text"] if args.no_text else [])
+        _dump(result)
+        return _done(argv, result)
+
+    def _handle_sc_search(args):
+        result = sc_search(args.query, lang=args.lang, limit=args.limit)
+        _dump(result)
+        return _done([args.query, "--lang", args.lang, "--limit", str(args.limit)], result)
+
+    def _handle_scratch_init(args):
+        path = scratch_init(args.slug, run_class=args.run_class)
+        _dump({
+            "ok": True, "path": str(path), "slug": args.slug, "class": args.run_class,
+            "isolation": (
+                "auto-logging is isolated to this run (keyed to the agent "
+                "process); parallel runs never collide — nothing to pin or export"
+            ),
+        })
+        return _done()
+
+    def _handle_scratch_log(args):
+        path = scratch_log(
+            args.phase,
+            args.tool,
+            args=args.rest or None,
+            summary=args.summary,
+            results_file=args.results,
+            hits=args.hits,
+        )
+        _dump({"ok": True, "path": str(path), "phase": args.phase, "tool": args.tool})
+        return _done()
+
+    def _handle_scratch_gate(args):
+        result = scratch_gate(args.phase)
+        _dump(result)
+        return _done(exit_code=0 if result.get("ok") else 1, autolog=False)
+
+    def _handle_scratch_verify(args):
+        result = scratch_verify(through=args.through)
+        _dump(result)
+        return _done(exit_code=0 if result.get("ok") else 1, autolog=False)
+
+    def _handle_scratch_resume(args):
+        result = scratch_resume(slug=args.slug)
+        _dump(result)
+        return _done(exit_code=0 if result.get("ok") else 1, autolog=False)
+
+    def _handle_scratch_which(_args):
+        try:
+            print(_scratch_path())
+            return _done(autolog=False)
+        except ValueError as e:
+            print(e, file=sys.stderr)
+            return _done(exit_code=1, autolog=False)
+
+    def _handle_verify_citation(args):
+        result = verify_citation(args.ref)
+        _dump(result)
+        return _done(exit_code=0 if result.get("exists") else 1, autolog=False)
+
     pv = sub.add_parser("search-vault")
     pv.add_argument("query")
     pv.add_argument("--folder", default=None)
     pv.add_argument("--limit", type=int, default=20)
+    pv.set_defaults(func=_handle_search_vault)
 
     pc = sub.add_parser("search-canon")
     pc.add_argument("query")
@@ -2055,40 +1784,48 @@ def _cli() -> int:
                     help="Book specifiers, e.g. 's*_mul' '*_att'. Default: sutta mūla.")
     pc.add_argument("--lang", choices=["pali", "english", "any"], default="pali")
     pc.add_argument("--limit", type=int, default=20)
+    pc.set_defaults(func=_handle_search_canon)
 
     pr = sub.add_parser("resolve-citation")
     pr.add_argument("book_code")
     pr.add_argument("paranum")
+    pr.set_defaults(func=_handle_resolve_citation)
 
     pg = sub.add_parser("gemini-cross-check",
                         help="Reads prompt from stdin to avoid shell quoting issues.")
     pg.add_argument("--timeout", type=int, default=120)
+    pg.set_defaults(func=_handle_gemini_cross_check)
 
     pcc = sub.add_parser("cross-check",
                          help="OpenRouter cross-check; falls back to a "
                               "# SELF_REVIEW: sentinel if unreachable. "
                               "Reads prompt from stdin.")
     pcc.add_argument("--timeout", type=int, default=180)
+    pcc.set_defaults(func=_handle_cross_check)
 
     py = sub.add_parser("search-youtube")
     py.add_argument("query")
     py.add_argument("--limit", type=int, default=20)
     py.add_argument("--no-filter", action="store_true",
                     help="Disable channel allowlist filtering (mostly for debug).")
+    py.set_defaults(func=_handle_search_youtube)
 
     pt = sub.add_parser("fetch-transcript")
     pt.add_argument("video_id")
     pt.add_argument("--lang", nargs="*", default=["en"])
+    pt.set_defaults(func=_handle_fetch_transcript)
 
     pb = sub.add_parser("lookup-book",
                         help="Translate any CST book identifier into the others.")
     pb.add_argument("value",
                     help="cst_filename (s0101m.mul), table name (s0101m_mul), "
                          "Pāḷi title, gui code (dn1), or DPD code (DN/DNa).")
+    pb.set_defaults(func=_handle_lookup_book)
 
     peo = sub.add_parser("get-ebc-overview",
                          help="Parse the EBC per-sutta overview card for SUTTA_CODE.")
     peo.add_argument("code", help="Sutta code, e.g. MN10, mn-10, mn 10, DN22, MA98.")
+    peo.set_defaults(func=_handle_get_ebc_overview)
 
     pga = sub.add_parser("get-agama",
                          help="Fetch Āgama parallel translations for a sutta. "
@@ -2098,6 +1835,7 @@ def _cli() -> int:
     pga.add_argument("code", help="Sutta code, e.g. MN10, DN22.")
     pga.add_argument("--max", dest="max_parallels", type=int, default=5,
                      help="Maximum parallels to fetch (default: 5).")
+    pga.set_defaults(func=_handle_get_agama)
 
     pes = sub.add_parser("search-ebc",
                          help="Fixed-string grep across the Early Buddhist Connections vault.")
@@ -2105,6 +1843,7 @@ def _cli() -> int:
     pes.add_argument("--folder", default=None,
                      help="Restrict to a subfolder of the EBC vault.")
     pes.add_argument("--limit", type=int, default=20)
+    pes.set_defaults(func=_handle_search_ebc)
 
     pss = sub.add_parser("search-sanskrit",
                          help="Fixed-string grep across the local GRETIL Sanskrit corpus (.txt files).")
@@ -2112,9 +1851,11 @@ def _cli() -> int:
     pss.add_argument("--folder", default=None,
                      help="Restrict to a subfolder of the GRETIL corpus (e.g. '1_veda').")
     pss.add_argument("--limit", type=int, default=20)
+    pss.set_defaults(func=_handle_search_sanskrit)
 
-    sub.add_parser("library-folders-check",
-                   help="Probe configured library folders paths and index health.")
+    plfc = sub.add_parser("library-folders-check",
+                          help="Probe configured library folders paths and index health.")
+    plfc.set_defaults(func=_handle_library_folders_check)
 
     pfr = sub.add_parser("library-folders-refresh",
                          help="Refresh the configured library folders index.")
@@ -2122,16 +1863,19 @@ def _cli() -> int:
     pfr.add_argument("--retry-failed", action="store_true",
                      help="Re-extract unchanged files whose previous extraction "
                           "did not succeed (e.g. after adding extractor support).")
+    pfr.set_defaults(func=_handle_library_folders_refresh)
 
     psfc = sub.add_parser("search-library-folders",
                           help="Search the configured library folders index.")
     psfc.add_argument("query")
     psfc.add_argument("--limit", type=int, default=20)
     psfc.add_argument("--include-duplicates", action="store_true")
+    psfc.set_defaults(func=_handle_search_library_folders)
 
     pfd = sub.add_parser("library-folders-duplicates",
                          help="Summarize duplicate clusters in the library folders index.")
     pfd.add_argument("--samples", type=int, default=5)
+    pfd.set_defaults(func=_handle_library_folders_duplicates)
 
     psp = sub.add_parser("sc-parallels",
                          help="SuttaCentral offline archive: list parallels for a citation "
@@ -2139,6 +1883,7 @@ def _cli() -> int:
     psp.add_argument("citation")
     psp.add_argument("--no-text", action="store_true",
                      help="Skip text retrieval; report parallel refs only.")
+    psp.set_defaults(func=_handle_sc_parallels)
 
     pscs = sub.add_parser("sc-search",
                           help="Fixed-string grep across SuttaCentral offline root texts.")
@@ -2146,6 +1891,7 @@ def _cli() -> int:
     pscs.add_argument("--lang", default="pli",
                       help="Root-text language: pli, lzh (Chinese Āgamas), san, pra, en, misc.")
     pscs.add_argument("--limit", type=int, default=20)
+    pscs.set_defaults(func=_handle_sc_search)
 
     psi = sub.add_parser("scratch-init",
                          help="Create the scratch dossier file for a run.")
@@ -2153,6 +1899,7 @@ def _cli() -> int:
     psi.add_argument("--class", dest="run_class", default="sutta-anchored",
                      choices=["sutta-anchored", "thematic"],
                      help="thematic = non-sutta-anchored; auto-skips Phase 2.5/3b gates.")
+    psi.set_defaults(func=_handle_scratch_init)
 
     psl = sub.add_parser("scratch-log",
                          help="Append a manual entry to the scratch dossier under a phase.")
@@ -2163,182 +1910,40 @@ def _cli() -> int:
     psl.add_argument("--results", default=None, type=Path,
                      help="Path to a JSON file whose contents will be embedded verbatim.")
     psl.add_argument("--hits", default=None, type=int)
+    psl.set_defaults(func=_handle_scratch_log)
 
     psg = sub.add_parser("scratch-gate",
                          help="Append the canonical exit-gate checklist for a phase.")
     psg.add_argument("phase")
+    psg.set_defaults(func=_handle_scratch_gate)
 
     psv = sub.add_parser("scratch-verify",
                          help="Verify every prior phase has its exit gate. Exits 1 on failure.")
     psv.add_argument("--through", default=None,
                      help="Check gates through this phase id; default = highest gate written.")
+    psv.set_defaults(func=_handle_scratch_verify)
 
     psr = sub.add_parser("scratch-resume",
                          help="Print the last gate written and the suggested next phase.")
     psr.add_argument("slug", nargs="?", default=None,
                      help="Slug for the scratch file; omit if VICAYA_SCRATCH is set.")
+    psr.set_defaults(func=_handle_scratch_resume)
 
-    sub.add_parser("scratch-which",
-                   help="Print this run's active scratch path (resolved from run state).")
+    psw = sub.add_parser("scratch-which",
+                         help="Print this run's active scratch path (resolved from run state).")
+    psw.set_defaults(func=_handle_scratch_which)
 
     pvc = sub.add_parser("verify-citation",
                          help="Confirm a human sutta reference exists in dpd.db sutta_info.")
     pvc.add_argument("ref", help='Reference, e.g. "SN 46.42", "MN60", "Sn 4.8".')
+    pvc.set_defaults(func=_handle_verify_citation)
 
     args = p.parse_args()
 
-    result_for_autolog = None
-    autolog_argv: list[str] = []
-
-    if args.cmd == "search-vault":
-        result_for_autolog = search_vault(args.query, folder=args.folder, limit=args.limit)
-        autolog_argv = [args.query] + (["--folder", args.folder] if args.folder else []) + ["--limit", str(args.limit)]
-        _dump(result_for_autolog)
-    elif args.cmd == "search-canon":
-        result_for_autolog = search_canon(args.query, books=args.books, lang=args.lang, limit=args.limit)
-        autolog_argv = [args.query] + (["--books"] + list(args.books) if args.books else []) + ["--lang", args.lang, "--limit", str(args.limit)]
-        _dump(result_for_autolog)
-    elif args.cmd == "resolve-citation":
-        result_for_autolog = resolve_citation(args.book_code, args.paranum)
-        autolog_argv = [args.book_code, str(args.paranum)]
-        _dump(result_for_autolog)
-    elif args.cmd == "search-youtube":
-        channels = {} if args.no_filter else None
-        result_for_autolog = search_youtube(args.query, channels=channels, limit=args.limit)
-        autolog_argv = [args.query, "--limit", str(args.limit)]
-        _dump(result_for_autolog)
-    elif args.cmd == "fetch-transcript":
-        tr = fetch_youtube_transcript(args.video_id, languages=tuple(args.lang))
-        if tr is None:
-            print("error: no transcript available", file=sys.stderr)
-            return 1
-        result_for_autolog = tr
-        autolog_argv = [args.video_id, "--lang"] + list(args.lang)
-        _dump(tr)
-    elif args.cmd == "lookup-book":
-        _dump(lookup_book(args.value))
-    elif args.cmd == "gemini-cross-check":
-        prompt = sys.stdin.read()
-        if not prompt.strip():
-            print("error: empty prompt on stdin", file=sys.stderr)
-            return 1
-        text = gemini_cross_check(prompt, timeout=args.timeout)
-        result_for_autolog = {"output": text}
-        autolog_argv = ["<stdin>"]
-        sys.stdout.write(text + "\n")
-    elif args.cmd == "cross-check":
-        prompt = sys.stdin.read()
-        if not prompt.strip():
-            print("error: empty prompt on stdin", file=sys.stderr)
-            return 1
-        text = cross_check(prompt, timeout=args.timeout)
-        result_for_autolog = {"output": text}
-        autolog_argv = ["<stdin>"]
-        sys.stdout.write(text + "\n")
-    elif args.cmd == "get-ebc-overview":
-        result = get_ebc_overview(args.code)
-        if result is None:
-            print(f"error: no EBC overview for {args.code!r}", file=sys.stderr)
-            return 1
-        result_for_autolog = result
-        autolog_argv = [args.code]
-        _dump(result)
-    elif args.cmd == "get-agama":
-        result_for_autolog = get_agama_texts(args.code, max_parallels=args.max_parallels)
-        autolog_argv = [args.code, "--max", str(args.max_parallels)]
-        _dump(result_for_autolog)
-    elif args.cmd == "search-ebc":
-        result_for_autolog = search_ebc(args.query, folder=args.folder, limit=args.limit)
-        autolog_argv = [args.query] + (["--folder", args.folder] if args.folder else []) + ["--limit", str(args.limit)]
-        _dump(result_for_autolog)
-    elif args.cmd == "search-sanskrit":
-        result_for_autolog = search_sanskrit(args.query, folder=args.folder, limit=args.limit)
-        autolog_argv = [args.query] + (["--folder", args.folder] if args.folder else []) + ["--limit", str(args.limit)]
-        _dump(result_for_autolog)
-    elif args.cmd == "library-folders-check":
-        library_folders = _load_library_folders_module()
-        result_for_autolog = library_folders.check()
-        autolog_argv = []
-        _dump(result_for_autolog)
-    elif args.cmd == "library-folders-refresh":
-        library_folders = _load_library_folders_module()
-        result_for_autolog = library_folders.refresh(
-            limit=args.limit,
-            retry_failed=args.retry_failed,
-        )
-        autolog_argv = ["--limit", str(args.limit)] if args.limit is not None else []
-        if args.retry_failed:
-            autolog_argv.append("--retry-failed")
-        _dump(result_for_autolog)
-    elif args.cmd == "search-library-folders":
-        library_folders = _load_library_folders_module()
-        result_for_autolog = library_folders.search(
-            args.query,
-            limit=args.limit,
-            include_duplicates=args.include_duplicates,
-        )
-        autolog_argv = [args.query, "--limit", str(args.limit)]
-        if args.include_duplicates:
-            autolog_argv.append("--include-duplicates")
-        _dump(result_for_autolog)
-    elif args.cmd == "library-folders-duplicates":
-        library_folders = _load_library_folders_module()
-        result_for_autolog = library_folders.duplicates(samples=args.samples)
-        autolog_argv = ["--samples", str(args.samples)]
-        _dump(result_for_autolog)
-    elif args.cmd == "sc-parallels":
-        result_for_autolog = sc_parallels(args.citation, include_text=not args.no_text)
-        autolog_argv = [args.citation] + (["--no-text"] if args.no_text else [])
-        _dump(result_for_autolog)
-    elif args.cmd == "sc-search":
-        result_for_autolog = sc_search(args.query, lang=args.lang, limit=args.limit)
-        autolog_argv = [args.query, "--lang", args.lang, "--limit", str(args.limit)]
-        _dump(result_for_autolog)
-    elif args.cmd == "scratch-init":
-        path = scratch_init(args.slug, run_class=args.run_class)
-        _dump({
-            "ok": True, "path": str(path), "slug": args.slug, "class": args.run_class,
-            "isolation": (
-                "auto-logging is isolated to this run (keyed to the agent "
-                "process); parallel runs never collide — nothing to pin or export"
-            ),
-        })
-    elif args.cmd == "scratch-log":
-        path = scratch_log(
-            args.phase,
-            args.tool,
-            args=args.rest or None,
-            summary=args.summary,
-            results_file=args.results,
-            hits=args.hits,
-        )
-        _dump({"ok": True, "path": str(path), "phase": args.phase, "tool": args.tool})
-    elif args.cmd == "scratch-gate":
-        result = scratch_gate(args.phase)
-        _dump(result)
-        return 0 if result.get("ok") else 1
-    elif args.cmd == "scratch-verify":
-        result = scratch_verify(through=args.through)
-        _dump(result)
-        return 0 if result.get("ok") else 1
-    elif args.cmd == "scratch-resume":
-        result = scratch_resume(slug=args.slug)
-        _dump(result)
-        return 0 if result.get("ok") else 1
-    elif args.cmd == "scratch-which":
-        try:
-            print(_scratch_path())
-            return 0
-        except ValueError as e:
-            print(e, file=sys.stderr)
-            return 1
-    elif args.cmd == "verify-citation":
-        result = verify_citation(args.ref)
-        _dump(result)
-        return 0 if result.get("exists") else 1
-
-    _maybe_autolog(args.cmd, autolog_argv, result_for_autolog)
-    return 0
+    exit_code, autolog_argv, result_for_autolog, autolog = args.func(args)
+    if autolog:
+        _maybe_autolog(args.cmd, autolog_argv, result_for_autolog)
+    return exit_code
 
 
 if __name__ == "__main__":

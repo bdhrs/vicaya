@@ -15,12 +15,24 @@
 - **Sanskrit search:** `grep -rn -F --include="*.htm"` across a local GRETIL corpus (shallow clone of `wujastyk/GRETIL-mirror`). Unicode IAST `.htm` files; no new dependencies.
 - **Validation:** pytest, ruff, pyright, pyrefly
 
-## Python File Validation
-After touching any `.py` file, run the concrete scoped bundle before finalizing:
-- `uv run ruff check <changed .py files>`
-- `uv run pyright <changed .py files>`
-- `uv run pyrefly check --search-path . <changed .py files>`
-- `uv run pytest <relevant test file> -q`
+## Validation Scope
+- For routine code or documentation changes, run only checks scoped to the
+  touched files.
+- Do not run project-wide validation unless the user asks or an approved plan
+  requires it.
+- Prohibited by default: `uv run pytest`, `uv run pytest -q`,
+  `uv run ruff check .`, bare `uv run pyright`, bare
+  `uv run pyrefly check`.
+- Preferred checks: `uv run pytest tests/<specific_test_file>.py -q`,
+  `uv run ruff check <changed files>`,
+  `uv run pyright <changed files>`,
+  `uv run pyrefly check --search-path . <changed files>`.
+- After touching any `.py` file, run the concrete scoped bundle before
+  finalizing:
+  - `uv run ruff check <changed .py files>`
+  - `uv run pyright <changed .py files>`
+  - `uv run pyrefly check --search-path . <changed .py files>`
+  - `uv run pytest <relevant test file> -q`
 
 ## Constraints
 - All paths are per-machine; configured via `.env` (not committed). See `.env.example`.

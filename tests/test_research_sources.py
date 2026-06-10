@@ -40,9 +40,6 @@ _canon_db_present = DEFAULT_CANON_DB is not None and DEFAULT_CANON_DB.exists()
 canon_available = pytest.mark.skipif(
     not _canon_db_present, reason="canon db not available"
 )
-gemini_available = pytest.mark.skipif(
-    shutil.which("gemini") is None, reason="gemini CLI not installed"
-)
 dpd_available = pytest.mark.skipif(
     DEFAULT_DPD_DB is None or not DEFAULT_DPD_DB.exists(),
     reason="dpd.db not configured (VICAYA_DPD_DB)",
@@ -189,14 +186,19 @@ class TestSearchVault:
 # ---------- gemini_cross_check ----------
 
 
-@gemini_available
 class TestGeminiCrossCheck:
-    def test_trivial_prompt_returns_text(self):
-        # Trivial call; just verify the subprocess works and we get a string.
+    def test_trivial_prompt_returns_text(self, monkeypatch):
+        class _Result:
+            returncode = 0
+            stdout = "pong"
+            stderr = ""
+
+        monkeypatch.setattr(
+            "tools.research_sources.subprocess.run",
+            lambda *a, **kw: _Result(),
+        )
         out = gemini_cross_check("Reply with the single word: pong")
         assert isinstance(out, str)
-        # Don't assert content — model may be chatty. Empty string is also fine
-        # (means timeout/error path was hit cleanly without crashing).
 
 
 class TestChannelAllowlist:
@@ -543,7 +545,7 @@ class TestScratchDossier:
             scratch_init,
         )
         monkeypatch.setattr(
-            "tools.research_sources._SCRATCH_DIR", tmp_path
+            "tools.scratch._SCRATCH_DIR", tmp_path
         )
         path = scratch_init("test-slug")
         assert path.exists()
@@ -554,7 +556,7 @@ class TestScratchDossier:
 
     def test_log_appends_entry_under_named_phase(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_init, scratch_log
-        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-log")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
         scratch_log("2", "search-canon", args=["pabhassara", "--limit", "1"],
@@ -569,7 +571,7 @@ class TestScratchDossier:
 
     def test_gate_refuses_when_prior_gate_missing(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_gate, scratch_init
-        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-gate-refuse")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
         # Try to gate phase 2 without first gating phase 0 or 1.
@@ -588,7 +590,7 @@ class TestScratchDossier:
             scratch_gate,
             scratch_init,
         )
-        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-gate-ok")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
         for phase in ("0", "1", "2"):
@@ -602,7 +604,7 @@ class TestScratchDossier:
 
     def test_verify_reports_missing_with_expected_evidence(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_gate, scratch_init, scratch_verify
-        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-verify")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
         scratch_gate("0")
@@ -619,7 +621,7 @@ class TestScratchDossier:
 
     def test_resume_reports_last_gate_and_next_phase(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_gate, scratch_init, scratch_resume
-        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-resume")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
         for phase in ("0", "1", "2"):
@@ -631,7 +633,7 @@ class TestScratchDossier:
 
     def test_resume_slug_ignores_stale_active_state(self, tmp_path, monkeypatch):
         from tools.research_sources import _write_state, scratch_init, scratch_resume
-        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
         stale_path = scratch_init("stale-run")
         selected_path = scratch_init("selected-run")
@@ -650,7 +652,7 @@ class TestScratchDossier:
             scratch_init,
             scratch_resume,
         )
-        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
         stale_path = scratch_init("stale-active")
         selected_path = scratch_init("selected-active")
@@ -667,7 +669,7 @@ class TestScratchDossier:
 
     def test_resume_thematic_run_reattaches_next_worked_phase(self, tmp_path, monkeypatch):
         from tools.research_sources import _read_state, scratch_gate, scratch_init, scratch_resume
-        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
         path = scratch_init("thematic-resume", run_class="thematic")
         for phase in ("0", "1", "2"):
@@ -681,7 +683,7 @@ class TestScratchDossier:
 
     def test_phase_7_gate_refuses_when_vault_note_has_rejected(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_gate, scratch_init
-        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-rejected-gate")
         # Point the scratch file at a vault note containing a [REJECTED] tag.
         vault = tmp_path / "fake_note.md"
@@ -705,7 +707,7 @@ class TestScratchDossier:
 
     def test_thematic_run_auto_skips_2_5_and_3b(self, tmp_path, monkeypatch):
         from tools.research_sources import _read_state, scratch_gate, scratch_init
-        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
         path = scratch_init("test-thematic", run_class="thematic")
         for phase in ("0", "1", "2"):
@@ -724,7 +726,7 @@ class TestScratchDossier:
 
     def test_sutta_anchored_run_still_requires_2_5(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_gate, scratch_init
-        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-anchored")  # default class
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
         for phase in ("0", "1", "2"):
@@ -734,7 +736,7 @@ class TestScratchDossier:
 
     def test_state_file_resolves_scratch_without_env(self, tmp_path, monkeypatch):
         from tools.research_sources import _scratch_path, scratch_init
-        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
         path = scratch_init("test-state")
         # No env set — resolution falls through to the active-state file.
@@ -742,31 +744,31 @@ class TestScratchDossier:
 
     def test_state_file_is_keyed_to_run(self, tmp_path, monkeypatch):
         from tools.research_sources import _state_file
-        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         # The state-pointer filename carries the run key, so it is per-run,
         # not a single global ".active".
-        monkeypatch.setattr("tools.research_sources._run_key", lambda: "run-A")
+        monkeypatch.setattr("tools.scratch._run_key", lambda: "run-A")
         assert _state_file() == tmp_path / ".active-run-A.json"
-        monkeypatch.setattr("tools.research_sources._run_key", lambda: "run-B")
+        monkeypatch.setattr("tools.scratch._run_key", lambda: "run-B")
         assert _state_file() == tmp_path / ".active-run-B.json"
 
     def test_parallel_runs_do_not_hijack_each_others_pointer(self, tmp_path, monkeypatch):
         # Regression for the ".active scratch pointer hijack": a second run's
         # scratch-init must not redirect the first run's auto-log target.
         from tools.research_sources import _scratch_path, scratch_init
-        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
 
         # Run A initialises, then run B (different agent process) initialises.
-        monkeypatch.setattr("tools.research_sources._run_key", lambda: "agent-A")
+        monkeypatch.setattr("tools.scratch._run_key", lambda: "agent-A")
         path_a = scratch_init("question-a")
-        monkeypatch.setattr("tools.research_sources._run_key", lambda: "agent-B")
+        monkeypatch.setattr("tools.scratch._run_key", lambda: "agent-B")
         path_b = scratch_init("question-b")
 
         # Each run still resolves to its OWN scratch — B did not clobber A.
-        monkeypatch.setattr("tools.research_sources._run_key", lambda: "agent-A")
+        monkeypatch.setattr("tools.scratch._run_key", lambda: "agent-A")
         assert _scratch_path() == path_a
-        monkeypatch.setattr("tools.research_sources._run_key", lambda: "agent-B")
+        monkeypatch.setattr("tools.scratch._run_key", lambda: "agent-B")
         assert _scratch_path() == path_b
 
     def test_concurrent_appends_do_not_lose_entries(self, tmp_path, monkeypatch):
@@ -775,7 +777,7 @@ class TestScratchDossier:
         import threading
 
         from tools.research_sources import _append_under_phase, scratch_init
-        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
         path = scratch_init("concurrent-append")
 
@@ -798,7 +800,7 @@ class TestScratchDossier:
 
     def test_gate_advances_active_phase_in_state(self, tmp_path, monkeypatch):
         from tools.research_sources import _read_state, scratch_gate, scratch_init
-        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
         scratch_init("test-advance")
         assert _read_state()["phase"] == "0"
@@ -807,7 +809,7 @@ class TestScratchDossier:
 
     def test_autolog_uses_env_scratch_over_active_state(self, tmp_path, monkeypatch):
         from tools.research_sources import _maybe_autolog, _write_state, scratch_init
-        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         stale_path = scratch_init("autolog-stale")
         selected_path = scratch_init("autolog-selected")
         _write_state(stale_path, "0")
@@ -821,7 +823,7 @@ class TestScratchDossier:
 
     def test_autolog_uses_active_state_without_env(self, tmp_path, monkeypatch):
         from tools.research_sources import _maybe_autolog, scratch_init
-        monkeypatch.setattr("tools.research_sources._SCRATCH_DIR", tmp_path)
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
         monkeypatch.delenv("VICAYA_PHASE", raising=False)
         path = scratch_init("autolog-active")
