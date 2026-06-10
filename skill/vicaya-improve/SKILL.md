@@ -144,8 +144,10 @@ run any git commands — the user commits):
 1. **Commit message** — one short GitHub-friendly subject line,
    conventional-commit style (`fix:`/`feat:`/`docs:` …, ≤72 chars,
    imperative mood). Use the same subject recorded in the Done table.
-2. **Commit description** — 3–6 short bullet points: what changed and the
-   key evidence (before/after numbers if measured).
+2. **Commit description** — bullet points, as many as needed. Each bullet
+   ≤72 characters so it never wraps, one clause only — no "and"-chains,
+   semicolons, or parentheticals. Go down the page, not across it. Include
+   before/after numbers only if measured.
 3. **Changed files** — a plain list of every file created, modified, or
    moved this session (including `runs/TODO.md` and archived runs).
 
