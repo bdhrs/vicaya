@@ -29,25 +29,12 @@ window and resolved whole families of findings: per-run scratch isolation
 | scratch-mutating commands must run sequentially (lost append, 20260602-144756) | done | sequencing rule added to SKILL.md + vicaya-3-complete + shared/core.md during that run |
 | #29 Citation verification false `[REJECTED]` cluster (12 runs) | done | `fix: verify citations by range containment and triage 81 run retrospectives into TODO.md` — range containment for range-stored books, endpoint resolution for hyphenated ranges, Thag/Thig/Kp aliases, new `unverifiable-form` verdict for global verse numbers; 7 regression tests |
 | #31 scratch-init does not write the Phase 0 gate (7 runs) | done | `feat: one-shot scratch-init records Phase 0 fields and writes gate 0` — scratch-init gains `--question-original/--question-polished/--scope-assumptions/--ambiguity`; with the three evidence fields present it fills the header and writes the Phase 0 gate (run starts at Phase 1); gate refusals now say "run scratch-gate N first"; SKILL.md + vicaya-0-scope updated; 7 regression tests |
+| #3 Canon / SQLite search failures (8 runs) | done | `fix: search canon on normalized text and auto-fill continuation-row paranums` — search-canon now matches on normalized text (TEI markup stripped, ṁ/ŋ→ṃ, NFC, whitespace collapsed, casefolded): "evaṃ me sutaṃ" 123→460 hits (MN book 1: 1→50), SuttaCentral-ṁ queries 0→460; empty paranum auto-filled from nearest preceding numbered row (pipes into resolve-citation); SKILL.md: fixed wrong `pali`/`english` column names in direct-SQL example, added multi-word-LIKE warning, english_translation trust caveat, pathavī/paṭhavī variant guidance, stem false-positive correction; 7 regression tests |
+| #12 NFD/NFC Unicode normalization in search_canon | done | same commit as #3 — query and stored text are both NFC-normalized before matching |
 
 ## Remaining — prioritized
 
 ### High severity
-
-**#3 Canon / SQLite search failures.** Multiple sub-issues:
-- Empty `paranum` in continuation rows — nearest-preceding-paranum SQL recipe
-  works (20260605-055802) but should be in SKILL.md/helper
-- `english_translation` column sparse (AN, Vism/e01* rows) and occasionally
-  misaligned (MN36 para 381 returned wrong English) — don't trust it blindly;
-  search-canon returns [] for Pāḷi-only rows in e01* (20260604-060530)
-- English multi-word queries return empty (split-column storage)
-- niggahita storage variants (ṃ vs alternate form) break direct LIKE
-  (20260605-023536); pathavī/paṭhavī spelling variants (20260604-142500*)
-- Direct multi-word SQL LIKE on commentary tables fails on embedded TEI
-  markup — prefer search-canon helper there (20260604-143000)
-- Stem-search false positives; sqlite column names doc inconsistency
-(evidence refreshed in 8 runs: 20260601-075124, 20260604-004936,
-20260604-060530, 20260603-232301, 20260605-023536, +3 more)
 
 **#5 Skill too long / prescriptive.** SKILL.md is still 2069 lines. Fresh
 evidence: a 130-min run hit context exhaustion at Phase 7 partly from "long
@@ -172,8 +159,6 @@ location in SKILL.md. (seen in: 20260601-075124, 20260606-112752,
 
 - **#9 YouTube transcript fetch failures / hangs** — (stale — verify): zero
   sightings in 81 runs since 05-28.
-- **#12 NFD/NFC Unicode normalization in search_canon** — (stale — verify):
-  no direct re-sighting; related variant issues folded into #3.
 - **#17 Transcript-mining helper** — demoted from Medium: no demand in 81
   runs.
 - **#18 Claim ledger output mode** — unchanged, no new demand.
@@ -273,6 +258,6 @@ location in SKILL.md. (seen in: 20260601-075124, 20260606-112752,
    one-big-restructure (execution kernel + on-demand reference) is still the
    right shape; the doc-gap cluster #36 could be folded into that pass.
 
-4. Several "(stale — verify)" items (#9, #12, #34-post-fix, UV_CACHE_DIR
+4. Several "(stale — verify)" items (#9, #34-post-fix, UV_CACHE_DIR
    scratch-state loss) need one cheap verification run each before being
    either closed or re-prioritized.

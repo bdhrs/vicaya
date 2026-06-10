@@ -183,6 +183,46 @@ def search_vault(
 
 # ---------- Canon search ----------
 
+_TAG_RE = _re.compile(r"<[^>]+>")
+_WS_RE = _re.compile(r"\s+")
+
+
+def _normalise_for_match(text: str) -> str:
+    """Make canon text and queries comparable.
+
+    CST rows embed TEI markup mid-phrase (`su<pb ed="V" n="1.0001" />taṃ`),
+    store the niggahita as ṃ (queries often arrive with SuttaCentral's ṁ),
+    and capitalise sentence-initial words. Raw LIKE silently misses all of
+    these — "evaṃ me sutaṃ" matches 123 rows raw but 460 normalised.
+    """
+    import unicodedata
+    text = unicodedata.normalize("NFC", text)
+    text = _TAG_RE.sub("", text)
+    text = text.replace("ṁ", "ṃ").replace("ŋ", "ṃ")
+    return _WS_RE.sub(" ", text).strip().casefold()
+
+
+def _match_normalised(text, needle: str) -> bool:
+    """SQLite UDF: does `needle` (already normalised) occur in `text`?"""
+    if not text:
+        return False
+    return needle in _normalise_for_match(str(text))
+
+
+def _nearest_preceding_paranum(conn, table: str, row_id: int) -> str:
+    """Continuation rows carry no paranum; the nearest preceding numbered
+    row is the paragraph they belong to."""
+    try:
+        row = conn.execute(
+            f"SELECT paranum FROM {table} "
+            "WHERE id < ? AND paranum IS NOT NULL AND paranum != '' "
+            "ORDER BY id DESC LIMIT 1",
+            (row_id,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return ""
+    return str(row[0]) if row and row[0] else ""
+
 
 def _list_canon_tables(db_path: Path) -> list[str]:
     with sqlite3.connect(db_path) as conn:
@@ -226,9 +266,17 @@ def search_canon(
     limit: int = 20,
     db_path: Path | None = None,
 ) -> list[CanonHit]:
-    """Federated LIKE search across CST tables.
+    """Federated substring search across CST tables on normalised text.
 
-    `lang` controls which column(s) are searched. Returns up to `limit` hits.
+    Matching strips TEI markup, folds niggahita variants (ṁ/ŋ → ṃ),
+    collapses whitespace, and ignores case on both the query and the stored
+    text, so multi-word phrases match across embedded `<pb/>` tags and
+    SuttaCentral-spelled queries match CST storage. Hits on continuation
+    rows (no paranum of their own) carry the nearest preceding paranum —
+    the paragraph they belong to — ready for `resolve_citation`.
+
+    `lang` controls which column(s) are searched. Returns up to `limit`
+    hits. The default book set (`s*_mul`, ~85k rows) scans in ~2-3s.
     """
     db_path = db_path or DEFAULT_CANON_DB
     if db_path is None or not db_path.exists():
@@ -246,28 +294,36 @@ def search_canon(
     else:
         raise ValueError(f"unknown lang: {lang}")
 
-    pattern = f"%{query}%"
+    needle = _normalise_for_match(query)
+    if not needle:
+        return []
     hits: list[CanonHit] = []
     with sqlite3.connect(db_path) as conn:
+        conn.create_function(
+            "vicaya_match", 2, _match_normalised, deterministic=True
+        )
         for table in tables:
-            where = " OR ".join(f"{c} LIKE ?" for c in cols)
+            where = " OR ".join(f"vicaya_match({c}, ?)" for c in cols)
             sql = (
-                f"SELECT paranum, pali_text, english_translation "
+                f"SELECT id, paranum, pali_text, english_translation "
                 f"FROM {table} WHERE {where} LIMIT ?"
             )
             remaining = limit - len(hits)
             if remaining <= 0:
                 break
-            params = [pattern] * len(cols) + [remaining]
+            params = [needle] * len(cols) + [remaining]
             try:
                 rows = conn.execute(sql, params).fetchall()
             except sqlite3.OperationalError:
                 continue
-            for paranum, pali, english in rows:
+            for row_id, paranum, pali, english in rows:
+                paranum_str = str(paranum or "")
+                if not paranum_str:
+                    paranum_str = _nearest_preceding_paranum(conn, table, row_id)
                 hits.append(
                     CanonHit(
                         book_code=table,
-                        paranum=str(paranum or ""),
+                        paranum=paranum_str,
                         pali=_strip_xml(pali or ""),
                         english=_strip_xml(english or ""),
                     )

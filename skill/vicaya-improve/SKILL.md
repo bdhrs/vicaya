@@ -138,6 +138,17 @@ update `runs/TODO.md` in the same breath:
 The completion report to the user must mention that TODO.md was updated.
 Never end the session with a fixed issue still listed under Remaining.
 
+The completion report must end with a ready-to-use commit block (do NOT
+run any git commands — the user commits):
+
+1. **Commit message** — one short GitHub-friendly subject line,
+   conventional-commit style (`fix:`/`feat:`/`docs:` …, ≤72 chars,
+   imperative mood). Use the same subject recorded in the Done table.
+2. **Commit description** — 3–6 short bullet points: what changed and the
+   key evidence (before/after numbers if measured).
+3. **Changed files** — a plain list of every file created, modified, or
+   moved this session (including `runs/TODO.md` and archived runs).
+
 ## Style rules for TODO.md
 
 - Keep the existing structure: `## Done` table, `## Remaining — prioritized`

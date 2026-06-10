@@ -30,7 +30,7 @@ These rules apply to every run, by every agent. They are part of the skill, not 
 1. **No AI / model attribution in the scholarship body.** Never write "Gemini noted", "Claude found", "the AI suggested", "added by cross-check", etc. inside the findings, evidence, or analysis. The body must read like scholarship — information and sources are what matter, not the process of producing them. If a second-pass review surfaces material, integrate it silently with proper citations to the underlying primary or secondary source. **The only places agent identity appears are the `agent` frontmatter field and the final footer line** (see Phase 7 — Agent self-identification). Those are metadata, not scholarship.
 2. **No process or workflow logging inside the research note.** No "Improvements made" sections, no "the helper failed and I switched to X", no "this was missed in the first pass". Notes contain content; process belongs in the terminal report only (Phase 7's final summary), and self-improvement edits go into this `SKILL.md` file.
 3. **Pāḷi spelling conventions differ per source:**
-   - **Canon SQLite (`tipitaka-translation-data.db`) and the Obsidian vault** use exact Pāḷi diacritics (`paṭiccasamuppāda`, `dukkha`, `nibbāna`). Search verbatim. If 0 hits, suspect a bug or the alternate niggahita (`ṃ` vs `ṁ`), not loose spelling.
+   - **Canon SQLite (`tipitaka-translation-data.db`) and the Obsidian vault** use exact Pāḷi diacritics (`paṭiccasamuppāda`, `dukkha`, `nibbāna`). Search verbatim. The `search-canon` helper normalizes niggahita (`ṁ`/`ŋ` → `ṃ`), case, and embedded markup automatically; direct SQL `LIKE` does not — there use `ṃ` exactly. If 0 hits, also try edition spelling variants (`pathavī`/`paṭhavī`, `kaṅkhā`/`kankhā`-type retroflex–dental swaps) before concluding absence.
    - **Library folders** index contains Calibre metadata labels with ASCII Pāḷi (`paticcasamuppada`). Diacritics in queries are handled automatically.
 4. **Obsidian CLI requires the Obsidian desktop app to be running.** If a `search-vault` command exits with a traceback containing "app may not be running", launch the desktop app yourself in the background and wait ~5 seconds before retrying. Use the OS-appropriate command — **never bare `obsidian`** (that resolves to the CLI, not the app, on Linux):
    - **Linux:** `setsid xdg-open "obsidian://" >/dev/null 2>&1 &`
@@ -119,7 +119,7 @@ Parse the JSON with `jq` or read it as a file. Only fall back to `uv run python 
 Every helper returns dataclasses serialised to JSON by the CLI. Field names are exact — guessing them has caused crashes in prior runs.
 
 - **VaultHit**: `path` (str), `snippet` (str), `line` (int | null)
-- **CanonHit**: `book_code` (str, e.g. `s0201m_mul`), `paranum` (str), `pali` (str), `english` (str). **No `snippet` field** — quote from `pali` / `english` directly. XML/TEI markup is stripped automatically; text is plain UTF-8.
+- **CanonHit**: `book_code` (str, e.g. `s0201m_mul`), `paranum` (str), `pali` (str), `english` (str). **No `snippet` field** — quote from `pali` / `english` directly. XML/TEI markup is stripped automatically; text is plain UTF-8. Hits on continuation rows (which carry no paranum of their own) come back with the nearest preceding paranum — the paragraph they belong to — so `paranum` pipes straight into `resolve-citation`.
 - **Citation**: `machine` (e.g. `s0201m_mul:23`), `human` (e.g. `MN60 Apaṇṇakasuttaṃ para 97`), `pitaka`, `text_type`, `paranum`.
 - **Library folders hit**: plain dict with `document_id`, `title`, `relative_path`, `source_path`, `extension`, `snippet`, `extraction_status`, `duplicate_count`, `duplicate_paths`, `possible_duplicate_of`, and `source_available`.
 - **YouTubeHit**: `video_id` (str), `title` (str), `channel` (str), `channel_id` (str), `duration` (float | null, seconds), `url` (str), `tier` (str — `trusted` | `probationary`; `excluded` never appears here, those are filtered out).
@@ -897,10 +897,12 @@ to `--books`.
 
 **Each book code is also the exact SQLite table name in the canon database.** For example,
 the Paṭisambhidāmagga mūla is stored in a table named `s0517m_mul`, with columns
-`paranum`, `pali`, `english`. The `search-canon` helper queries these tables
-directly using the codes you pass to `--books`. This means you can also query the database
-directly via `sqlite3` if you need ordered paragraph access (e.g. `SELECT paranum, pali,
-english FROM s0517m_mul ORDER BY CAST(paranum AS INTEGER) LIMIT 5`).
+`paranum`, `pali_text`, `english_translation` (full schema below). The `search-canon`
+helper queries these tables directly using the codes you pass to `--books`. This means you
+can also query the database directly via `sqlite3` if you need ordered paragraph access
+(e.g. `SELECT paranum, pali_text, english_translation FROM s0517m_mul ORDER BY
+CAST(paranum AS INTEGER) LIMIT 5`). Note the column names are `pali_text` /
+`english_translation`, not the `pali` / `english` field names CanonHit uses.
 
 #### Aggregate patterns
 
@@ -1036,7 +1038,7 @@ Infer the canon scope from the question. Examples:
 | paṭiccasamuppāda | `paṭiccasamuppād` |
 | khandha | `khandh` |
 
-When in doubt, drop one more character than you think you need — substring match means no false positives from truncating too far, only more hits.
+When in doubt, drop one more character than you think you need — but expect false positives: substring match means a short stem also hits unrelated compounds and homographs (`mān` hits both `māna` conceit and `mānasa`). Skim each hit's context before counting it as evidence; the stem casts the net, it does not classify the catch.
 
 To go the other way — turn an inflected form back into its dictionary stem, case, and number — look the exact form up in the DPD `lookup` table (see the **DPD dictionary database** section).
 
@@ -1084,7 +1086,7 @@ sqlite3 -readonly "$CANON_DB" \
   "SELECT id, paranum, pali_text, english_translation FROM <table> WHERE id BETWEEN <start_id> AND <end_id>;"
 ```
 
-**When a search hit has empty `paranum`** — this is normal for subhead, gatha, and continuation rows within a paragraph (only the first row of each paragraph carries `paranum`). To find the owning sutta, query by `id`:
+**When a direct-SQL hit has empty `paranum`** — this is normal for subhead, gatha, and continuation rows within a paragraph (only the first row of each paragraph carries `paranum`). `search-canon` hits already arrive with the owning paranum filled in; this recipe is only needed when you query the db directly. To find the owning sutta, query by `id`:
 
 ```bash
 CANON_DB=$(grep '^VICAYA_CANON_DB=' .env | cut -d= -f2- | sed "s|^~|$HOME|")
@@ -1125,12 +1127,16 @@ This surfaces chapter-level collections the keyword search misses.
 | `pali_text` | TEXT | Pāḷi source (NFC UTF-8 diacritics) |
 | `myanmar_pali_text` | TEXT | Myanmar script Pāḷi |
 | `chinese_translation` | TEXT | Chinese translation where available |
-| `english_translation` | TEXT | English translation where available |
-| `english_translation_mark` | TEXT | translator initials / mark |
+| `english_translation` | TEXT | English translation where available (generated draft — verify load-bearing wording against `pali_text`) |
+| `*_mark`, `*_timestamp` | TEXT | translation bookkeeping (`chinese_translation_mark`, `english_translation_timestamp`, …) |
 
 Table-name suffixes: `_mul` = mūla, `_att` = aṭṭhakathā, `_tik` = ṭīkā, `_nrf` = non-canonical reference.
 
-**Diacritics in direct SQL.** The canon db stores NFC UTF-8 with native Pāḷi diacritics. Direct SQL `LIKE` must use the real characters (`ñ`, `ā`, `ṭ`, etc.). Example: `WHERE pali_text LIKE '%papañca%'` → hits correctly. `WHERE pali_text LIKE '%papanca%'` → 0 hits. The ASCII-insensitivity rule applies to the library folders FTS index (and it handles diacritics automatically); never strip diacritics for canon SQL.
+**Diacritics in direct SQL.** The canon db stores NFC UTF-8 with native Pāḷi diacritics. Direct SQL `LIKE` must use the real characters (`ñ`, `ā`, `ṭ`, etc.) and the `ṃ` niggahita (never `ṁ`). Example: `WHERE pali_text LIKE '%papañca%'` → hits correctly. `WHERE pali_text LIKE '%papanca%'` → 0 hits. The ASCII-insensitivity rule applies to the library folders FTS index (and it handles diacritics automatically); never strip diacritics for canon SQL.
+
+**⚠️ Multi-word phrases: use `search-canon`, not direct `LIKE`.** Rows embed TEI markup mid-phrase (`Evaṃ me su<pb ed="V" n="1.0001" />taṃ`), so a direct `LIKE '%evaṃ me sutaṃ%'` silently misses ~75% of occurrences (123 raw vs 460 normalized across `s*_mul`). The helper strips markup, folds `ṁ`→`ṃ`, and ignores case before matching; direct SQL does none of that. Reserve direct SQL for single-word stems and `id`-window pulls.
+
+**Trust the Pāḷi, verify the English.** `english_translation` is a generated draft: coverage varies by book and the alignment is occasionally off (wrong-paragraph English has been observed). Quote it as a convenience gloss, but verify any doctrinally load-bearing wording against the `pali_text` (or a published translation from EBC) before it carries weight in the note.
 
 → **Phase 2 exit:** `scratch-gate 2`.
 

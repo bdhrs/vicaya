@@ -170,6 +170,78 @@ class TestSearchCanon:
             assert h.book_code.startswith("s")
 
 
+class TestSearchCanonNormalisation:
+    """Hermetic tests for the normalised matcher against a fixture db.
+
+    Each test reproduces a failure mode raw LIKE had: TEI tags breaking
+    phrases, ṁ-vs-ṃ niggahita, sentence-initial capitals, NFD queries, and
+    empty paranum on continuation rows.
+    """
+
+    @pytest.fixture
+    def canon_db(self, tmp_path):
+        db = tmp_path / "canon.db"
+        import sqlite3
+        with sqlite3.connect(db) as conn:
+            conn.execute(
+                "CREATE TABLE s0201m_mul (id INTEGER PRIMARY KEY, rend TEXT, "
+                "paranum TEXT, pali_text TEXT, english_translation TEXT)"
+            )
+            conn.executemany(
+                "INSERT INTO s0201m_mul (id, rend, paranum, pali_text, "
+                "english_translation) VALUES (?, ?, ?, ?, ?)",
+                [
+                    (0, "bodytext", "1",
+                     '<p rend="bodytext">Evaṃ me su<pb ed="V" n="1.0001" />taṃ – '
+                     "ekaṃ samayaṃ bhagavā…</p>",
+                     "Thus have I heard. On one   occasion the Blessed One…"),
+                    (1, "gatha", "",
+                     '<p rend="gatha1">Karuṇāsītalahadayaṃ, paññāpajjota…</p>',
+                     ""),
+                    (2, "bodytext", "5",
+                     '<p rend="bodytext">Sabbe saṅkhārā aniccā.</p>',
+                     "All conditioned things are impermanent."),
+                ],
+            )
+        return db
+
+    def test_phrase_matches_across_embedded_tags(self, canon_db):
+        hits = search_canon("evaṃ me sutaṃ", books=["s0201m_mul"], db_path=canon_db)
+        assert len(hits) == 1
+        assert hits[0].paranum == "1"
+
+    def test_sutta_central_niggahita_matches_cst_storage(self, canon_db):
+        hits = search_canon("evaṁ me sutaṁ", books=["s0201m_mul"], db_path=canon_db)
+        assert len(hits) == 1
+
+    def test_case_insensitive_pali(self, canon_db):
+        # Stored text has sentence-initial "Evaṃ"; query is lowercase.
+        hits = search_canon("evaṃ", books=["s0201m_mul"], db_path=canon_db)
+        assert len(hits) >= 1
+
+    def test_nfd_query_matches_nfc_storage(self, canon_db):
+        import unicodedata
+        nfd_query = unicodedata.normalize("NFD", "saṅkhārā aniccā")
+        hits = search_canon(nfd_query, books=["s0201m_mul"], db_path=canon_db)
+        assert len(hits) == 1
+        assert hits[0].paranum == "5"
+
+    def test_continuation_row_gets_preceding_paranum(self, canon_db):
+        hits = search_canon("karuṇāsītalahadayaṃ", books=["s0201m_mul"], db_path=canon_db)
+        assert len(hits) == 1
+        assert hits[0].paranum == "1"
+
+    def test_english_multiword_whitespace_collapse(self, canon_db):
+        # Stored English has irregular internal spacing.
+        hits = search_canon(
+            "on one occasion", books=["s0201m_mul"], lang="english", db_path=canon_db
+        )
+        assert len(hits) == 1
+
+    def test_empty_query_returns_nothing(self, canon_db):
+        assert search_canon("  ", books=["s0201m_mul"], db_path=canon_db) == []
+
+
 # ---------- search_vault ----------
 
 
