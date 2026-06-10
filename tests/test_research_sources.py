@@ -891,6 +891,52 @@ class TestVerifyCitation:
         assert _normalise_citation("Snp 4.8") == ["SNP4.8"]
         assert _normalise_citation("SNP 4.8") == ["SNP4.8"]
 
+    def test_verse_ref_in_range_stored_book_verifies(self):
+        # Dhp is stored as verse-range rows (DHP116-128 etc.), so single
+        # verses must verify by numeric containment, not exact match.
+        from tools.research_sources import verify_citation
+        for ref in ("Dhp 178", "Dhp 128", "Dhp 95"):
+            r = verify_citation(ref)
+            assert r["verdict"] == "verified", (ref, r)
+
+    def test_range_stored_an_suttas_verify_by_containment(self):
+        # AN ones/twos and the AN8 peyyāla block are stored as ranges
+        # (AN2.21-31, AN8.117-626): single suttas inside them must verify.
+        from tools.research_sources import verify_citation
+        for ref in ("AN2.31", "AN8.119", "AN1.600"):
+            r = verify_citation(ref)
+            assert r["verdict"] == "verified", (ref, r)
+
+    def test_hyphenated_range_verifies_via_endpoints(self):
+        # SN56.27 and SN56.28 both exist but "SN56.27-28" is not a key;
+        # the range must verify by resolving both endpoints.
+        from tools.research_sources import verify_citation
+        for ref in ("SN56.27-28", "SN48.9-10", "SN46.14-16"):
+            r = verify_citation(ref)
+            assert r["verdict"] == "verified", (ref, r)
+
+    def test_fabricated_range_still_rejected(self):
+        from tools.research_sources import verify_citation
+        r = verify_citation("SN99.1-2")
+        assert r["verdict"] == "rejected"
+        assert r["exists"] is False
+
+    def test_thag_poem_resolves_via_th_alias(self):
+        # dpd_code uses TH1…TH264, not THAG…; "Thag 5" must still verify.
+        from tools.research_sources import verify_citation
+        r = verify_citation("Thag 5")
+        assert r["verdict"] == "verified", r
+
+    def test_global_verse_number_is_unverifiable_not_rejected(self):
+        # Snp/Thag global verse numbers have no per-verse row in sutta_info.
+        # They must NOT be branded fabrications.
+        from tools.research_sources import verify_citation
+        for ref in ("Sn 925", "Snp 437", "Thag 591"):
+            r = verify_citation(ref)
+            assert r["verdict"] == "unverifiable-form", (ref, r)
+            assert r["exists"] is False
+            assert "verse number" in r["note"]
+
 
 @canon_available
 class TestAnnotateCitations:
@@ -909,6 +955,12 @@ class TestAnnotateCitations:
         # The label must not embed the English sutta name "Unfailing"
         assert "Unfailing" not in out
         assert "MN60 [VERIFIED]" in out
+
+    def test_verse_number_stamped_unverifiable(self):
+        from tools.research_sources import annotate_citations
+        out = annotate_citations("Quoting Sn 925 and Dhp 178 here.")
+        assert "Sn 925 [UNVERIFIABLE" in out
+        assert "Dhp 178 [VERIFIED]" in out
 
 
 # ---------- search_vault error handling ----------

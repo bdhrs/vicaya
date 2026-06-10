@@ -1237,10 +1237,33 @@ For each item, either fix the synthesis or note "no issue":
 
 
 _CITATION_RE = _re.compile(
-    r"\b(DN|MN|SN|AN|SNP|Snp?|Dhp|Ud|Iti|Thag|Thig|Vv|Pv|Bv|Ja|Mil)"
+    r"\b(DN|MN|SN|AN|SNP|Snp?|Dhp|Ud|Iti|Thag|Thig|Vv|Pv|Bv|Ja|Mil|Khp|Kp)"
     r"\s?(\d+(?:\.\d+)?(?:-\d+)?)\b",
     _re.IGNORECASE,
 )
+
+# Books whose sutta_info codes carry a different prefix than the scholarly
+# abbreviation (book_code column in parentheses).
+_PREFIX_ALIASES = {
+    "THAG": ["TH"],     # dpd_code uses TH1…TH264 (book_code TH)
+    "THIG": ["THI"],
+    "KP": ["KHP"],
+    "KHP": ["KP"],
+}
+
+# Books cited by a global verse number that has no per-verse row in
+# sutta_info (Dhp does — its codes are verse ranges — these don't).
+_VERSE_NUMBERED_BOOKS = {"SNP", "THAG", "THIG"}
+
+# citation prefix → sutta_info.book_code, for the range-containment scan.
+_BOOK_CODE_FOR_PREFIX = {
+    "DHP": "DHP", "AN": "AN", "SN": "SN", "MN": "MN", "DN": "DN",
+    "SNP": "SNP", "THAG": "TH", "THIG": "THI", "ITI": "ITI", "UD": "UD",
+    "JA": "JA", "PV": "PV", "VV": "VV", "KHP": "KHP", "KP": "KHP",
+}
+
+_RANGE_CODE_RE = _re.compile(r"^([A-Z]+)(?:(\d+)\.)?(\d+)-(\d+)$")
+_SINGLE_CODE_RE = _re.compile(r"^([A-Z]+)(?:(\d+)\.)?(\d+)$")
 
 
 def _normalise_citation(ref: str) -> list[str]:
@@ -1250,7 +1273,9 @@ def _normalise_citation(ref: str) -> list[str]:
       - `SN` (all caps)      → Saṃyutta Nikāya only.
       - `Sn` / `sn` / `sN`   → ambiguous: Saṃyutta or Suttanipāta. Return both.
       - `Snp` / `SNP` / etc. → Suttanipāta only (any case, since the `p` disambiguates).
-    Other prefixes are uppercased verbatim.
+    Other prefixes are uppercased verbatim. Prefix aliases (Thag→TH,
+    Thig→THI, Kp↔Khp) are appended so refs match the codes sutta_info
+    actually stores.
     """
     s = "".join(ref.split())
     m = _CITATION_RE.match(s)
@@ -1259,87 +1284,202 @@ def _normalise_citation(ref: str) -> list[str]:
     prefix, tail = m.group(1), m.group(2)
     lo = prefix.lower()
     if prefix == "SN":
-        return [f"SN{tail}"]
-    if lo == "sn":
-        return [f"SN{tail}", f"SNP{tail}"]
-    return [f"{lo.upper()}{tail}"]
+        candidates = [f"SN{tail}"]
+    elif lo == "sn":
+        candidates = [f"SN{tail}", f"SNP{tail}"]
+    else:
+        candidates = [f"{lo.upper()}{tail}"]
+    for cand in list(candidates):
+        head = _re.match(r"^[A-Z]+", cand)
+        if head and head.group(0) in _PREFIX_ALIASES:
+            rest = cand[len(head.group(0)):]
+            for alias in _PREFIX_ALIASES[head.group(0)]:
+                candidates.append(f"{alias}{rest}")
+    return candidates
+
+
+def _range_end(start: int, end: int, end_str: str) -> int:
+    """Repair truncated range ends like DHP90-00 (meaning 90–100)."""
+    while end < start:
+        end += 10 ** len(end_str)
+    return end
+
+
+def _row_to_match(row) -> dict:
+    return {
+        "sc_code": row[0],
+        "cst_code": row[1],
+        "dpd_code": row[2],
+        "dpr_code": row[3],
+        "bjt_sutta_code": row[4],
+        "sc_eng_sutta": row[5],
+        "dpd_sutta": row[6],
+        "cst_file": row[7],
+    }
+
+
+_SUTTA_INFO_COLS = (
+    "sc_code, cst_code, dpd_code, dpr_code, bjt_sutta_code, "
+    "sc_eng_sutta, dpd_sutta, cst_file"
+)
+
+
+def _exact_matches(conn, cand: str) -> list[dict]:
+    sql = (
+        f"SELECT {_SUTTA_INFO_COLS} FROM sutta_info "
+        "WHERE sc_code = ? OR cst_code = ? OR dpd_code = ? "
+        "   OR dpr_code = ? OR bjt_sutta_code = ?"
+    )
+    return [_row_to_match(r) for r in conn.execute(sql, (cand,) * 5)]
+
+
+def _containment_matches(conn, cand: str) -> list[dict]:
+    """Match a single-sutta/verse ref against range-form codes.
+
+    sutta_info stores some books as ranges — `DHP116-128`, `AN2.21-31`,
+    `AN8.117-626` — so `Dhp 128` or `AN8.119` never match exactly. Scan the
+    book's rows and test numeric containment on sc_code and dpd_code.
+    """
+    m = _SINGLE_CODE_RE.match(cand)
+    if not m:
+        return []
+    prefix, chapter, num = m.group(1), m.group(2), int(m.group(3))
+    book_code = _BOOK_CODE_FOR_PREFIX.get(prefix)
+    if book_code is None:
+        return []
+    sql = f"SELECT {_SUTTA_INFO_COLS} FROM sutta_info WHERE book_code = ?"
+    matches = []
+    for row in conn.execute(sql, (book_code,)):
+        for code in (row[0], row[2]):
+            rm = _RANGE_CODE_RE.match(code or "")
+            if not rm:
+                continue
+            r_chapter, r_start = rm.group(2), int(rm.group(3))
+            r_end = _range_end(r_start, int(rm.group(4)), rm.group(4))
+            if (chapter or None) != (r_chapter or None):
+                continue
+            if r_start <= num <= r_end:
+                matches.append(_row_to_match(row))
+                break
+    return matches
+
+
+def _resolve_candidate(conn, cand: str) -> list[dict]:
+    """Exact lookup across all five coding systems, then range containment.
+
+    Coding systems: sc_code (SuttaCentral), cst_code (CST Pāḷi), dpd_code
+    (DPD — sometimes book-range like DN1-13), dpr_code (Digital Pali
+    Reader), bjt_sutta_code (Buddha Jayanthi). A ref may resolve under any.
+    """
+    matches = _exact_matches(conn, cand)
+    if matches:
+        return matches
+    return _containment_matches(conn, cand)
+
+
+def _split_range_candidate(cand: str) -> tuple[str, str] | None:
+    """`SN48.9-10` → (`SN48.9`, `SN48.10`); `DHP256-272` → (`DHP256`, `DHP272`)."""
+    m = _RANGE_CODE_RE.match(cand)
+    if not m:
+        return None
+    prefix, chapter, start, end = m.groups()
+    head = f"{prefix}{chapter}." if chapter else prefix
+    return (f"{head}{start}", f"{head}{end}")
 
 
 def verify_citation(ref: str, dpd_db: Path | None = None) -> dict:
     """Confirm that `ref` (a human sutta reference) exists in dpd.db sutta_info.
 
-    Returns {ref, normalised, exists, matches: [...]}. Each match has the
-    fields {sc_code, cst_code, sc_eng_sutta, dpd_sutta, cst_file}. Multiple
+    Returns {ref, normalised, verdict, exists, matches: [...]}. Verdict is one of:
+      - "verified"          — found (exactly, by range containment for
+                              range-stored books like Dhp/AN ones-twos, or by
+                              resolving both endpoints of a hyphenated range)
+      - "unverifiable-form" — a global verse number (Snp/Thag/Thig) that has
+                              no per-verse row in sutta_info; cannot be
+                              checked, NOT evidence of fabrication
+      - "rejected"          — not found under any coding system
+    `exists` stays True only for "verified" (backward compatible). Multiple
     matches when the ref is ambiguous (e.g. "Sn 4.8" → both SN and SNP).
     Existence-only — does NOT claim the content matches the reviewer's gloss.
     """
     db_path = dpd_db or DEFAULT_DPD_DB
     if db_path is None or not db_path.exists():
-        return {"ref": ref, "normalised": [], "exists": False,
-                "matches": [], "error": "dpd.db not available"}
+        return {"ref": ref, "normalised": [], "verdict": "rejected",
+                "exists": False, "matches": [], "error": "dpd.db not available"}
     candidates = _normalise_citation(ref)
-    # Query across all five coding systems present in sutta_info:
-    # sc_code (SuttaCentral), cst_code (CST Pāḷi), dpd_code (DPD — sometimes
-    # book-range like DN1-13, sometimes sutta-code), dpr_code (Digital Pali
-    # Reader), bjt_sutta_code (Buddha Jayanthi). A ref may resolve under any.
-    sql = (
-        "SELECT sc_code, cst_code, dpd_code, dpr_code, bjt_sutta_code, "
-        "       sc_eng_sutta, dpd_sutta, cst_file "
-        "FROM sutta_info "
-        "WHERE sc_code = ? OR cst_code = ? OR dpd_code = ? "
-        "   OR dpr_code = ? OR bjt_sutta_code = ?"
-    )
     matches: list[dict] = []
     seen: set[tuple] = set()
+    unverifiable_note: str | None = None
     try:
         with sqlite3.connect(db_path) as conn:
             for cand in candidates:
-                for row in conn.execute(sql, (cand, cand, cand, cand, cand)):
-                    key = (row[0], row[1])
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    matches.append({
-                        "sc_code": row[0],
-                        "cst_code": row[1],
-                        "dpd_code": row[2],
-                        "dpr_code": row[3],
-                        "bjt_sutta_code": row[4],
-                        "sc_eng_sutta": row[5],
-                        "dpd_sutta": row[6],
-                        "cst_file": row[7],
-                    })
+                found = _resolve_candidate(conn, cand)
+                if not found:
+                    endpoints = _split_range_candidate(cand)
+                    if endpoints:
+                        lo = _resolve_candidate(conn, endpoints[0])
+                        hi = _resolve_candidate(conn, endpoints[1])
+                        if lo and hi:
+                            found = lo + hi
+                for row in found:
+                    key = (row["sc_code"], row["cst_code"])
+                    if key not in seen:
+                        seen.add(key)
+                        matches.append(row)
+                if not found:
+                    m = _SINGLE_CODE_RE.match(cand)
+                    if m and m.group(1) in _VERSE_NUMBERED_BOOKS and not m.group(2):
+                        unverifiable_note = (
+                            f"{cand}: global verse number — sutta_info has no "
+                            "per-verse rows for this book; cite by "
+                            "chapter.sutta (e.g. Snp 4.14, Thag 16.1) to verify"
+                        )
     except sqlite3.Error as e:
-        return {"ref": ref, "normalised": candidates, "exists": False,
-                "matches": [], "error": str(e)}
-    return {
+        return {"ref": ref, "normalised": candidates, "verdict": "rejected",
+                "exists": False, "matches": [], "error": str(e)}
+    if matches:
+        verdict = "verified"
+    elif unverifiable_note:
+        verdict = "unverifiable-form"
+    else:
+        verdict = "rejected"
+    result = {
         "ref": ref,
         "normalised": candidates,
+        "verdict": verdict,
         "exists": bool(matches),
         "matches": matches,
     }
+    if unverifiable_note and not matches:
+        result["note"] = unverifiable_note
+    return result
+
+
+_VERDICT_LABELS = {
+    "verified": "[VERIFIED]",
+    "unverifiable-form": "[UNVERIFIABLE — global verse number, no per-verse "
+                         "row in sutta_info; cite by chapter.sutta to verify]",
+    "rejected": "[REJECTED — not in sutta_info]",
+}
 
 
 def annotate_citations(text: str, dpd_db: Path | None = None) -> str:
-    """Stamp every Pāḷi sutta citation in `text` with [VERIFIED] or [REJECTED].
+    """Stamp every Pāḷi sutta citation in `text` with its verification verdict.
 
-    The label is existence-only — `[VERIFIED]` means the citation exists in
-    sutta_info, NOT that the reviewer's content claim about it is correct.
-    Pāḷi-quote verification is separate (deferred Phase 2 work).
+    [VERIFIED] / [REJECTED — not in sutta_info] / [UNVERIFIABLE — …] for
+    global verse numbers (Snp/Thag/Thig) that sutta_info cannot confirm or
+    deny. The label is existence-only — `[VERIFIED]` means the citation
+    exists in sutta_info, NOT that the reviewer's content claim about it is
+    correct. Pāḷi-quote verification is separate (deferred Phase 2 work).
     """
-    cache: dict[str, bool] = {}
+    cache: dict[str, str] = {}
 
     def _stamp(m: _re.Match) -> str:
         raw = m.group(0)
-        if raw in cache:
-            label = "[VERIFIED]" if cache[raw] else "[REJECTED — not in sutta_info]"
-            return f"{raw} {label}"
-        result = verify_citation(raw, dpd_db=dpd_db)
-        exists = result.get("exists", False)
-        cache[raw] = exists
-        if exists:
-            return f"{raw} [VERIFIED]"
-        return f"{raw} [REJECTED — not in sutta_info]"
+        if raw not in cache:
+            result = verify_citation(raw, dpd_db=dpd_db)
+            cache[raw] = result.get("verdict", "rejected")
+        return f"{raw} {_VERDICT_LABELS[cache[raw]]}"
 
     return _CITATION_RE.sub(_stamp, text)
 
@@ -1770,7 +1910,14 @@ def _cli() -> int:
     def _handle_verify_citation(args):
         result = verify_citation(args.ref)
         _dump(result)
-        return _done(exit_code=0 if result.get("exists") else 1, autolog=False)
+        # 0 verified · 2 unverifiable-form (verse number, not fabrication) · 1 rejected
+        if result.get("exists"):
+            code = 0
+        elif result.get("verdict") == "unverifiable-form":
+            code = 2
+        else:
+            code = 1
+        return _done(exit_code=code, autolog=False)
 
     pv = sub.add_parser("search-vault")
     pv.add_argument("query")

@@ -1,124 +1,225 @@
 # Vicaya skill improvements — work in progress
 
-This file replaces the run-by-run reflection backlog. All 30 prior reflections
-are in `runs/processed/`. The full prioritized issue list came from two passes
-over those runs (one by Claude, one by another agent). What follows is what
-remains after the work captured in commits up to and including the citation
-verification feature.
+This file replaces the run-by-run reflection backlog. Processed reflections
+live in `runs/processed/`. Last triage: 2026-06-10, covering 81 runs from
+2026-05-28 to 2026-06-10. Three structural refactors landed during that
+window and resolved whole families of findings: per-run scratch isolation
+(`ee5917a`, 06-07), Calibre removal in favour of the library-folders index
+(`888be14`, 06-09), and the scratch/helper simplification (`9a77539`, 06-10).
 
 ## Done
 
 | Issue | Status | Commit |
 |---|---|---|
 | #1 Scratch file not written before compaction | done | `feat: structural scratch-dossier system with per-phase gates + autolog` |
-| #2 Calibre lock / multi-agent contention | done | `fix: serialize concurrent calibredb calls with cross-process flock` |
+| #2 Calibre lock / multi-agent contention | done | `fix: serialize concurrent calibredb calls with cross-process flock` (then Calibre removed in `888be14`) |
 | #4 Cross-check AI hallucinations | done | `feat: verify Pāḷi citations from cross-check output against dpd.db sutta_info` |
 | Chinese column always emitted in canon hits (user request, mid-session) | done | Same commit as #1 |
-| Thematic runs forced to hand-skip Phase 2.5 / 3b gates (5 unprocessed runs) | done | `scratch-init --class thematic` auto-skips 2.5/3b in `scratch_gate` |
-| `VICAYA_SCRATCH`/`VICAYA_PHASE` re-export tax every Bash call (3 unprocessed runs) | done | `data/scratch/.active` state file; `scratch-gate` auto-advances phase |
-| `calibre-check` "ok" while `search-calibre` dies on GUI lock (3 unprocessed runs) | done | `calibre-check` runs the real search path; `search-calibre` returns a structured `unavailable` sentinel |
+| Thematic runs forced to hand-skip Phase 2.5 / 3b gates | done | `scratch-init --class thematic` auto-skips 2.5/3b in `scratch_gate` |
+| `VICAYA_SCRATCH`/`VICAYA_PHASE` re-export tax every Bash call | done | per-run state keys in `fix: isolate scratch state per run to end .active pointer hijacking` |
+| `calibre-check` "ok" while `search-calibre` dies on GUI lock | done | superseded — Calibre search removed in `888be14` |
+| `.active` pointer hijacked by parallel runs (14 sightings, 06-01→06-07) | done | `fix: isolate scratch state per run to end .active pointer hijacking` (`ee5917a`); no shared pointer remains after `9a77539` |
+| #13 Calibre query-syntax gotchas | dropped | stale — standalone Calibre search removed in `888be14` |
+| #11 PDF generation failures / stale WeasyPrint | done | `feat(phase7): extract note validation and pdf generation` (`d279128`); used cleanly in all later runs |
+| #21 sync_notes.py pull-rebase fails on dirty tree | done | `fix: commit Vicaya notes by pathspec without pulling first` (`ece9f98`); run-report sync hardened in `ac0dd25` |
+| SKILL.md referenced removed `search-calibre`/`calibre-check` subcommands (20260609-112239) | done | fixed with `888be14` rename; verified no stale refs remain |
+| search-vault traceback on "No matches found." + Obsidian launch command (20260610-071644) | done | `fix: search_vault raises on non-JSON CLI output; fix Obsidian app launch command` (`b1f71a7`) |
+| DPD read-only access needs immutable URI fallback (20260606-112752) | done | documented in SKILL.md during that run |
+| Canon Evidence section hard validation error for custom formats | done (partial — see #30) | `fix: make Canon Evidence section a validation warning, not a hard error` (`4233e2b`) |
+| scratch-mutating commands must run sequentially (lost append, 20260602-144756) | done | sequencing rule added to SKILL.md + vicaya-3-complete + shared/core.md during that run |
 
 ## Remaining — prioritized
 
 ### High severity
 
+**#29 Citation verification/resolution false `[REJECTED]` cluster.** The single
+most-reported live issue: `verify-citation`/`sutta_info` is existence-only and
+keyed to discrete CST sutta rows, so structurally valid citations get rejected
+and risk being dropped from notes. Sub-cases, each seen in runs: verse-number
+refs (Dhp 178, Dhp 128, Sn 925, Sn 437, DHP256-272, Thag 591); peyyāla suttas
+absent from sutta_info (AN8.119); vagga-range storage (AN2.31 lives in
+AN2.22-32); hyphenated ranges never match (SN48.9-10, SN46.14-16); sutta_info
+gap above SN56.20 (SN56.27-28); CST-vs-SC numbering divergence (AN1.600,
+AN3.137); resolve-citation wrong/opaque for KHP paranums, Snp global verse
+numbers, Vism ("Extra 0101"), KN exegetical texts (no Paṭis/Netti names), and
+abh* books (no section map). Agents have converged on workarounds (cite CST
+table+para verbatim, split ranges, re-anchor peyyāla) but each run rediscovers
+them. Fix direction: (a) teach verify-citation to recognise verse refs and
+ranges (or tag them `[UNVERIFIABLE-FORM]` instead of `[REJECTED]`); (b) one
+consolidated SKILL.md subsection listing the known false-negative forms and
+the canonical workaround for each. (seen in 12 runs: 20260529-161815,
+20260603-002141, 20260603-042010, 20260603-110800, 20260604-030305,
+20260604-043355, 20260605-022801, +5 more)
+
 **#3 Canon / SQLite search failures.** Multiple sub-issues:
-- NFD/NFC Unicode encoding breaks diacritic-heavy Pāḷi searches in some books
-- Empty `paranum` in continuation rows — formulas like `bhavanirodho nibbānaṃ`
-  in AN10.7 live in a row with empty paranum; requires id-range scan
-- Stem-search false positives: `pāram` returns 20+ noise hits
-  (pariyāpuṇanti, paramparā, rūpārammaṇa)
-- Visuddhimagga (`e0101n_mul`) diacritic issue — `appamān` returns 0
-- AN6.115 misref from misleading snippet
-- Arrow wound near-misattribution to Thanissaro
-- sqlite column names doc inconsistent with CLI output names
+- Empty `paranum` in continuation rows — nearest-preceding-paranum SQL recipe
+  works (20260605-055802) but should be in SKILL.md/helper
+- `english_translation` column sparse (AN, Vism/e01* rows) and occasionally
+  misaligned (MN36 para 381 returned wrong English) — don't trust it blindly;
+  search-canon returns [] for Pāḷi-only rows in e01* (20260604-060530)
+- English multi-word queries return empty (split-column storage)
+- niggahita storage variants (ṃ vs alternate form) break direct LIKE
+  (20260605-023536); pathavī/paṭhavī spelling variants (20260604-142500*)
+- Direct multi-word SQL LIKE on commentary tables fails on embedded TEI
+  markup — prefer search-canon helper there (20260604-143000)
+- Stem-search false positives; sqlite column names doc inconsistency
+(evidence refreshed in 8 runs: 20260601-075124, 20260604-004936,
+20260604-060530, 20260603-232301, 20260605-023536, +3 more)
 
-**#5 Skill too long / prescriptive.** SKILL.md is 2056 lines. Other agents
-complained the skill is so long that they comply with stale instructions while
-missing more important ones. Suggested fix: split into short mandatory
-execution checklist + long reference. Scratch-gate / scratch-verify already
-addresses *some* of this by making phase exits structural.
-
-**#6 Agent failure checklist before final response.** A mandatory self-check:
-did I overweight easy sources, underweight user seeds, stop after enough
-evidence, confuse artifact creation with workflow completion, follow a stale
-secondary instruction mechanically? Could be a `scratch-self-audit`
-subcommand that prints a fixed checklist into scratch and refuses Phase 7
-gate unless ticked.
+**#5 Skill too long / prescriptive.** SKILL.md is still 2069 lines. Fresh
+evidence: a 130-min run hit context exhaustion at Phase 7 partly from "long
+SKILL.md read" (20260603-120425); agents repeatedly follow stale secondary
+instructions while missing newer ones. The staged routers (`5b0cc50`) and
+structural gates address symptoms; the restructure into a short execution
+kernel + on-demand reference sections remains undone. (seen in 2 recent runs
++ the original complaints)
 
 ### Medium severity
 
-**#7 Phase exit criteria missing for non-scratch dimensions.** Partly
-addressed by `scratch-gate <phase>` enforcing canonical evidence per phase,
-but the gate's checklist is currently tick-by-agent. A stronger version would
-*check* — e.g. Phase 2 gate verifies that at least N canon-search auto-log
-entries appear in the phase section before allowing the gate to pass.
+**#30 validate_note.py vs the "What the suttas say about X" series format.**
+`4233e2b` downgraded Canon Evidence to a warning, but `## Findings` (and
+sometimes `## Question`) remain hard errors, and every series run hits the
+same friction then re-derives the same fix (add a Findings overview + Canon
+Evidence index). Proposals from runs: a `--series`/`--template` flag, a
+`note_format:` frontmatter key, or teaching the validator that "Section 1/2 —
+What the EBTs say/don't say" satisfies the evidence requirement. At minimum,
+document the established hybrid (standard scaffolding + two-section body) in
+SKILL.md so agents stop reverse-engineering it from sibling notes. (seen in
+12+ runs: 20260603-000323, 20260603-002141, 20260604-043355, 20260604-060800,
+20260605-084500, +7 more)
 
-**#8 Scope lock for user-named seeds.** Before Phase 5, list every user-named
-seed (URL, vault note, video) and confirm processed-or-deferred. A run missed
-the long "Being Untangled" video transcript because the seed was never
-explicitly gated. Could ride on the existing scratch-gate system as a new
-phase or a Phase 5 pre-gate check.
+**#31 scratch-init does not write the Phase 0 gate.** Agents repeatedly run
+Phase 1+ work, then every later gate refuses until gate 0 is backfilled;
+~15 min lost in one run. Quick win: have scratch-init write the Phase 0 gate
+automatically once the question fields are logged, or make the refusal
+message say exactly "run scratch-gate 0 first". (seen in 7 runs:
+20260603-002141, 20260603-110800, 20260604-002022, 20260604-101536,
+20260606-000000, +2 more)
 
-**#9 YouTube transcript fetch failures / hangs.** No timeout, no fallback to
-cached transcripts. `fetch-transcript` needs explicit timeout + a check for
-cached transcripts under a known path before fetching.
+**#6 Agent failure checklist before final response.** Unchanged proposal
+(`scratch-self-audit` printing a fixed checklist). Supporting evidence this
+cycle: the Devil's-Advocate pass caught suppressed evidence twice
+(20260605-022801, 20260603-232301) and validate-before-apply flipped a wrong
+cross-check tier claim (20260606-000000) — the checklist pattern works when
+it exists; it should be structural.
 
-**#10 Obsidian CLI bypass.** Agents write directly to vault filesystem,
-breaking YAML indexing, links, graph. Should make Obsidian CLI primary and
-filesystem write an explicit fallback that the final report must declare.
-SKILL.md already says this but the rule gets ignored. Structural fix: a
-helper `vault-write` subcommand that wraps Obsidian CLI with filesystem
-fallback and writes the chosen path to scratch for Phase 7 hard-gate to read.
+**#33 Helper to set the scratch `**Vault note:**`/PDF header.** The Phase 7
+hard gate only scans `[REJECTED]` when that header holds the saved note path,
+but there is no subcommand to set it — agents hand-edit the scratch header.
+(seen in 4 runs: 20260602-144756, 20260603-225147, 20260604-123434,
+20260606-103820)
 
-**#11 PDF generation failures / stale WeasyPrint.** The inline Python in
-SKILL.md is fragile and creates temp-file drift. Replace with a named helper
-subcommand (`generate-pdf <vault-path>`) so SKILL.md just calls it.
+**#34 search-vault returns 0 results for valid queries — including plain
+ASCII.** "parents" → [] while rg finds 12 files; same for samvega, urgency,
+abhibhāyatana, kasiṇa. The traceback and launch-command bugs were fixed in
+`b1f71a7`, but the empty-index behaviour needs verification post-fix — if it
+persists it's an index-staleness/coverage bug, not a diacritic bug. (seen in
+4 runs: 20260530-030129, 20260603-044544, 20260606-000000, 20260609-230426)
+(verify against current build)
 
-**#12 NFD/NFC Unicode encoding.** Diacritic-heavy terms return 0 hits when
-the DB is NFD and the query is NFC (or vice versa). Add `unicodedata.normalize`
-in `search_canon` before the LIKE.
+**#14 Web search 403 / parameter failures.** Refreshed: Google Search API
+returned 403 on every query in 3 recent runs (20260605-025640,
+20260609-112239, 20260609-230046). WebFetch on direct URLs/arXiv worked as
+fallback. Either fix credentials or document web search as
+best-effort-with-WebFetch-fallback.
 
-**#13 Calibre query-syntax gotchas.** Apostrophes in author names cause
-syntax errors; `--authors` is parsed as free-text `authors:` search;
-empty-query-with-tags fails. Document or auto-escape.
+**#32 Phase-key naming mismatch.** SKILL.md headings say "Phase 4a/4b/4c"
+but the helper accepts `4`; `scratch-log 4a` errors. Reported in the second
+run ever (20260528-143000) and again 12 days later (20260609-230046) — still
+unfixed. Quick win: accept aliases or print the valid phase list in the
+error. 
 
-**#14 Web search 403 / parameter failures.** Boolean operators break
-search-web. Helper or doc note.
+**#36 Phase 7 / staged-run doc-gap cluster.** Small documented-nowhere rules
+that runs rediscover: multi-day runs — which date the note carries
+(20260602-213035); recovery path when gate 7 was passed but the vault note
+is missing (20260605-112400); gates must be written in ascending order in
+one pass (20260605-082000); Stage 2 must call `scratch-gate` — never write
+bare gate headers manually (20260605-055802); read completion.md at Phase 7
+start (20260603-044210); "backfill after gate" guidance (20260601-075124);
+enrichment-run mode when a prior note exists on the topic (20260604-091500);
+deferred-draft handoff pattern for very large dossiers (20260604-082408).
+One SKILL.md pass could close all of these.
 
-**#16 Tool failure operational rules.** Currently scattered across runs as
-ad-hoc advice ("when X fails, do Y"). Consolidate into a single "When
-something fails" reference, already partially present in SKILL.md — but make
-each rule actionable rather than narrative.
+**#7 Phase exit criteria missing for non-scratch dimensions.** Unchanged —
+gate checklists are still tick-by-agent. Related fresh evidence: scratch-gate
+7 leaves checklist boxes unchecked even after passing (20260603-225147);
+Phase 7 audit checks headings but not footer/bibliography style
+(20260603-225147).
 
-**#17 Transcript-mining helper.** New subcommand:
-`transcript-claims <video_id> --terms ... --window ...` that outputs
-timestamped claim clusters from cached transcripts without dumping raw JSON.
+**#8 Scope lock for user-named seeds.** Unchanged; no new violations this
+cycle (seed-note handoff worked well in 20260606-110638).
 
-**#18 Claim ledger output mode** for doctrinal/polemical audits — already
-suggested in #6 territory. A `claim-ledger` subcommand that emits a
-`| Claim | Source | Timestamp/page | Status | Counter-evidence |` table
-into scratch.
+**#10 Obsidian CLI bypass.** Refreshed: on the macOS machine Obsidian is
+frequently unavailable to the CLI (app not registered, socket discovery
+fails, `ls` subcommand missing), so disk fallback is the de-facto norm and
+runs handle it correctly. `b1f71a7` fixed the launch command. Remaining
+value: the `vault-write` wrapper idea + declaring the fallback in the final
+report. (seen in 8+ runs, all macOS)
 
-**#19 Weak-model design — explicit control points.** Continue the structural
-direction: anywhere the SKILL.md says "remember to X", replace with a
-subcommand that does X or refuses to proceed without X.
+**#16 Tool failure operational rules.** Unchanged — consolidate "when X
+fails, do Y" into one actionable reference. This cycle added candidates:
+lookup-book → resolve-citation + direct sqlite; Google 403 → WebFetch;
+verifier false-negatives → CST table+para citation.
 
-**#20 Inline Python blocked by CLAUDE.md hook.** Agents end up writing
-scripts to `temp/` to do ad-hoc work. Either document the temp/ workflow or
-add subcommands for the most common one-off computations.
+**#19 Weak-model design — explicit control points.** Unchanged direction;
+#29/#31/#33 are concrete instances.
+
+**#35 lookup-book broken on machines where `cst_book_translator.py` is not
+at the expected sibling path.** Fell back to resolve-citation + direct
+SQLite. Add a path fallback or env var. (seen in 2 runs: 20260609-221756,
+20260610-044213)
+
+**#37 `.env` variables are not exported into the agent shell.** `$VICAYA_VAULT_PATH`
+etc. are empty in Bash (helper loads .env on import only), and `~` in .env
+values doesn't expand in command substitution — direct rg/cp/sqlite calls
+fail silently. One-line SKILL.md setup note: resolve paths via
+`grep '^VICAYA_' .env` (expanding `~`) before any direct file operation.
+(seen in 4 runs: 20260531-091930, 20260603-160500, 20260606-115854,
+20260609-230426)
+
+**#27 uv cache needs escalated access (macOS sandbox).** Refreshed, promoted
+from Low: 4 recent runs hit it; working convention is repo-local
+`UV_CACHE_DIR` (`temp/uv-cache` or `.uv-cache`). Document one standard
+location in SKILL.md. (seen in: 20260601-075124, 20260606-112752,
+20260609-221756, 20260610-071644)
 
 ### Low severity
 
-- **#21 sync_notes.py pull-rebase** fails on dirty working tree (the normal
-  case); use stash-pull-pop-add-commit-push
-- **#22 Obsidian vault path** assumptions inconsistent across machines
-- **#23 Milinda paranum** references non-standard (PTS convention needed)
-- **#24 CST Extra books** (0804/0810/1102) source identity unresolved
-- **#25 wisdomlib.org** returning 404 — fallback path
-- **#27 uv cache** needs escalated access (one-time setup; macOS)
-- **#28 Movement-internal term mapping** (vossagga, paṭinissagga, sampajāna)
-  when auditing modern method acronyms
+- **#9 YouTube transcript fetch failures / hangs** — (stale — verify): zero
+  sightings in 81 runs since 05-28.
+- **#12 NFD/NFC Unicode normalization in search_canon** — (stale — verify):
+  no direct re-sighting; related variant issues folded into #3.
+- **#17 Transcript-mining helper** — demoted from Medium: no demand in 81
+  runs.
+- **#18 Claim ledger output mode** — unchanged, no new demand.
+- **#20 Inline Python blocked by CLAUDE.md hook** — demoted: only early-cycle
+  sightings; the temp/-script workflow is now routine.
+- **#22 Obsidian vault path assumptions across machines** — ongoing
+  (iCloud path vs ~/MyFiles), handled per-run.
+- **#23 Milinda paranum / #24 CST Extra books** — unchanged.
+- **#25 wisdomlib.org failures** — refreshed: 403s (20260531-091930) and
+  302-redirects-to-homepage extracted as content (20260604-032539); Phase 4c
+  needs redirect detection + search fallback.
+- **#28 Movement-internal term mapping** — unchanged.
+- **#38 WisdomLib "mandatory on every run" wrong for non-Indological
+  topics** — add skip clause (20260609-230046); same run suggests "arXiv IDs
+  cannot be guessed — use the search endpoint".
+- **#39 search-canon JSON-parsing notes** — `jq` may be absent (2 runs);
+  parse helper JSON with python3; never read verify-citation via `tail -1`
+  (20260604-004624).
+- **#40 Non-doctrinal thematic runs: tier headings map awkwardly** — allow
+  relabelling note in Phase 7 template (20260610-025816); nrf-table texts
+  (Milindapañha) need tier-classification guidance (20260605-025640).
+- **#41 scratch-gate missing-gate name hard to spot in JSON output**
+  (20260529-silabbataparamasa); validate_note.py silent on success
+  (2 runs) — print an explicit PASS line.
+- **#42 EBC overview code mismatch for Suttanipāta** (Sn 2.2 → SN2.2 wrong
+  sutta, 20260604-034355); dhammatalks.org AN URL pattern 404s
+  (20260605-082000).
+- **#43 Same-run parallel auto-logging corrupted scratch (UTF-8)** — one
+  sighting post-isolation (20260606-110638); the cross-run case is fixed,
+  same-run parallel helper calls against one scratch file should be a
+  documented hard rule.
 
 ### Content-specific guidance (lower urgency)
 
@@ -127,34 +228,66 @@ add subcommands for the most common one-off computations.
   atthi/natthi/existence-language question; add to Devil's Advocate Q3
 - **Ñāṇavīra Thera + pabhassara citta** as default search targets for
   Nibbāna-ontology questions
-- **Niddesa** as systematiser for therapeutic bhāvanā pairings — pairings
-  distributed across suttas, unified only in Niddesa/Abhidhamma
-- **Two-note (English + Russian) frontmatter rule** — both share structure;
-  Russian gets `topic:` in Russian, YAML keys stay English, Pāḷi refs
-  verbatim
-- **Cross-check correction logging** — when cross-check fixes a Pāḷi
-  translation (`saha` = "simultaneous with" not "as soon as"), log the
-  corrected rendering with the term in scratch verbatim
+- **Niddesa** as systematiser for therapeutic bhāvanā pairings
+- **Two-note (English + Russian) frontmatter rule** — unchanged
+- **Cross-check correction logging** — unchanged
+- **Vinaya/philological questions**: EBC Patimokkha + bmc1 folders are the
+  primary Phase 1 source, not general vault search (20260531-113545); for
+  uncertain Vinaya compounds, DPD lookup before perspective labels
+  (20260610-071644)
+- **Jhāna questions**: separate sutta vs Abhidhamma reading explicitly;
+  never read kaṇṭaka (thorn) as cessation (20260601-135900)
+- **Ritual/practice questions**: name the Gombrich/Schopen apotropaic
+  counter-position and the Mahāyāna dhāraṇī parallel as standing angles
+  (20260605-025640, 20260605-030917)
+- **Sense-faculty topics**: also search the diṭṭhasutamutaviññāta formula
+  (20260604-162500)
+- **Compound technical terms**: search the inner stem (`nīvaraṇ`, not
+  `pañcanīvaraṇa`) (20260605-023426)
+- **Saṃyutta-anchored topics**: grep the EBC catalogue TSV first; enumerate
+  the whole saṃyutta/vagga before citing (20260603-000323, 20260603-004752)
+
+## Working well — preserve
+
+- **Per-run scratch isolation + RESUME protocol**: clean cold resumes across
+  compaction and multi-day sessions (many runs); staged context-break system
+  completed a ~16.5k-line dossier across 5+ passes with no loss
+  (20260604-082408); phase7-draft two-pass vault write keeps partial notes
+  out of the vault.
+- **Cross-check earns its keep**: caught genuine omissions (hirī/kukkucca,
+  SN35.95), misattributions (SN19.1), and tier errors — but its corrections
+  must themselves be verified against the mūla (20260605-055802,
+  20260606-000000); the validate-before-apply discipline is load-bearing.
+- **Devil's-Advocate pass**: caught suppressed evidence pre-draft twice.
+- **Search craft**: stem-truncation; id-range/whole-saṃyutta structural
+  dumps; per-stratum term-counts as evidence for "later accretion" claims
+  (20260603-232301); zero-hit-as-finding move (20260604-143000); searching
+  early vocabulary instead of later category names (20260605-093500);
+  direct-SQL inspection of CST `<note>` apparatus (20260605-023536).
+- **DPD-first + GRETIL whole-corpus** for lexical/etymological questions
+  (20260606-000000, 20260610-044213).
+- **Library-folders FTS5 index**: excellent results from day one — 32k+
+  docs, fast, diacritic-preserving (20260609-012118, 20260609-112239).
+- **Vault-first Phase 1** + reading sibling series notes before drafting.
+- **Restricted-source runs**: skip-phase logging + self-review recording
+  handled user source constraints cleanly (20260608-141608, 20260609-221756).
 
 ## Notes for the next session
 
-1. The structural direction is working — `scratch-gate`, `scratch-verify`,
-   `[REJECTED]` Phase 7 hard gate, and the cross-check auto-annotation all
-   replace prose-instructions-that-get-ignored with code paths that refuse
-   to proceed. Continue the same pattern.
+1. The structural direction keeps winning: the two biggest recurring failure
+   families of this cycle (.active hijacking, Calibre fragility) were closed
+   by removing shared state and removing the fragile component — not by more
+   prose rules. #29 (verifier false negatives) is the next candidate for the
+   same treatment.
 
-2. The Phase 2 follow-up to citation verification is **Pāḷi-quote
-   verification**: catch `asantasanto` mistaken for `asanta`, `saha` glossed
-   wrongly, etc. This needs `search-canon` against the cited sutta and a
-   fuzzy match on the quoted Pāḷi. Worth doing once content-level errors
-   start mattering more than fabrication.
+2. Pāḷi-quote verification (Phase 2 follow-up to citation verification)
+   remains on the table; #29's fix is a prerequisite, since the verifier
+   currently can't even confirm verse-level citations exist.
 
-3. Several remaining issues (#5, #6, #19) point at the same root: the skill
-   is structurally too long and relies on prose rules. The right move there
-   is probably one big restructure (a short "execution kernel" section at
-   the top, the rest moved into reference subsections that are loaded only
-   when needed) rather than incremental edits.
+3. #5/#6/#19 still point at one root: 2069-line SKILL.md + prose rules. The
+   one-big-restructure (execution kernel + on-demand reference) is still the
+   right shape; the doc-gap cluster #36 could be folded into that pass.
 
-4. Calibre Option B (HTTP content server) is still on the table if Option A
-   (flock) starts feeling too serial. Punt until contention is the actual
-   bottleneck.
+4. Several "(stale — verify)" items (#9, #12, #34-post-fix, UV_CACHE_DIR
+   scratch-state loss) need one cheap verification run each before being
+   either closed or re-prioritized.

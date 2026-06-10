@@ -51,12 +51,19 @@ Prune dead links periodically.
 - Yuttadhammo Bhikkhu
 - Doug's Dharma | UCPIyEJzvW7SsbiIrooixjNA
 - Amaravati Buddhist Monastery | UCsgmmAelfZ2kfXZ08xlHpDw
-- Doug's Dharma | UCPIyEJzvW7SsbiIrooixjNA
-- Amaravati Buddhist Monastery | UCsgmmAelfZ2kfXZ08xlHpDw
+- Guru Viking
+- Yongey Mingyur Rinpoche
+- Ajahn Anan Dhamma
 
 ## probationary
 - Clear Mountain Monastery Project
 - Candana Bhikkhu
+- Jansen Stovicek
+- Lotus Lift
+- TWIM - Dhamma Sukha Meditation Center
+- Sutta Meditation Series
+- Learning Buddhism in English with Dhammadharani
+- Plum Village App
 - Dharma robe
 - Wisdom Park
 - Theravada Buddhism Learning
