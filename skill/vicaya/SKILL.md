@@ -16,7 +16,7 @@ canonical one-goal `/vicaya` workflow and the only behavioral source of truth.
 
 Four structural commands carry the run. Everything else is reference.
 
-1. **Phase 0:** `scratch-init <slug>` (add `--class thematic` for non-sutta-anchored questions). This records the active scratch for *this run*. Auto-logging is isolated automatically — the run's state is keyed to your agent process, so parallel runs never collide. There is nothing to pin or export.
+1. **Phase 0:** `scratch-init <slug> --question-original "…" --question-polished "…" --scope-assumptions "…" --ambiguity <clear|minor_uncertainty|unclear>` (add `--class thematic` for non-sutta-anchored questions). This records the active scratch for *this run*, fills the Phase 0 header fields, and — because all the Phase 0 evidence is then present — writes the Phase 0 exit gate automatically, so the run starts at Phase 1. Do not run the bare form unless the question is still unresolved; a bare init leaves gate 0 unwritten and every later gate will refuse until you run `scratch-gate 0`. Auto-logging is isolated automatically — the run's state is keyed to your agent process, so parallel runs never collide. There is nothing to pin or export.
 2. **Each phase boundary:** end the prior phase with `scratch-gate <prev-phase>`. The gate auto-advances the active phase, so the next phase's helper calls log correctly without any manual step. It refuses if earlier gates are missing and prints the exact evidence still needed. Thematic runs auto-skip the Phase 2.5 (SC-parallels) and 3b (Sanskrit) gates.
 3. **Start of Phase 5:** `scratch-verify`. Exit 0 = proceed to synthesis. Exit 1 = backfill the named phase first; do not draft.
 4. **End of Phase 7:** `scratch-gate 7`, then publish the saved note with `uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"`; after writing the reflection, publish the run report with `uv run scripts/sync_run_report.py`. The run is not complete until the gate passes and both sync commands have been attempted.
@@ -342,9 +342,16 @@ the dossier without re-running any expensive search.
 Five subcommands cover every interaction:
 
 ```bash
-# 1. At Phase 0 start — create the file (records this run's active scratch + phase)
-uv run tools/research_sources.py scratch-init <slug>
+# 1. At Phase 0 — create the file with the Phase 0 fields in one shot
+#    (records this run's active scratch + phase AND writes the Phase 0 gate)
+uv run tools/research_sources.py scratch-init <slug> \
+  --question-original "<user's exact wording>" \
+  --question-polished "<polished research question>" \
+  --scope-assumptions "<textual/interpretive scope, depth, seeds>" \
+  --ambiguity clear   # or minor_uncertainty | unclear
 # add --class thematic for non-sutta-anchored questions (auto-skips 2.5 / 3b)
+# Bare `scratch-init <slug>` still works but leaves gate 0 unwritten — you must
+# then run `scratch-gate 0` yourself before any later gate will pass.
 
 # 2. While searching — auto-log fires for every helper call, no exports needed
 uv run tools/research_sources.py search-canon "anatta" --books "s*_mul"
@@ -794,13 +801,20 @@ with both sides cited.
 ### Phase 0 — Request understanding and scope check
 
 Before research, convert the user's request into a clean research question.
-Always create these working fields in the scratchpad:
+Always record these working fields in the scratchpad — pass them to
+`scratch-init` (see Critical execution rules), which fills the header and
+writes the Phase 0 exit gate in one shot:
 
-- `question_original`: the user's exact wording.
-- `question_polished`: a grammatical, neutral, complete research question.
-- `scope_assumptions`: inferred textual scope, interpretive scope, depth,
-  practical angle, and seed sources.
-- `ambiguity_status`: `clear`, `minor_uncertainty`, or `unclear`.
+- `question_original` (`--question-original`): the user's exact wording.
+- `question_polished` (`--question-polished`): a grammatical, neutral,
+  complete research question.
+- `scope_assumptions` (`--scope-assumptions`): inferred textual scope,
+  interpretive scope, depth, practical angle, and seed sources.
+- `ambiguity_status` (`--ambiguity`): `clear`, `minor_uncertainty`, or
+  `unclear`.
+
+If the question needs user confirmation first (ambiguity), resolve that
+*before* `scratch-init`, then init with the confirmed fields.
 
 The `question_polished` is the question used in the final vault note. The
 original request is preserved only in scratch/reflection metadata, not as the

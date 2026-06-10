@@ -1862,9 +1862,22 @@ def _cli() -> int:
         return _done([args.query, "--lang", args.lang, "--limit", str(args.limit)], result)
 
     def _handle_scratch_init(args):
-        path = scratch_init(args.slug, run_class=args.run_class)
+        path = scratch_init(
+            args.slug,
+            run_class=args.run_class,
+            question_original=args.question_original,
+            question_polished=args.question_polished,
+            scope_assumptions=args.scope_assumptions,
+            ambiguity=args.ambiguity,
+        )
+        gate0_written = "### PHASE 0 EXIT GATE" in path.read_text(encoding="utf-8")
         _dump({
             "ok": True, "path": str(path), "slug": args.slug, "class": args.run_class,
+            "phase0_gate": (
+                "written — proceed to Phase 1" if gate0_written
+                else "NOT written — pass --question-polished, --scope-assumptions "
+                     "and --ambiguity, or run scratch-gate 0 after recording them"
+            ),
             "isolation": (
                 "auto-logging is isolated to this run (keyed to the agent "
                 "process); parallel runs never collide — nothing to pin or export"
@@ -2046,6 +2059,17 @@ def _cli() -> int:
     psi.add_argument("--class", dest="run_class", default="sutta-anchored",
                      choices=["sutta-anchored", "thematic"],
                      help="thematic = non-sutta-anchored; auto-skips Phase 2.5/3b gates.")
+    psi.add_argument("--question-original", default=None,
+                     help="The user's exact request wording.")
+    psi.add_argument("--question-polished", default=None,
+                     help="The polished research question (Phase 0 evidence).")
+    psi.add_argument("--scope-assumptions", default=None,
+                     help="Inferred textual/interpretive scope, depth, seeds (Phase 0 evidence).")
+    psi.add_argument("--ambiguity", default=None,
+                     choices=["clear", "minor_uncertainty", "unclear"],
+                     help="Ambiguity status (Phase 0 evidence). Providing this plus "
+                          "--question-polished and --scope-assumptions writes the "
+                          "Phase 0 gate automatically.")
     psi.set_defaults(func=_handle_scratch_init)
 
     psl = sub.add_parser("scratch-log",

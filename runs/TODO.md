@@ -28,6 +28,7 @@ window and resolved whole families of findings: per-run scratch isolation
 | Canon Evidence section hard validation error for custom formats | done (partial — see #30) | `fix: make Canon Evidence section a validation warning, not a hard error` (`4233e2b`) |
 | scratch-mutating commands must run sequentially (lost append, 20260602-144756) | done | sequencing rule added to SKILL.md + vicaya-3-complete + shared/core.md during that run |
 | #29 Citation verification false `[REJECTED]` cluster (12 runs) | done | `fix: verify citations by range containment and triage 81 run retrospectives into TODO.md` — range containment for range-stored books, endpoint resolution for hyphenated ranges, Thag/Thig/Kp aliases, new `unverifiable-form` verdict for global verse numbers; 7 regression tests |
+| #31 scratch-init does not write the Phase 0 gate (7 runs) | done | `feat: one-shot scratch-init records Phase 0 fields and writes gate 0` — scratch-init gains `--question-original/--question-polished/--scope-assumptions/--ambiguity`; with the three evidence fields present it fills the header and writes the Phase 0 gate (run starts at Phase 1); gate refusals now say "run scratch-gate N first"; SKILL.md + vicaya-0-scope updated; 7 regression tests |
 
 ## Remaining — prioritized
 
@@ -79,14 +80,6 @@ document the established hybrid (standard scaffolding + two-section body) in
 SKILL.md so agents stop reverse-engineering it from sibling notes. (seen in
 12+ runs: 20260603-000323, 20260603-002141, 20260604-043355, 20260604-060800,
 20260605-084500, +7 more)
-
-**#31 scratch-init does not write the Phase 0 gate.** Agents repeatedly run
-Phase 1+ work, then every later gate refuses until gate 0 is backfilled;
-~15 min lost in one run. Quick win: have scratch-init write the Phase 0 gate
-automatically once the question fields are logged, or make the refusal
-message say exactly "run scratch-gate 0 first". (seen in 7 runs:
-20260603-002141, 20260603-110800, 20260604-002022, 20260604-101536,
-20260606-000000, +2 more)
 
 **#6 Agent failure checklist before final response.** Unchanged proposal
 (`scratch-self-audit` printing a fixed checklist). Supporting evidence this
@@ -154,7 +147,7 @@ lookup-book → resolve-citation + direct sqlite; Google 403 → WebFetch;
 verifier false-negatives → CST table+para citation.
 
 **#19 Weak-model design — explicit control points.** Unchanged direction;
-#29/#31/#33 are concrete instances.
+#33 remains a concrete instance (#29 and #31 were closed structurally).
 
 **#35 lookup-book broken on machines where `cst_book_translator.py` is not
 at the expected sibling path.** Fell back to resolve-citation + direct

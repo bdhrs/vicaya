@@ -57,7 +57,7 @@ Objective context risk means the scoped question is likely to create multiple la
 
 If objective context risk is not present, do not add split friction and do not record `stage-1-context-plan`, `stage-2-context-plan`, or `stage-3-context-plan` notes. Hand off normally with the same scratch slug.
 
-If objective context risk is present, use the routed canonical scratch logging mechanism to record concise Phase 0 `stage-1-context-plan`, `stage-2-context-plan`, and `stage-3-context-plan` notes before the Phase 0 exit gate, then include the same hard-stop plan in the final handoff. These logged context plans are binding instructions for later staged skills and override any model-tier recommendation unless the user explicitly opts out before Stage 1 begins. Tell the user to run later staged skills in fresh sessions with the same scratch slug and refresh context between planned passes.
+If objective context risk is present, use the routed canonical scratch logging mechanism to record concise Phase 0 `stage-1-context-plan`, `stage-2-context-plan`, and `stage-3-context-plan` notes under Phase 0 before any Phase 1 work (the Phase 0 exit gate may already exist when `scratch-init` was given the full question fields; logging the plans after that gate, still under Phase 0, is correct), then include the same hard-stop plan in the final handoff. These logged context plans are binding instructions for later staged skills and override any model-tier recommendation unless the user explicitly opts out before Stage 1 begins. Tell the user to run later staged skills in fresh sessions with the same scratch slug and refresh context between planned passes.
 
 For hard-stop safety mode Stage 1 gathering, record this fixed four-invocation split shape:
 

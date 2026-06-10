@@ -554,6 +554,115 @@ class TestScratchDossier:
         for _, title, _ in _SCRATCH_PHASES:
             assert title in text
 
+    def test_init_with_fields_fills_header_and_writes_phase0_gate(
+        self, tmp_path, monkeypatch
+    ):
+        # Regression for issue #31: agents ran scratch-init, recorded the
+        # question fields, then forgot scratch-gate 0 — every later gate
+        # refused until gate 0 was backfilled. One-shot init must end that.
+        from tools.research_sources import _read_state, scratch_gate, scratch_init
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        path = scratch_init(
+            "test-oneshot",
+            question_original="what about anatta?",
+            question_polished="What do the suttas say about anattā?",
+            scope_assumptions="mūla only; neutral map; full note",
+            ambiguity="clear",
+        )
+        text = path.read_text(encoding="utf-8")
+        assert "**Question original:** what about anatta?" in text
+        assert "**Question polished:** What do the suttas say about anattā?" in text
+        assert "**Scope assumptions:** mūla only; neutral map; full note" in text
+        assert "**Ambiguity status:** clear" in text
+        assert "<fill in>" not in text
+        assert "### PHASE 0 EXIT GATE" in text
+        assert _read_state()["phase"] == "1"
+        # Phase 1 gate must now succeed without any backfilling.
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        assert scratch_gate("1")["ok"]
+
+    def test_init_without_fields_keeps_placeholders_and_no_gate(
+        self, tmp_path, monkeypatch
+    ):
+        from tools.research_sources import _read_state, scratch_init
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        path = scratch_init("test-bare")
+        text = path.read_text(encoding="utf-8")
+        assert "**Question polished:** <fill in>" in text
+        assert "### PHASE 0 EXIT GATE" not in text
+        assert _read_state()["phase"] == "0"
+
+    def test_init_with_partial_fields_fills_header_but_does_not_gate(
+        self, tmp_path, monkeypatch
+    ):
+        from tools.research_sources import _read_state, scratch_init
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        path = scratch_init(
+            "test-partial",
+            question_polished="What do the suttas say about anattā?",
+        )
+        text = path.read_text(encoding="utf-8")
+        assert "**Question polished:** What do the suttas say about anattā?" in text
+        assert "**Scope assumptions:** <fill in>" in text
+        assert "### PHASE 0 EXIT GATE" not in text
+        assert _read_state()["phase"] == "0"
+
+    def test_init_rejects_invalid_ambiguity(self, tmp_path, monkeypatch):
+        import pytest
+
+        from tools.research_sources import scratch_init
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        with pytest.raises(ValueError, match="ambiguity"):
+            scratch_init("test-bad-ambiguity", ambiguity="maybe")
+
+    def test_init_with_fields_on_thematic_run_gates_phase0(self, tmp_path, monkeypatch):
+        from tools.research_sources import _read_state, scratch_gate, scratch_init
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        path = scratch_init(
+            "test-oneshot-thematic",
+            run_class="thematic",
+            question_polished="How did lay devotion develop historically?",
+            scope_assumptions="thematic; secondary literature emphasis",
+            ambiguity="minor_uncertainty",
+        )
+        text = path.read_text(encoding="utf-8")
+        assert "**Run class:** thematic" in text
+        assert "### PHASE 0 EXIT GATE" in text
+        assert _read_state()["phase"] == "1"
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        assert scratch_gate("1")["ok"]
+
+    def test_init_on_existing_file_ignores_fields(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_init
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        path = scratch_init("test-existing")
+        again = scratch_init(
+            "test-existing",
+            question_polished="Should be ignored",
+            scope_assumptions="ignored",
+            ambiguity="clear",
+        )
+        assert again == path
+        text = path.read_text(encoding="utf-8")
+        assert "Should be ignored" not in text
+        assert "### PHASE 0 EXIT GATE" not in text
+
+    def test_gate_refusal_message_says_what_to_run(self, tmp_path, monkeypatch):
+        # Issue #31, second half: the refusal must name the exact command,
+        # not just describe the missing gate.
+        from tools.research_sources import scratch_gate, scratch_init
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("test-refusal-message")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        result = scratch_gate("2")
+        assert result["ok"] is False
+        assert "run scratch-gate 0 first" in result["message"]
+
     def test_log_appends_entry_under_named_phase(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_init, scratch_log
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)

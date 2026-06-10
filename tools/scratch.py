@@ -198,8 +198,27 @@ def _run_class(text: str) -> str:
     return m.group(1) if m else "sutta-anchored"
 
 
-def scratch_init(slug: str, run_class: str = "sutta-anchored") -> Path:
-    """Create the scratch file with header + section skeleton. Idempotent — refuses to overwrite."""
+_AMBIGUITY_VALUES = ("clear", "minor_uncertainty", "unclear")
+
+
+def scratch_init(
+    slug: str,
+    run_class: str = "sutta-anchored",
+    *,
+    question_original: str | None = None,
+    question_polished: str | None = None,
+    scope_assumptions: str | None = None,
+    ambiguity: str | None = None,
+) -> Path:
+    """Create the scratch file with header + section skeleton. Idempotent — refuses to overwrite.
+
+    When question_polished, scope_assumptions, and ambiguity are all provided,
+    the Phase 0 evidence is recorded in the header, so the Phase 0 exit gate is
+    written immediately — otherwise agents forget `scratch-gate 0` and every
+    later gate refuses until it is backfilled.
+    """
+    if ambiguity is not None and ambiguity not in _AMBIGUITY_VALUES:
+        raise ValueError(f"ambiguity must be one of {_AMBIGUITY_VALUES}, got {ambiguity!r}")
     _SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
     path = _SCRATCH_DIR / f"{slug}.md"
     if path.exists():
@@ -207,10 +226,10 @@ def scratch_init(slug: str, run_class: str = "sutta-anchored") -> Path:
         return path
     lines = [
         f"# Vicaya dossier — {slug}",
-        "**Question original:** <fill in>",
-        "**Question polished:** <fill in>",
-        "**Scope assumptions:** <fill in>",
-        "**Ambiguity status:** <clear|minor_uncertainty|unclear>",
+        f"**Question original:** {question_original or '<fill in>'}",
+        f"**Question polished:** {question_polished or '<fill in>'}",
+        f"**Scope assumptions:** {scope_assumptions or '<fill in>'}",
+        f"**Ambiguity status:** {ambiguity or '<clear|minor_uncertainty|unclear>'}",
         f"**Slug:** {slug}",
         f"**Run class:** {run_class}",
         "**Vault note:** <set at Phase 7>",
@@ -223,6 +242,8 @@ def scratch_init(slug: str, run_class: str = "sutta-anchored") -> Path:
         lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
     _write_state(path, "0")
+    if question_polished and scope_assumptions and ambiguity:
+        scratch_gate("0", scratch=path)
     return path
 
 
@@ -337,7 +358,8 @@ def scratch_gate(phase: str, scratch: Path | None = None) -> dict:
                 "expected_evidence": prev_expected,
                 "message": (
                     f"cannot write Phase {phase} gate: Phase {prev_id} "
-                    f"({prev_title}) gate is missing"
+                    f"({prev_title}) gate is missing — "
+                    f"run scratch-gate {prev_id} first"
                 ),
             }
     # Already gated?
