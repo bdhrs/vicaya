@@ -27,29 +27,11 @@ window and resolved whole families of findings: per-run scratch isolation
 | DPD read-only access needs immutable URI fallback (20260606-112752) | done | documented in SKILL.md during that run |
 | Canon Evidence section hard validation error for custom formats | done (partial — see #30) | `fix: make Canon Evidence section a validation warning, not a hard error` (`4233e2b`) |
 | scratch-mutating commands must run sequentially (lost append, 20260602-144756) | done | sequencing rule added to SKILL.md + vicaya-3-complete + shared/core.md during that run |
+| #29 Citation verification false `[REJECTED]` cluster (12 runs) | done | `fix: verify citations by range containment and triage 81 run retrospectives into TODO.md` — range containment for range-stored books, endpoint resolution for hyphenated ranges, Thag/Thig/Kp aliases, new `unverifiable-form` verdict for global verse numbers; 7 regression tests |
 
 ## Remaining — prioritized
 
 ### High severity
-
-**#29 Citation verification/resolution false `[REJECTED]` cluster.** The single
-most-reported live issue: `verify-citation`/`sutta_info` is existence-only and
-keyed to discrete CST sutta rows, so structurally valid citations get rejected
-and risk being dropped from notes. Sub-cases, each seen in runs: verse-number
-refs (Dhp 178, Dhp 128, Sn 925, Sn 437, DHP256-272, Thag 591); peyyāla suttas
-absent from sutta_info (AN8.119); vagga-range storage (AN2.31 lives in
-AN2.22-32); hyphenated ranges never match (SN48.9-10, SN46.14-16); sutta_info
-gap above SN56.20 (SN56.27-28); CST-vs-SC numbering divergence (AN1.600,
-AN3.137); resolve-citation wrong/opaque for KHP paranums, Snp global verse
-numbers, Vism ("Extra 0101"), KN exegetical texts (no Paṭis/Netti names), and
-abh* books (no section map). Agents have converged on workarounds (cite CST
-table+para verbatim, split ranges, re-anchor peyyāla) but each run rediscovers
-them. Fix direction: (a) teach verify-citation to recognise verse refs and
-ranges (or tag them `[UNVERIFIABLE-FORM]` instead of `[REJECTED]`); (b) one
-consolidated SKILL.md subsection listing the known false-negative forms and
-the canonical workaround for each. (seen in 12 runs: 20260529-161815,
-20260603-002141, 20260603-042010, 20260603-110800, 20260604-030305,
-20260604-043355, 20260605-022801, +5 more)
 
 **#3 Canon / SQLite search failures.** Multiple sub-issues:
 - Empty `paranum` in continuation rows — nearest-preceding-paranum SQL recipe
@@ -75,6 +57,16 @@ kernel + on-demand reference sections remains undone. (seen in 2 recent runs
 + the original complaints)
 
 ### Medium severity
+
+**#44 resolve-citation label gaps (residue of #29).** The verification side
+of #29 is fixed; the *resolver* still produces wrong or opaque human labels:
+KHP paranum→name mapping unreliable (Kp 10 → "KHP9 Mettasuttaṃ",
+20260605-023536); Snp global-verse paranums mis-resolve (Snp 452 → "SNP28",
+20260528-124405); Vism labelled "Extra 0101 §176" (20260603-044210); KN
+exegetical texts get no text name — supply Paṭisambhidāmagga/Nettippakaraṇa
+manually (20260604-143000); abh* books have no section map (Kathāvatthu →
+generic "Abhidhamma 03 §1", 20260605-030744). Fix direction: a small
+override table in the resolver for KHP/Vism/KN17/KN19/abh* naming.
 
 **#30 validate_note.py vs the "What the suttas say about X" series format.**
 `4233e2b` downgraded Canon Evidence to a warning, but `## Findings` (and
@@ -274,15 +266,15 @@ location in SKILL.md. (seen in: 20260601-075124, 20260606-112752,
 
 ## Notes for the next session
 
-1. The structural direction keeps winning: the two biggest recurring failure
-   families of this cycle (.active hijacking, Calibre fragility) were closed
-   by removing shared state and removing the fragile component — not by more
-   prose rules. #29 (verifier false negatives) is the next candidate for the
-   same treatment.
+1. The structural direction keeps winning: the three biggest recurring
+   failure families of this cycle (.active hijacking, Calibre fragility,
+   verifier false negatives #29) were all closed structurally — removing
+   shared state, removing the fragile component, teaching the verifier the
+   DB's actual storage forms — not by more prose rules.
 
 2. Pāḷi-quote verification (Phase 2 follow-up to citation verification)
-   remains on the table; #29's fix is a prerequisite, since the verifier
-   currently can't even confirm verse-level citations exist.
+   remains on the table; with #29 fixed the verifier can now confirm
+   verse-level citations, so this is unblocked.
 
 3. #5/#6/#19 still point at one root: 2069-line SKILL.md + prose rules. The
    one-big-restructure (execution kernel + on-demand reference) is still the

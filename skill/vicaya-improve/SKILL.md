@@ -119,9 +119,24 @@ regressions, channel-tuning actions applied.
 
 Then ask the user to pick one (AskUserQuestion, top 4 as options with the
 "Why now" as description; the 5th and the rest are reachable via Other).
-Work on the chosen issue in the normal way. When it's done and the user
-confirms, update its row in TODO.md: move it to the Done table with the
-commit subject.
+Work on the chosen issue in the normal way.
+
+## Phase 7 — Close the loop (automatic, do not wait to be asked)
+
+Finishing the fix INCLUDES the TODO bookkeeping. As soon as the fix is
+implemented and its tests pass — before reporting completion to the user —
+update `runs/TODO.md` in the same breath:
+
+1. Move the issue's row from Remaining to the Done table, with the commit
+   subject (use the proposed subject if not yet committed).
+2. If only part of the issue was fixed, move the fixed part to Done and
+   leave the residue as a new numbered issue with the unfixed sub-points
+   and their original run-ID evidence.
+3. Re-read "Notes for the next session" and fix any line that still
+   describes the issue as pending.
+
+The completion report to the user must mention that TODO.md was updated.
+Never end the session with a fixed issue still listed under Remaining.
 
 ## Style rules for TODO.md
 
