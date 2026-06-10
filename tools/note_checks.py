@@ -8,9 +8,16 @@ scalars, annotated URLs, YAML-mapping-style list items, missing fields).
 from __future__ import annotations
 
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from tools._common import _parse_dotenv  # noqa: E402
 
 
 TOOL_URL = "https://github.com/bdhrs/vicaya"
@@ -43,19 +50,7 @@ class FrontmatterFields(TypedDict):
 
 
 def load_dotenv(path: Path) -> dict[str, str]:
-    values: dict[str, str] = {}
-    if not path.exists():
-        return values
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-            value = value[1:-1]
-        values[key.strip()] = value
-    return values
+    return _parse_dotenv(path)
 
 
 def resolve_note_path(note_arg: str, vault_path: Path) -> Path:

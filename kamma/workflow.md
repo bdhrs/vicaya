@@ -40,6 +40,9 @@ Work through tasks in this order:
    - After review is clear, run `/kamma:4-finalize`.
    - Mark the thread complete, sync project docs, and archive the completed thread there.
    - If the thread references a GitHub issue, use the preserved issue number to post a summary comment and close the issue during finalize.
+   - Verify the archive copy before removing the active thread; if direct
+     recursive removal is blocked, use narrower file deletion and
+     empty-directory removal.
 
 7. **Document Deviations:** If implementation differs from the notes in `tech.md`, update `tech.md` inline with a dated note explaining the change — then continue without stopping.
 
