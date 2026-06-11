@@ -1871,6 +1871,8 @@ from tools.scratch import (  # noqa: E402, F401
     _STATE_PHASE_UNSET,
     _SCRATCH_PHASES,
     _PHASE_INDEX,
+    _PHASE_ALIASES,
+    _normalize_phase,
     _next_worked_phase,
     _scratch_path,
     _run_class,
@@ -2123,19 +2125,26 @@ def _cli() -> int:
         return _done()
 
     def _handle_scratch_log(args):
-        path = scratch_log(
-            args.phase,
-            args.tool,
-            args=args.rest or None,
-            summary=args.summary,
-            results_file=args.results,
-            hits=args.hits,
-        )
+        try:
+            path = scratch_log(
+                args.phase,
+                args.tool,
+                args=args.rest or None,
+                summary=args.summary,
+                results_file=args.results,
+                hits=args.hits,
+            )
+        except (FileNotFoundError, ValueError) as e:
+            _dump({"ok": False, "error": str(e)})
+            return _done(exit_code=1, autolog=False)
         _dump({"ok": True, "path": str(path), "phase": args.phase, "tool": args.tool})
         return _done()
 
     def _handle_scratch_gate(args):
-        result = scratch_gate(args.phase)
+        try:
+            result = scratch_gate(args.phase)
+        except (FileNotFoundError, ValueError) as e:
+            result = {"ok": False, "error": str(e)}
         _dump(result)
         return _done(exit_code=0 if result.get("ok") else 1, autolog=False)
 
@@ -2316,7 +2325,7 @@ def _cli() -> int:
 
     psl = sub.add_parser("scratch-log",
                          help="Append a manual entry to the scratch dossier under a phase.")
-    psl.add_argument("phase", help="Phase id: 0, 1, 2, 2.5, 3, 3b, 4, 4b, 4c, 5, 6, 7")
+    psl.add_argument("phase", help="Phase id: 0, 1, 2, 2.5, 3, 3b, 4 (alias: 4a), 4b, 4c, 5, 6, 7")
     psl.add_argument("tool", help="Tool/source name (free text).")
     psl.add_argument("rest", nargs="*", help="Free-form args / query string (logged verbatim).")
     psl.add_argument("--summary", default=None)
@@ -2327,7 +2336,7 @@ def _cli() -> int:
 
     psg = sub.add_parser("scratch-gate",
                          help="Append the canonical exit-gate checklist for a phase.")
-    psg.add_argument("phase")
+    psg.add_argument("phase", help="Phase id: 0, 1, 2, 2.5, 3, 3b, 4 (alias: 4a), 4b, 4c, 5, 6, 7")
     psg.set_defaults(func=_handle_scratch_gate)
 
     pssn = sub.add_parser("scratch-set-note",

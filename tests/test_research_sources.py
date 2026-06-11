@@ -1060,6 +1060,98 @@ class TestScratchDossier:
         assert "search-vault" in path.read_text(encoding="utf-8")
 
 
+class TestPhaseAlias:
+    """Issue #32: SKILL.md says "Phase 4a" but the phase table stores "4" —
+    `scratch-log 4a` died with a raw ValueError traceback."""
+
+    def test_scratch_log_4a_lands_under_phase_4(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_init, scratch_log
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("test-alias-log")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        scratch_log("4a", "web", args=["https://example.org"], summary="fetched")
+        text = path.read_text(encoding="utf-8")
+        web_idx = text.index("## Phase 4 — Web")
+        next_idx = text.index("## Phase 4b")
+        assert web_idx < text.index("https://example.org") < next_idx
+
+    def test_scratch_gate_4a_writes_phase_4_gate(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_gate, scratch_init
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("test-alias-gate")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        for phase in ("0", "1", "2", "2.5", "3", "3b"):
+            assert scratch_gate(phase)["ok"]
+        result = scratch_gate("4a")
+        assert result["ok"]
+        assert result["phase"] == "4"
+        assert "### PHASE 4 EXIT GATE" in path.read_text(encoding="utf-8")
+
+    def test_scratch_verify_accepts_4a(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_init, scratch_verify
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("test-alias-verify")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        result = scratch_verify(through="4a")
+        assert "error" not in result
+        assert result["checked_through"] == 7  # phases 0..4 inclusive
+
+    def test_autolog_env_phase_4a_lands_under_phase_4(self, tmp_path, monkeypatch):
+        from tools.research_sources import _maybe_autolog, scratch_init
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("test-alias-autolog")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        monkeypatch.setenv("VICAYA_PHASE", "4a")
+        _maybe_autolog("search-web", ["query"], [])
+        text = path.read_text(encoding="utf-8")
+        web_idx = text.index("## Phase 4 — Web")
+        next_idx = text.index("## Phase 4b")
+        assert web_idx < text.index("search-web") < next_idx
+
+    def test_unknown_phase_raises_with_valid_list(self, tmp_path, monkeypatch):
+        import pytest
+
+        from tools.research_sources import scratch_init, scratch_log
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("test-alias-unknown")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        with pytest.raises(ValueError, match=r"unknown phase '8'.*4a"):
+            scratch_log("8", "web")
+
+    def test_cli_scratch_log_unknown_phase_clean_error(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        import json
+
+        import tools.research_sources as rs
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = rs.scratch_init("test-alias-cli")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        monkeypatch.setattr(
+            sys, "argv", ["research_sources", "scratch-log", "9", "web", "query"]
+        )
+        assert rs._cli() == 1
+        out = json.loads(capsys.readouterr().out)
+        assert out["ok"] is False
+        assert "unknown phase" in out["error"]
+
+    def test_cli_scratch_log_4a_succeeds(self, tmp_path, monkeypatch, capsys):
+        import json
+
+        import tools.research_sources as rs
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = rs.scratch_init("test-alias-cli-ok")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        monkeypatch.setattr(
+            sys, "argv",
+            ["research_sources", "scratch-log", "4a", "web", "https://example.org"],
+        )
+        assert rs._cli() == 0
+        out = json.loads(capsys.readouterr().out)
+        assert out["ok"] is True
+        assert "## Phase 4 — Web" in path.read_text(encoding="utf-8")
+
+
 class TestScratchSetNote:
     """scratch-set-note records the vault note path the Phase 7 gate scans."""
 

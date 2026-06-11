@@ -50,6 +50,7 @@ Linux machine (real searches, real fetches, real helper calls — log in
 | #41 scratch-gate missing-gate visibility (half) | done | verified 2026-06-11: refusal JSON carries `missing_phase`, `missing_title`, expected evidence, and "run scratch-gate 1 first"; the validate_note silent-pass half stays open as #41 |
 | #10 Obsidian CLI bypass (doc halves) | done | "When Obsidian isn't running" section documents the disk fallback and the final-report declaration; optional `vault-write` wrapper demoted to Low residue |
 | #33 Helper to set the scratch `**Vault note:**`/PDF header (4 runs) | done | `feat: add scratch-set-note to record vault note and PDF paths` — new subcommand writes the `**Vault note:**` header (and a `**PDF:**` line) under the scratch file lock, so the Phase 7 `[REJECTED]` hard-gate target is set by the helper instead of hand-edits; vault-relative paths resolve against `VICAYA_VAULT_PATH`; refuses when the note file doesn't exist (a typo'd path previously disarmed the gate silently — gate 7 skips the scan for nonexistent paths); gate-7 checklist items now name the subcommand; SKILL.md updated (quick-start step 4, Research scratchpad block, Phase 7 section + exit line); 6 regression tests |
+| #32 Phase-key naming mismatch — `scratch-log 4a` raw ValueError (2 runs: 20260528-143000, 20260609-230046) | done | `fix: accept phase 4a as alias for 4 with clean scratch CLI errors` — `4a` now normalizes to `4` everywhere a phase id enters (`scratch_log`, `scratch_gate`, `scratch_verify --through`, autolog via `VICAYA_PHASE`), so SKILL.md's "Phase 4a — Web search" wording and the helper agree; unknown phases get a clean ValueError listing valid ids + the alias, and the `scratch-log`/`scratch-gate` CLI handlers catch it (plus scratch-not-initialised) into `{ok: false, error}` JSON with exit 1 instead of a raw traceback; both argparse help strings document the alias; 7 regression tests |
 | #43 REGRESSION: sequential-scratch rule lost in doc restructure | done (re-scoped 2026-06-11) | `docs: re-add scratch sequencing rule scoped to hand-edits + guard test` — premise was partially stale: helper appends have been flock-serialized inside `_append_under_phase` since `ee5917a` (06-07), which postdates the last corruption sighting (20260606-110638) and survived `9a77539`, so parallel helper calls are structurally safe and the old blanket prose rule would be wrong; the only unprotected path is direct hand-edits to the scratch file (Edit/Write racing a helper append), so the restored rule targets exactly that, placed in `## Research scratchpad` (routed by all four staged routers); new guard test in `tests/test_skill_routes.py` fails if the rule ever leaves that section again |
 
 ## Remaining — prioritized
@@ -75,16 +76,6 @@ WebSearch returned full results — so it's macOS/credential-specific or
 transient. Fix: add two lines to "## When something fails" (absorbing the
 #16 residue): "web search 403 → WebFetch direct URLs/arXiv" and
 "lookup-book translator missing → resolve-citation + direct sqlite".
-
-**#32 Phase-key naming mismatch.** SKILL.md headings say "Phase 4a/4b/4c"
-but the helper accepts `4`; `scratch-log 4a` errors. Reported in the second
-run ever (20260528-143000) and again 12 days later (20260609-230046) — still
-unfixed. Verified live 2026-06-11: helper's valid list is
-`['0','1','2','2.5','3','3b','4','4b','4c','5','6','7']` — 4b/4c exist, only
-4a is missing (the helper calls it "4 — Web"), and `scratch-log 4a` dies
-with a raw ValueError traceback while SKILL.md and both staged routers say
-"Phase 4a — Web search". Quick win: alias `4a`→`4` and catch the error into
-a clean message.
 
 **#7 Phase exit criteria missing for non-scratch dimensions.** Unchanged —
 gate checklists are still tick-by-agent. Verified 2026-06-11: `scratch-gate

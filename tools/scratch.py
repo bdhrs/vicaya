@@ -169,6 +169,18 @@ _SCRATCH_PHASES: list[tuple[str, str, list[str]]] = [
 
 _PHASE_INDEX = {pid: (i, title, evidence) for i, (pid, title, evidence) in enumerate(_SCRATCH_PHASES)}
 
+# SKILL.md names the web phase "4a" but the phase table stores it as "4".
+_PHASE_ALIASES = {"4a": "4"}
+
+
+def _normalize_phase(phase: str) -> str:
+    p = _PHASE_ALIASES.get(str(phase).strip().lower(), str(phase).strip())
+    if p not in _PHASE_INDEX:
+        raise ValueError(
+            f"unknown phase {phase!r}; valid: {list(_PHASE_INDEX)} (alias: 4a → 4)"
+        )
+    return p
+
 
 def _next_worked_phase(text: str, idx: int) -> str | None:
     nxt = idx + 1
@@ -248,9 +260,7 @@ def scratch_init(
 
 
 def _phase_section_header(phase: str) -> str:
-    if phase not in _PHASE_INDEX:
-        raise ValueError(f"unknown phase {phase!r}; valid: {list(_PHASE_INDEX)}")
-    return f"## {_PHASE_INDEX[phase][1]}"
+    return f"## {_PHASE_INDEX[_normalize_phase(phase)][1]}"
 
 
 def _append_under_phase(path: Path, phase: str, block: str) -> None:
@@ -298,6 +308,7 @@ def scratch_log(
 ) -> Path:
     """Append a single structured entry under the named phase."""
     import datetime as _dt
+    phase = _normalize_phase(phase)
     path = scratch or _scratch_path()
     if not path.exists():
         raise FileNotFoundError(f"scratch not initialised: {path}; run scratch-init <slug>")
@@ -329,11 +340,10 @@ def scratch_gate(phase: str, scratch: Path | None = None) -> dict:
     without writing.
     """
     import datetime as _dt
+    phase = _normalize_phase(phase)
     path = scratch or _scratch_path()
     if not path.exists():
         raise FileNotFoundError(f"scratch not initialised: {path}; run scratch-init <slug>")
-    if phase not in _PHASE_INDEX:
-        raise ValueError(f"unknown phase {phase!r}")
     text = path.read_text(encoding="utf-8")
     idx = _PHASE_INDEX[phase][0]
     # Thematic (non-sutta-anchored) runs auto-skip SC-parallels (2.5) and Sanskrit
@@ -477,8 +487,10 @@ def scratch_verify(through: str | None = None, scratch: Path | None = None) -> d
     text = path.read_text(encoding="utf-8")
     # Determine the boundary.
     if through is not None:
-        if through not in _PHASE_INDEX:
-            return {"ok": False, "error": f"unknown phase {through!r}"}
+        try:
+            through = _normalize_phase(through)
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}
         upper = _PHASE_INDEX[through][0] + 1
     else:
         upper = 0
@@ -528,6 +540,7 @@ def _maybe_autolog(cmd: str, argv: list[str], result_obj) -> None:
         state = _read_state()
         scratch = scratch_env or state.get("scratch")
         phase = phase_env or state.get("phase") or "?"
+    phase = _PHASE_ALIASES.get(str(phase).strip().lower(), phase)
     if not scratch:
         return
     if cmd in {"scratch-init", "scratch-log", "scratch-gate", "scratch-set-note",
