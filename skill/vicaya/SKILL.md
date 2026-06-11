@@ -1971,8 +1971,10 @@ If fewer than 10, omit this section entirely.
 ## When something fails
 
 - **Helper raises `FileNotFoundError`**: a path is wrong — tell the user, don't fudge.
+- **`lookup-book` raises `RuntimeError: cst_book_translator not found`**: the dpd-db repo isn't at an expected path on this machine. Fall back to `resolve-citation` for passage and book names, plus direct sqlite against `$VICAYA_CANON_DB` for table↔book mapping.
 - **Canon search returns 0 hits**: try lang="any" and/or broader book scope before giving up.
 - **Library folders returns 0 hits**: first distinguish empty from error — `library-folders-check` exits 1 when the index path is missing or unreadable. If the index is reachable and truly empty: try fewer/looser terms; check `data/calibre_tags.csv` for the right tag vocabulary; try an author's surname as the query. Extract content directly with `pdftotext` or `ebook-convert` on known book files when needed.
+- **`WebSearch` returns 403 on every query**: the search backend is blocked or mis-credentialed on this machine (seen on macOS) — don't keep retrying. Fall back to `WebFetch` on directly constructed URLs (the mirror patterns in Phase 4a); for academic papers use the arXiv search endpoint (`http://export.arxiv.org/api/query?search_query=all:"<terms>"`) — arXiv IDs cannot be guessed.
 - **`cross-check` returns `# SELF_REVIEW:`**: OpenRouter is unreachable. Run the embedded checklist on your own synthesis as described in Phase 6; do not retry the helper. Common root causes: no `OPENROUTER_API_KEY` set (check `.env`), an empty / malformed `data/openrouter_models.json`, or every free model in the chain simultaneously rate-limited (rare). (Note: the legacy `gemini-cross-check` subcommand returns a `# ERROR:` line on failure instead — same response: skip the section and continue.)
 - **`scratch-gate 7` shows passed but the vault note is missing**: a prior
   invocation gated before the vault write completed. Do not treat the run as
