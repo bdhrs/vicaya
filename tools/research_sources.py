@@ -1880,6 +1880,7 @@ from tools.scratch import (  # noqa: E402, F401
     scratch_log,
     _gate_marker,
     scratch_gate,
+    scratch_set_note,
     scratch_verify,
     scratch_resume,
     _maybe_autolog,
@@ -2138,6 +2139,11 @@ def _cli() -> int:
         _dump(result)
         return _done(exit_code=0 if result.get("ok") else 1, autolog=False)
 
+    def _handle_scratch_set_note(args):
+        result = scratch_set_note(args.note_path, pdf=args.pdf)
+        _dump(result)
+        return _done(exit_code=0 if result.get("ok") else 1, autolog=False)
+
     def _handle_scratch_verify(args):
         result = scratch_verify(through=args.through)
         _dump(result)
@@ -2323,6 +2329,16 @@ def _cli() -> int:
                          help="Append the canonical exit-gate checklist for a phase.")
     psg.add_argument("phase")
     psg.set_defaults(func=_handle_scratch_gate)
+
+    pssn = sub.add_parser("scratch-set-note",
+                          help="Record the saved vault note (and PDF) path in the scratch "
+                               "header — sets the target of the Phase 7 [REJECTED] hard gate.")
+    pssn.add_argument("note_path",
+                      help="Path to the saved vault note; absolute, or vault-relative "
+                           "(resolved against VICAYA_VAULT_PATH).")
+    pssn.add_argument("--pdf", default=None,
+                      help="PDF path, or 'skipped' if PDF generation was skipped.")
+    pssn.set_defaults(func=_handle_scratch_set_note)
 
     psv = sub.add_parser("scratch-verify",
                          help="Verify every prior phase has its exit gate. Exits 1 on failure.")

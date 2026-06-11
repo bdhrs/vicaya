@@ -19,7 +19,7 @@ Four structural commands carry the run. Everything else is reference.
 1. **Phase 0:** `scratch-init <slug> --question-original "…" --question-polished "…" --scope-assumptions "…" --ambiguity <clear|minor_uncertainty|unclear>` (add `--class thematic` for non-sutta-anchored questions). This records the active scratch for *this run*, fills the Phase 0 header fields, and — because all the Phase 0 evidence is then present — writes the Phase 0 exit gate automatically, so the run starts at Phase 1. Do not run the bare form unless the question is still unresolved; a bare init leaves gate 0 unwritten and every later gate will refuse until you run `scratch-gate 0`. Auto-logging is isolated automatically — the run's state is keyed to your agent process, so parallel runs never collide. There is nothing to pin or export.
 2. **Each phase boundary:** end the prior phase with `scratch-gate <prev-phase>`. The gate auto-advances the active phase, so the next phase's helper calls log correctly without any manual step. It refuses if earlier gates are missing and prints the exact evidence still needed. Thematic runs auto-skip the Phase 2.5 (SC-parallels) and 3b (Sanskrit) gates.
 3. **Start of Phase 5:** `scratch-verify`. Exit 0 = proceed to synthesis. Exit 1 = backfill the named phase first; do not draft.
-4. **End of Phase 7:** `scratch-gate 7`, then publish the saved note with `uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"`; after writing the reflection, publish the run report with `uv run scripts/sync_run_report.py`. The run is not complete until the gate passes and both sync commands have been attempted.
+4. **End of Phase 7:** `scratch-set-note <note-path> --pdf <pdf-path|skipped>` (records the saved paths in the scratch header — the [REJECTED] hard-gate target), then `scratch-gate 7`, then publish the saved note with `uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"`; after writing the reflection, publish the run report with `uv run scripts/sync_run_report.py`. The run is not complete until the gate passes and both sync commands have been attempted.
 
 If context compaction fires at any point, `scratch-resume <slug>` explicitly selects that run, reattaches the active scratch state, and prints the last gate and next phase — no findings are lost.
 
@@ -352,7 +352,7 @@ entire thread is lost mid-run, the scratch file must contain enough to rebuild
 the dossier without re-running any expensive search.
 
 **The helper owns the scratch format.** Never hand-craft scratch markdown.
-Five subcommands cover every interaction:
+Six subcommands cover every interaction:
 
 ```bash
 # 1. At Phase 0 — create the file with the Phase 0 fields in one shot
@@ -379,6 +379,12 @@ uv run tools/research_sources.py scratch-gate 2
 
 # 5. Before synthesis (Phase 5) — refuse to draft until all prior gates exist
 uv run tools/research_sources.py scratch-verify    # exit 0 = proceed, 1 = backfill first
+
+# 6. At Phase 7 — record the saved note + PDF paths in the scratch header
+#    (sets the target of the [REJECTED] hard gate; never hand-edit the header)
+uv run tools/research_sources.py scratch-set-note "Vicaya/${TODAY} - ${SLUG}.md" --pdf "<pdf-path|skipped>"
+# Vault-relative paths resolve against VICAYA_VAULT_PATH; absolute paths work too.
+# Refuses if the note file does not exist — pass the path exactly as saved.
 
 # Resume after compaction or restart; explicit slug wins
 uv run tools/research_sources.py scratch-resume <slug>
@@ -1891,6 +1897,18 @@ uv run scripts/generate_note_pdf.py "Vicaya/${TODAY} - ${SLUG}.md"
 successfully with a skip message. Include the PDF path in the Section 1 run summary if
 generation succeeded.
 
+Then record both paths in the scratch header — this sets the file the Phase 7
+`[REJECTED]` hard gate scans. Never hand-edit the `**Vault note:**` header:
+
+```bash
+uv run tools/research_sources.py scratch-set-note "Vicaya/${TODAY} - ${SLUG}.md" \
+  --pdf "<pdf-path, or 'skipped'>"
+```
+
+Vault-relative paths resolve against `VICAYA_VAULT_PATH`; absolute paths work
+too. The command refuses if the note file does not exist, so a typo cannot
+silently disarm the gate.
+
 ### GitHub note sync (pre-approved)
 
 After the note is written, validated, PDF generated, and `scratch-gate 7` passes, run:
@@ -1909,7 +1927,7 @@ approved script path.
 
 A sync failure is never fatal — the note is already saved to the vault.
 
-→ **Phase 7 exit:** after validation/PDF generation, run `scratch-gate 7`, then `uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"`; after writing the reflection, run `uv run scripts/sync_run_report.py`. The run is not complete until the gate passes and both sync commands have been attempted — the gate confirms the vault path and PDF path are recorded in the dossier, note sync publishes the saved note, and run-report sync publishes the latest `runs/*.md` report. `scripts/sync_run_report.py` is a pre-approved run-report publishing script and may pull, commit, and push Vicaya run reports in this project repo. New or materially modified scripts are not automatically pre-approved for git, publishing, deployment, sync, delete, or overwrite operations.
+→ **Phase 7 exit:** after validation/PDF generation, run `scratch-set-note` (records the saved note + PDF paths), then `scratch-gate 7`, then `uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"`; after writing the reflection, run `uv run scripts/sync_run_report.py`. The run is not complete until the gate passes and both sync commands have been attempted — the gate confirms the vault path and PDF path are recorded in the dossier, note sync publishes the saved note, and run-report sync publishes the latest `runs/*.md` report. `scripts/sync_run_report.py` is a pre-approved run-report publishing script and may pull, commit, and push Vicaya run reports in this project repo. New or materially modified scripts are not automatically pre-approved for git, publishing, deployment, sync, delete, or overwrite operations.
 
 After both sync commands have been attempted, clean only this run's disposable repo-local temp directory; never remove `data/scratch/` or scratch-local draft/review files:
 

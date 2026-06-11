@@ -49,6 +49,7 @@ Linux machine (real searches, real fetches, real helper calls — log in
 | #39 search-canon JSON-parsing notes | done | jq-absent caveat documented at SKILL.md:93 (minor residue: SKILL.md:124 still says "Parse the JSON with `jq`" — one-line cleanup) |
 | #41 scratch-gate missing-gate visibility (half) | done | verified 2026-06-11: refusal JSON carries `missing_phase`, `missing_title`, expected evidence, and "run scratch-gate 1 first"; the validate_note silent-pass half stays open as #41 |
 | #10 Obsidian CLI bypass (doc halves) | done | "When Obsidian isn't running" section documents the disk fallback and the final-report declaration; optional `vault-write` wrapper demoted to Low residue |
+| #33 Helper to set the scratch `**Vault note:**`/PDF header (4 runs) | done | `feat: add scratch-set-note to record vault note and PDF paths` — new subcommand writes the `**Vault note:**` header (and a `**PDF:**` line) under the scratch file lock, so the Phase 7 `[REJECTED]` hard-gate target is set by the helper instead of hand-edits; vault-relative paths resolve against `VICAYA_VAULT_PATH`; refuses when the note file doesn't exist (a typo'd path previously disarmed the gate silently — gate 7 skips the scan for nonexistent paths); gate-7 checklist items now name the subcommand; SKILL.md updated (quick-start step 4, Research scratchpad block, Phase 7 section + exit line); 6 regression tests |
 | #43 REGRESSION: sequential-scratch rule lost in doc restructure | done (re-scoped 2026-06-11) | `docs: re-add scratch sequencing rule scoped to hand-edits + guard test` — premise was partially stale: helper appends have been flock-serialized inside `_append_under_phase` since `ee5917a` (06-07), which postdates the last corruption sighting (20260606-110638) and survived `9a77539`, so parallel helper calls are structurally safe and the old blanket prose rule would be wrong; the only unprotected path is direct hand-edits to the scratch file (Edit/Write racing a helper append), so the restored rule targets exactly that, placed in `## Research scratchpad` (routed by all four staged routers); new guard test in `tests/test_skill_routes.py` fails if the rule ever leaves that section again |
 
 ## Remaining — prioritized
@@ -66,14 +67,6 @@ cycle: the Devil's-Advocate pass caught suppressed evidence twice
 (20260605-022801, 20260603-232301) and validate-before-apply flipped a wrong
 cross-check tier claim (20260606-000000) — the checklist pattern works when
 it exists; it should be structural.
-
-**#33 Helper to set the scratch `**Vault note:**`/PDF header.** The Phase 7
-hard gate only scans `[REJECTED]` when that header holds the saved note path,
-but there is no subcommand to set it — agents hand-edit the scratch header.
-Verified 2026-06-11: `scratch.py:235` writes the placeholder, `:370`
-regex-reads it for the gate-7 scan; no setter exists anywhere in the CLI.
-(seen in 4 runs: 20260602-144756, 20260603-225147, 20260604-123434,
-20260606-103820)
 
 **#14 Web search 403 / parameter failures.** Google Search API returned 403
 on every query in 3 recent runs (20260605-025640, 20260609-112239,
@@ -105,8 +98,8 @@ Phase 7 audit checks headings but not footer/bibliography style
 cycle (seed-note handoff worked well in 20260606-110638).
 
 **#19 Weak-model design — explicit control points.** Unchanged direction;
-#33 remains a concrete instance (#29 and #31 were closed structurally), and
-the new #45 (resolve-citation input footgun) is another.
+#29, #31, and #33 were closed structurally; #45 (resolve-citation input
+footgun) is the remaining concrete instance.
 
 **#35 lookup-book broken on machines where `cst_book_translator.py` is not
 at the expected sibling path.** Fell back to resolve-citation + direct
@@ -226,8 +219,9 @@ in: 20260601-075124, 20260606-112752, 20260609-221756, 20260610-071644)
    solved the context problem in practice, so the kernel/reference
    restructure is shelved unless context complaints recur. The heading-based
    routing is now guarded by `tests/test_skill_routes.py`. #36's doc gaps are
-   closed. #6 and #19 (structural control points, e.g. #33) remain the live
-   direction for prose-rule sprawl.
+   closed. #6 and #19 (structural control points — #33 closed 2026-06-11
+   with `scratch-set-note`, #45 is next) remain the live direction for
+   prose-rule sprawl.
 
 4. The 2026-06-11 verification sweep (log: `temp/issue-verify-20260611.md`)
    closed #9, #16, #23/#24, #25, #34, #39, the doc halves of #10, and the

@@ -1060,6 +1060,106 @@ class TestScratchDossier:
         assert "search-vault" in path.read_text(encoding="utf-8")
 
 
+class TestScratchSetNote:
+    """scratch-set-note records the vault note path the Phase 7 gate scans."""
+
+    def test_sets_vault_note_header(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_init, scratch_set_note
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("set-note")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        note = tmp_path / "note.md"
+        note.write_text("# Note\n", encoding="utf-8")
+
+        result = scratch_set_note(str(note))
+
+        assert result["ok"]
+        text = path.read_text(encoding="utf-8")
+        assert f"**Vault note:** {result['vault_note']}" in text
+        assert "<set at Phase 7>" not in text
+
+    def test_gate_7_scans_note_set_via_helper(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_gate, scratch_init, scratch_set_note
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("set-note-gate")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        note = tmp_path / "fake_note.md"
+        note.write_text(
+            "# Note\n\nThe reviewer cited MN999 [REJECTED — not in sutta_info].\n",
+            encoding="utf-8",
+        )
+        assert scratch_set_note(str(note))["ok"]
+        for phase in ("0", "1", "2", "2.5", "3", "3b", "4", "4b", "4c", "5", "6"):
+            assert scratch_gate(phase)["ok"]
+
+        result = scratch_gate("7")
+
+        assert result["ok"] is False
+        assert result["offending_lines"]
+
+    def test_relative_path_resolves_against_vault(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_init, scratch_set_note
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("set-note-vault")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        vault = tmp_path / "vault"
+        (vault / "Vicaya").mkdir(parents=True)
+        note = vault / "Vicaya" / "2026-06-11 - topic.md"
+        note.write_text("# Note\n", encoding="utf-8")
+        monkeypatch.setenv("VICAYA_VAULT_PATH", str(vault))
+
+        result = scratch_set_note("Vicaya/2026-06-11 - topic.md")
+
+        assert result["ok"]
+        assert result["vault_note"] == str(note.resolve())
+
+    def test_missing_note_refuses_without_writing(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_init, scratch_set_note
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("set-note-missing")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        monkeypatch.delenv("VICAYA_VAULT_PATH", raising=False)
+
+        result = scratch_set_note(str(tmp_path / "no-such-note.md"))
+
+        assert result["ok"] is False
+        assert "not found" in result["message"]
+        assert "<set at Phase 7>" in path.read_text(encoding="utf-8")
+
+    def test_pdf_line_inserted_then_replaced(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_init, scratch_set_note
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("set-note-pdf")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        note = tmp_path / "note.md"
+        note.write_text("# Note\n", encoding="utf-8")
+
+        assert scratch_set_note(str(note), pdf="/tmp/out.pdf")["ok"]
+        assert scratch_set_note(str(note), pdf="skipped")["ok"]
+
+        text = path.read_text(encoding="utf-8")
+        assert text.count("**PDF:**") == 1
+        assert "**PDF:** skipped" in text
+
+    def test_inserts_header_when_absent(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_init, scratch_set_note
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("set-note-legacy")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        text = path.read_text(encoding="utf-8")
+        text = text.replace("**Vault note:** <set at Phase 7>\n", "")
+        path.write_text(text, encoding="utf-8")
+        note = tmp_path / "note.md"
+        note.write_text("# Note\n", encoding="utf-8")
+
+        result = scratch_set_note(str(note))
+
+        assert result["ok"]
+        new_text = path.read_text(encoding="utf-8")
+        assert f"**Vault note:** {result['vault_note']}" in new_text
+        assert new_text.index("**Run class:**") < new_text.index("**Vault note:**")
+
+
 @canon_available
 class TestVerifyCitation:
     """verify_citation queries dpd.db sutta_info (existence-only)."""

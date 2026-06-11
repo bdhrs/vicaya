@@ -161,8 +161,8 @@ _SCRATCH_PHASES: list[tuple[str, str, list[str]]] = [
         "Integrations logged with source attribution",
     ]),
     ("7", "Phase 7 — Note written", [
-        "Vault path recorded (sets the path for the [REJECTED] hard gate)",
-        "PDF path or 'skipped' recorded",
+        "Vault path recorded via scratch-set-note (sets the path for the [REJECTED] hard gate)",
+        "PDF path or 'skipped' recorded via scratch-set-note --pdf",
         "Zero [REJECTED] tags anywhere in the vault note (enforced by gate)",
     ]),
 ]
@@ -406,6 +406,66 @@ def scratch_gate(phase: str, scratch: Path | None = None) -> dict:
     return {"ok": True, "phase": phase, "title": title}
 
 
+def scratch_set_note(note_path: str, pdf: str | None = None, scratch: Path | None = None) -> dict:
+    """Record the saved vault note (and optionally PDF) path in the scratch header.
+
+    The Phase 7 hard gate reads the `**Vault note:**` header to scan the saved
+    note for [REJECTED] tags — this subcommand is the supported way to set it;
+    never hand-edit the header. A relative path that doesn't exist from the
+    current directory is retried against VICAYA_VAULT_PATH, so the
+    vault-relative form used by the Obsidian CLI works directly.
+    """
+    path = scratch or _scratch_path()
+    if not path.exists():
+        raise FileNotFoundError(f"scratch not initialised: {path}; run scratch-init <slug>")
+    note = Path(note_path).expanduser()
+    if not note.exists() and not note.is_absolute():
+        vault = os.environ.get("VICAYA_VAULT_PATH")
+        if vault:
+            candidate = Path(vault).expanduser() / note_path
+            if candidate.exists():
+                note = candidate
+    if not note.exists():
+        return {
+            "ok": False,
+            "note_path": str(note),
+            "message": (
+                f"vault note not found: {note} — pass the path exactly as saved "
+                "(absolute, or vault-relative with VICAYA_VAULT_PATH set); "
+                "the Phase 7 gate scans this file for [REJECTED] tags"
+            ),
+        }
+    note = note.resolve()
+    note_line = f"**Vault note:** {note}"
+    with _file_lock(path):
+        text = path.read_text(encoding="utf-8")
+        new_text, n = _re.subn(
+            r"^\*\*Vault note:\*\*.*$", lambda _: note_line, text, count=1, flags=_re.M,
+        )
+        if n == 0:
+            # Header line absent (pre-skeleton scratch): insert after **Run class:**.
+            lines = new_text.splitlines(keepends=True)
+            insert_at = 1
+            for i, line in enumerate(lines):
+                if line.startswith("**Run class:**"):
+                    insert_at = i + 1
+                    break
+            lines.insert(insert_at, note_line + "\n")
+            new_text = "".join(lines)
+        if pdf is not None:
+            pdf_line = f"**PDF:** {pdf}"
+            new_text, n = _re.subn(
+                r"^\*\*PDF:\*\*.*$", lambda _: pdf_line, new_text, count=1, flags=_re.M,
+            )
+            if n == 0:
+                new_text = new_text.replace(note_line, f"{note_line}\n{pdf_line}", 1)
+        path.write_text(new_text, encoding="utf-8")
+    result = {"ok": True, "scratch": str(path), "vault_note": str(note)}
+    if pdf is not None:
+        result["pdf"] = pdf
+    return result
+
+
 def scratch_verify(through: str | None = None, scratch: Path | None = None) -> dict:
     """Verify that every phase up to `through` (or the highest gate written) has its gate.
 
@@ -470,7 +530,7 @@ def _maybe_autolog(cmd: str, argv: list[str], result_obj) -> None:
         phase = phase_env or state.get("phase") or "?"
     if not scratch:
         return
-    if cmd in {"scratch-init", "scratch-log", "scratch-gate",
+    if cmd in {"scratch-init", "scratch-log", "scratch-gate", "scratch-set-note",
                "scratch-verify", "scratch-resume", "scratch-which", "lookup-book"}:
         return
     try:
