@@ -33,6 +33,7 @@ window and resolved whole families of findings: per-run scratch isolation
 | #12 NFD/NFC Unicode normalization in search_canon | done | same commit as #3 — query and stored text are both NFC-normalized before matching |
 | #5 Skill too long / restructure into kernel + reference | dropped (re-scoped) | The staged routers (`5b0cc50`) resolved the context problem in practice — zero context-exhaustion complaints in ~80 runs since the one failure (20260603-120425, which predates them). The kernel/reference restructure is not justified by current evidence; revisit only if context complaints recur. Residue shipped: route-list guard test (`tests/test_skill_routes.py`) so renaming a SKILL.md heading can no longer silently break a staged router — in `docs: close staged-run doc gaps and guard staged route lists` |
 | #36 Phase 7 / staged-run doc-gap cluster (8 runs) | done | `docs: close staged-run doc gaps and guard staged route lists` — SKILL.md now documents: gate discipline (helper-only gates, ascending backfill, backfill-after-gate), enrichment-run mode for existing-topic notes, deferred-draft handoff for very large dossiers, Phase 7 format re-read before drafting, multi-day note-date rule, and gate-7-passed-but-note-missing recovery; plus a one-line helper-only-gates reminder in the Stage 2 router |
+| #44 resolve-citation label gaps (residue of #29, 5 runs) | done | `fix: resolve citations for books outside sutta_info via canon headings` — book and section names now read from the canon table's own book/chapter/title/subhead rows (Vism → "Visuddhimaggo, 8. Anussatikammaṭṭhānaniddeso, Maraṇassatikathā"; Kathāvatthu, Paṭisambhidāmagga, Netti, Milinda all named); headings mapped back to DPD codes via sutta_info.cst_sutta (Snp 452 → SNP29 Subhāsitasuttaṃ, was SNP28); Khp/Snp dropped from paranum-based sutta_info lookup (Khp's cst_paranum is a sutta index, Snp's has gaps); books with per-section paranum restarts flagged "paranum repeats per section" with candidate sections instead of a confidently wrong name; SKILL.md Hard Rule 9 exception documented; 7 regression tests |
 
 ## Remaining — prioritized
 
@@ -41,16 +42,6 @@ window and resolved whole families of findings: per-run scratch isolation
 None open.
 
 ### Medium severity
-
-**#44 resolve-citation label gaps (residue of #29).** The verification side
-of #29 is fixed; the *resolver* still produces wrong or opaque human labels:
-KHP paranum→name mapping unreliable (Kp 10 → "KHP9 Mettasuttaṃ",
-20260605-023536); Snp global-verse paranums mis-resolve (Snp 452 → "SNP28",
-20260528-124405); Vism labelled "Extra 0101 §176" (20260603-044210); KN
-exegetical texts get no text name — supply Paṭisambhidāmagga/Nettippakaraṇa
-manually (20260604-143000); abh* books have no section map (Kathāvatthu →
-generic "Abhidhamma 03 §1", 20260605-030744). Fix direction: a small
-override table in the resolver for KHP/Vism/KN17/KN19/abh* naming.
 
 **#30 validate_note.py vs the "What the suttas say about X" series format.**
 `4233e2b` downgraded Canon Evidence to a warning, but `## Findings` (and

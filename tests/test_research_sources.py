@@ -135,6 +135,52 @@ class TestResolveCitationWithDPD:
         assert "Brahmajāla" in c.human
 
 
+@canon_available
+class TestResolveCitationCanonHeadings:
+    """Canon-DB heading naming for books sutta_info doesn't cover (#44)."""
+
+    @dpd_available
+    def test_snp_global_verse_resolves_to_correct_sutta(self):
+        # Verse 452 is in Subhāsitasutta (SNP29); the old sutta_info
+        # nearest-preceding lookup mislabelled it SNP28 (Padhānasutta).
+        c = resolve_citation("s0505m_mul", "452")
+        assert "SNP29" in c.human
+        assert "Subhāsita" in c.human
+        assert "SNP28" not in c.human
+
+    def test_khp_repeating_paranum_flags_ambiguity(self):
+        # Khp paranums restart per sutta: §10 occurs in several suttas, so
+        # the resolver must not assert one sutta name (was: KHP9 Mettasuttaṃ).
+        c = resolve_citation("s0501m_mul", "10")
+        assert "Khuddakapāṭha" in c.human
+        assert "Mettasutta" not in c.human or "repeats" in c.human
+        assert "repeats" in c.human
+
+    def test_vism_gets_book_and_chapter_name(self):
+        c = resolve_citation("e0101n_mul", "176")
+        assert "Visuddhimagg" in c.human
+        assert "Anussatikammaṭṭhānaniddes" in c.human
+        assert "176" in c.human
+
+    def test_patisambhidamagga_named(self):
+        c = resolve_citation("s0517m_mul", "5")
+        assert "Paṭisambhidāmagga" in c.human
+
+    def test_nettippakarana_named(self):
+        c = resolve_citation("s0519m_mul", "1")
+        assert "Nettippakaraṇ" in c.human
+
+    def test_kathavatthu_named(self):
+        c = resolve_citation("abh03m3_mul", "1")
+        assert "Kathāvatthu" in c.human
+
+    def test_milindapanha_named_from_chapter_row(self):
+        # s0518m_nrf has no rend='book' row; the title lives in the first
+        # chapter row.
+        c = resolve_citation("s0518m_nrf", "1")
+        assert "Milindapañha" in c.human
+
+
 # ---------- search_canon ----------
 
 

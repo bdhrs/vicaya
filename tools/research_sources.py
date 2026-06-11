@@ -335,6 +335,131 @@ def search_canon(
 
 # ---------- Citation resolution ----------
 
+# sutta_info's cst_paranum is not a usable paranum→sutta map for these stems:
+# Khp's paranums restart per sutta (cst_paranum stores the sutta index, not a
+# paragraph number), and Snp's entries have gaps (many suttas stored with an
+# empty cst_paranum), so nearest-preceding lookup silently mislabels.
+_SUTTA_INFO_UNRELIABLE_STEMS = {"s0501m", "s0505m"}
+
+_HEADING_RENDS = ("chapter", "title", "subhead")
+
+
+def _nearest_heading(
+    conn, table: str, rends: tuple[str, ...], lo: int, hi: int
+) -> tuple[int, str] | None:
+    """Nearest row with rend in `rends` and lo < id < hi, scanning backwards."""
+    marks = ",".join("?" for _ in rends)
+    sql = (
+        f"SELECT id, pali_text FROM {table} "
+        f"WHERE id > ? AND id < ? AND rend IN ({marks}) "
+        f"ORDER BY id DESC LIMIT 1"
+    )
+    row = conn.execute(sql, (lo, hi, *rends)).fetchone()
+    if not row:
+        return None
+    return row[0], _strip_xml(row[1] or "").strip()
+
+
+def _canon_heading_lookup(
+    book_code: str, paranum_int: int, canon_db: Path | None
+) -> dict | None:
+    """Name a citation from the canon table's own book/heading rows.
+
+    Returns `{"book": str, "sections": [str], "candidates": [str]}`.
+    `sections` is the chapter→title→subhead chain above the paranum's row
+    when the paranum occurs exactly once in the book. When it repeats
+    (books like Khp and Paṭisambhidāmagga restart numbering per section),
+    `candidates` lists the nearest heading of each occurrence instead, so
+    the caller can flag the ambiguity rather than guess.
+    """
+    if canon_db is None or not canon_db.exists():
+        return None
+    try:
+        with sqlite3.connect(canon_db) as conn:
+            exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                (book_code,),
+            ).fetchone()
+            if not exists:
+                return None
+            book_row = conn.execute(
+                f"SELECT pali_text FROM {book_code} WHERE rend='book' LIMIT 1"
+            ).fetchone()
+            if not book_row:
+                # A few books (e.g. Milindapañha) carry their title as the
+                # first chapter row instead of a book row.
+                book_row = conn.execute(
+                    f"SELECT pali_text FROM {book_code} "
+                    f"WHERE rend='chapter' ORDER BY id LIMIT 1"
+                ).fetchone()
+            book = _strip_xml(book_row[0] or "").strip() if book_row else ""
+            ids = [
+                r[0]
+                for r in conn.execute(
+                    f"SELECT id FROM {book_code} "
+                    f"WHERE paranum=? OR CAST(paranum AS INTEGER)=? ORDER BY id",
+                    (str(paranum_int), paranum_int),
+                ).fetchall()
+            ]
+            if not ids:
+                if not book:
+                    return None
+                return {"book": book, "sections": [], "candidates": []}
+            if len(ids) > 1:
+                candidates: list[str] = []
+                for rid in ids:
+                    h = _nearest_heading(conn, book_code, _HEADING_RENDS, -1, rid)
+                    if (
+                        h
+                        and h[1]
+                        and h[1] != book
+                        and (not candidates or candidates[-1] != h[1])
+                    ):
+                        candidates.append(h[1])
+                return {"book": book, "sections": [], "candidates": candidates}
+            rid = ids[0]
+            sections: list[str] = []
+            lo = -1
+            for rend in _HEADING_RENDS:
+                h = _nearest_heading(conn, book_code, (rend,), lo, rid)
+                if h:
+                    lo = h[0]
+                    if h[1] and h[1] != book:
+                        sections.append(h[1])
+            return {"book": book, "sections": sections, "candidates": []}
+    except sqlite3.Error:
+        return None
+
+
+def _dpd_code_for_sutta_name(
+    stem: str, cst_type: str, heading: str, db_path: Path | None
+) -> tuple[str, str] | None:
+    """Match a canon heading text against sutta_info.cst_sutta for a book.
+
+    Returns (dpd_code, sutta_name) e.g. ('SNP29', 'Subhāsitasuttaṃ'), or None.
+    """
+    if db_path is None or not db_path.exists():
+        return None
+    pattern = f"%{stem}.{cst_type}%"
+    sql = """
+        SELECT dpd_code, cst_sutta
+        FROM sutta_info
+        WHERE cst_file LIKE ?
+          AND TRIM(cst_sutta) = ?
+        ORDER BY LENGTH(dpd_code) ASC
+        LIMIT 1
+    """
+    try:
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute(sql, (pattern, heading)).fetchone()
+    except sqlite3.Error:
+        return None
+    if not row:
+        return None
+    dpd_code, raw_sutta = row
+    sutta_name = _re.sub(r"^\d+\.\s+", "", raw_sutta or "").strip()
+    return dpd_code, sutta_name
+
 
 def _book_code_parts(book_code: str) -> tuple[str, str]:
     """Split 's0202m_mul' → ('s0202m', 'mul'). Returns ('', '') on no match."""
@@ -410,16 +535,24 @@ def _fallback_human(stem: str, text_type: str, paranum: str) -> tuple[str, str]:
 
 
 def resolve_citation(
-    book_code: str, paranum: str, dpd_db: Path | None = None
+    book_code: str,
+    paranum: str,
+    dpd_db: Path | None = None,
+    canon_db: Path | None = None,
 ) -> Citation:
     """Map a CST table name + paranum to a human-readable reference.
 
     Uses the sutta_info table in dpd.db for precise sutta names and DPD codes.
-    Falls back to a basic label when the DB is unavailable or the lookup misses.
+    For books sutta_info doesn't cover (Vism, abh*, KN exegetical texts) or
+    covers unreliably (Khp, Snp), names the citation from the canon table's
+    own book/heading rows instead, mapping the heading back to a DPD code
+    when possible. Falls back to a basic label when both DBs are unavailable.
 
     Examples:
         ('s0202m_mul', '97')   → 'MN60 Apaṇṇakasuttaṃ para 97'
-        ('s0402m2_mul', '66')  → 'AN3.65 Kesamuttisuttaṃ para 66'
+        ('s0505m_mul', '452')  → 'SNP29 Subhāsitasuttaṃ para 452'
+        ('e0101n_mul', '176')  → 'Extra 0101 §176 — Visuddhimaggo,
+                                  8. Anussatikammaṭṭhānaniddeso, Maraṇassatikathā'
         ('s0202a_att', '92')   → 'MNa60 para 92'
     """
     machine = f"{book_code}:{paranum}"
@@ -428,13 +561,17 @@ def resolve_citation(
 
     # Parse paranum: may be "97", "97-99", or "_subhead" etc.
     para_match = _re.match(r"(\d+)(?:-(\d+))?", paranum)
-    if para_match and db_path is not None:
+    if para_match:
         first_para = int(para_match.group(1))
         para_display = paranum.replace("-", "–")  # en-dash for ranges
 
         tt_label = _TEXT_TYPE_LABELS.get(text_type, text_type)
 
-        if text_type == "mul":
+        if (
+            db_path is not None
+            and text_type == "mul"
+            and stem not in _SUTTA_INFO_UNRELIABLE_STEMS
+        ):
             result = _lookup_sutta_info(stem, "mul", first_para, db_path)
             if result:
                 dpd_code, sutta_name = result
@@ -444,7 +581,7 @@ def resolve_citation(
                     pitaka="Sutta", text_type=tt_label, paranum=paranum,
                 )
 
-        elif text_type in ("att", "tik"):
+        elif db_path is not None and text_type in ("att", "tik"):
             # Derive sutta from the mūla equivalent (same stem, replace a→m or t→m)
             mula_stem = stem[:-1] + "m" if stem[-1] in ("a", "t") else stem
             result = _lookup_sutta_info(mula_stem, "mul", first_para, db_path)
@@ -458,6 +595,41 @@ def resolve_citation(
                 return Citation(
                     machine=machine, human=human,
                     pitaka="Commentary", text_type=tt_label, paranum=paranum,
+                )
+
+        canon = _canon_heading_lookup(
+            book_code, first_para, canon_db or DEFAULT_CANON_DB
+        )
+        if canon:
+            base, pitaka = _fallback_human(stem, text_type, para_display)
+            if canon["candidates"]:
+                shown = canon["candidates"][:3]
+                more = len(canon["candidates"]) - len(shown)
+                near = " / ".join(shown) + (f" +{more} more" if more > 0 else "")
+                human = (
+                    f"{base} — {canon['book']}; paranum repeats per section, "
+                    f"near: {near}"
+                )
+                return Citation(
+                    machine=machine, human=human,
+                    pitaka=pitaka, text_type=tt_label, paranum=paranum,
+                )
+            if text_type == "mul":
+                for heading in reversed(canon["sections"]):
+                    hit = _dpd_code_for_sutta_name(stem, "mul", heading, db_path)
+                    if hit:
+                        dpd_code, sutta_name = hit
+                        human = f"{dpd_code} {sutta_name} para {para_display}"
+                        return Citation(
+                            machine=machine, human=human,
+                            pitaka="Sutta", text_type=tt_label, paranum=paranum,
+                        )
+            parts = ", ".join(p for p in [canon["book"], *canon["sections"]] if p)
+            if parts:
+                human = f"{base} — {parts}"
+                return Citation(
+                    machine=machine, human=human,
+                    pitaka=pitaka, text_type=tt_label, paranum=paranum,
                 )
 
     # Fallback
