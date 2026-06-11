@@ -164,6 +164,7 @@ _SCRATCH_PHASES: list[tuple[str, str, list[str]]] = [
         "Vault path recorded via scratch-set-note (sets the path for the [REJECTED] hard gate)",
         "PDF path or 'skipped' recorded via scratch-set-note --pdf",
         "Zero [REJECTED] tags anywhere in the vault note (enforced by gate)",
+        "Failure checklist answered via scratch-self-audit (enforced by gate)",
     ]),
 ]
 
@@ -333,6 +334,69 @@ def _gate_marker(phase: str) -> str:
     return f"### PHASE {phase} EXIT GATE"
 
 
+_SELF_AUDIT_MARKER = "### SELF-AUDIT"
+
+_SELF_AUDIT_QUESTIONS = [
+    "Easy-source bias: did any conclusion lean on vault/web hits because canon "
+    "or library searching was harder? Name the claim, or 'none'.",
+    "User seeds: was every source, note, or constraint the user named actually "
+    "engaged, not just mentioned?",
+    "Early stopping: is any applicable angle or named position thin because the "
+    "evidence felt 'enough'? Name it, or 'none'.",
+    "Artifact vs completion: does every step claimed done (note, PDF, gates, "
+    "sync) have its artifact verified on disk?",
+    "Stale instructions: was any secondary or stale instruction followed "
+    "mechanically against the user's actual request this run?",
+    "Cross-check corrections: was every applied correction verified against "
+    "the mūla before integration?",
+]
+
+
+def scratch_self_audit(answers: list[str] | None = None, scratch: Path | None = None) -> dict:
+    """Record the pre-completion failure checklist under Phase 7.
+
+    The checklist targets the recurring end-of-run failure modes (easy-source
+    bias, dropped user seeds, early stopping, artifact-vs-completion confusion,
+    stale instructions, unverified cross-check corrections). Called without
+    answers it prints the questions; called with one answer per question it
+    appends the Q/A block the Phase 7 gate requires. Honest one-liners are the
+    point — a named problem means fixing the note before gating, not wordsmithing
+    the answer.
+    """
+    import datetime as _dt
+    path = scratch or _scratch_path()
+    if not path.exists():
+        raise FileNotFoundError(f"scratch not initialised: {path}; run scratch-init <slug>")
+    if _SELF_AUDIT_MARKER in path.read_text(encoding="utf-8"):
+        return {"ok": True, "note": "self-audit already recorded; not duplicated"}
+    if not answers:
+        return {
+            "ok": False,
+            "questions": _SELF_AUDIT_QUESTIONS,
+            "message": (
+                f"answer the checklist: re-run with {len(_SELF_AUDIT_QUESTIONS)} "
+                "--answer values, one per question in order — scratch-gate 7 "
+                "refuses until the audit is recorded"
+            ),
+        }
+    if len(answers) != len(_SELF_AUDIT_QUESTIONS) or not all(a.strip() for a in answers):
+        return {
+            "ok": False,
+            "error": (
+                f"expected {len(_SELF_AUDIT_QUESTIONS)} non-empty --answer values "
+                f"(one per question, in order), got {len(answers)}"
+            ),
+            "questions": _SELF_AUDIT_QUESTIONS,
+        }
+    ts = _dt.datetime.now().isoformat(timespec="seconds")
+    block = [_SELF_AUDIT_MARKER, f"- timestamp: {ts}"]
+    for q, a in zip(_SELF_AUDIT_QUESTIONS, answers):
+        block.append(f"- Q: {q}")
+        block.append(f"  A: {a.strip()}")
+    _append_under_phase(path, "7", "\n".join(block))
+    return {"ok": True, "scratch": str(path), "answers_recorded": len(answers)}
+
+
 def scratch_gate(phase: str, scratch: Path | None = None) -> dict:
     """Append the canonical exit-gate checklist for `phase`.
 
@@ -375,8 +439,20 @@ def scratch_gate(phase: str, scratch: Path | None = None) -> dict:
     # Already gated?
     if _gate_marker(phase) in text:
         return {"ok": True, "phase": phase, "note": "gate already present; not duplicated"}
-    # Phase 7 hard gate: scan the vault note for [REJECTED] tags.
+    # Phase 7 hard gate: failure checklist answered, then scan the vault note
+    # for [REJECTED] tags.
     if phase == "7":
+        if _SELF_AUDIT_MARKER not in text:
+            return {
+                "ok": False,
+                "phase": "7",
+                "reason": "self-audit missing",
+                "message": (
+                    "Phase 7 gate refused: run scratch-self-audit first — "
+                    "answer the failure checklist (one --answer per question) "
+                    "before gating."
+                ),
+            }
         vault_match = _re.search(r"\*\*Vault note:\*\*\s*(.+)", text)
         if vault_match:
             raw = vault_match.group(1).strip()
@@ -544,7 +620,8 @@ def _maybe_autolog(cmd: str, argv: list[str], result_obj) -> None:
     if not scratch:
         return
     if cmd in {"scratch-init", "scratch-log", "scratch-gate", "scratch-set-note",
-               "scratch-verify", "scratch-resume", "scratch-which", "lookup-book"}:
+               "scratch-self-audit", "scratch-verify", "scratch-resume",
+               "scratch-which", "lookup-book"}:
         return
     try:
         import datetime as _dt

@@ -52,6 +52,7 @@ Linux machine (real searches, real fetches, real helper calls — log in
 | #33 Helper to set the scratch `**Vault note:**`/PDF header (4 runs) | done | `feat: add scratch-set-note to record vault note and PDF paths` — new subcommand writes the `**Vault note:**` header (and a `**PDF:**` line) under the scratch file lock, so the Phase 7 `[REJECTED]` hard-gate target is set by the helper instead of hand-edits; vault-relative paths resolve against `VICAYA_VAULT_PATH`; refuses when the note file doesn't exist (a typo'd path previously disarmed the gate silently — gate 7 skips the scan for nonexistent paths); gate-7 checklist items now name the subcommand; SKILL.md updated (quick-start step 4, Research scratchpad block, Phase 7 section + exit line); 6 regression tests |
 | #32 Phase-key naming mismatch — `scratch-log 4a` raw ValueError (2 runs: 20260528-143000, 20260609-230046) | done | `fix: accept phase 4a as alias for 4 with clean scratch CLI errors` — `4a` now normalizes to `4` everywhere a phase id enters (`scratch_log`, `scratch_gate`, `scratch_verify --through`, autolog via `VICAYA_PHASE`), so SKILL.md's "Phase 4a — Web search" wording and the helper agree; unknown phases get a clean ValueError listing valid ids + the alias, and the `scratch-log`/`scratch-gate` CLI handlers catch it (plus scratch-not-initialised) into `{ok: false, error}` JSON with exit 1 instead of a raw traceback; both argparse help strings document the alias; 7 regression tests |
 | #14 Web search 403 / parameter failures (absorbs #16 residue) | done | `docs: add WebSearch-403 and lookup-book fallbacks to failure section` — two bullets in SKILL.md "## When something fails": WebSearch-403 → stop retrying, WebFetch direct URLs (Phase 4a mirrors) + arXiv search endpoint (IDs cannot be guessed); `lookup-book` RuntimeError (dpd-db repo not at expected path) → resolve-citation + direct sqlite on `$VICAYA_CANON_DB`; route guard tests pass (seen in 3 runs: 20260605-025640, 20260609-112239, 20260609-230046) |
+| #6 Agent failure checklist before final response (3 supporting runs) | done | `feat: add scratch-self-audit failure checklist enforced by gate 7` — new subcommand holds the six fixed failure-mode questions (easy-source bias, dropped user seeds, early stopping, artifact-vs-completion, stale instructions, unverified cross-check corrections); no-args call prints the questions, `--answer`×6 appends the timestamped Q/A block under Phase 7; `scratch-gate 7` refuses until the block exists (same hard-gate pattern as the [REJECTED] scan), so the checklist is structural, not prose; SKILL.md updated (quick-start step 4, new Phase 7 "Self-audit" subsection, Phase 7 exit line); 8 regression tests + 2 existing gate-7 tests updated |
 | #43 REGRESSION: sequential-scratch rule lost in doc restructure | done (re-scoped 2026-06-11) | `docs: re-add scratch sequencing rule scoped to hand-edits + guard test` — premise was partially stale: helper appends have been flock-serialized inside `_append_under_phase` since `ee5917a` (06-07), which postdates the last corruption sighting (20260606-110638) and survived `9a77539`, so parallel helper calls are structurally safe and the old blanket prose rule would be wrong; the only unprotected path is direct hand-edits to the scratch file (Edit/Write racing a helper append), so the restored rule targets exactly that, placed in `## Research scratchpad` (routed by all four staged routers); new guard test in `tests/test_skill_routes.py` fails if the rule ever leaves that section again |
 
 ## Remaining — prioritized
@@ -61,14 +62,6 @@ Linux machine (real searches, real fetches, real helper calls — log in
 _None._
 
 ### Medium severity
-
-**#6 Agent failure checklist before final response.** Unchanged proposal
-(`scratch-self-audit` printing a fixed checklist). Verified missing
-2026-06-11 (no such subcommand). Supporting evidence this
-cycle: the Devil's-Advocate pass caught suppressed evidence twice
-(20260605-022801, 20260603-232301) and validate-before-apply flipped a wrong
-cross-check tier claim (20260606-000000) — the checklist pattern works when
-it exists; it should be structural.
 
 **#7 Phase exit criteria missing for non-scratch dimensions.** Unchanged —
 gate checklists are still tick-by-agent. Verified 2026-06-11: `scratch-gate
@@ -82,7 +75,7 @@ Phase 7 audit checks headings but not footer/bibliography style
 cycle (seed-note handoff worked well in 20260606-110638).
 
 **#19 Weak-model design — explicit control points.** Unchanged direction;
-#29, #31, and #33 were closed structurally; #45 (resolve-citation input
+#29, #31, #33, and #6 were closed structurally; #45 (resolve-citation input
 footgun) is the remaining concrete instance.
 
 **#35 lookup-book broken on machines where `cst_book_translator.py` is not
@@ -203,9 +196,9 @@ in: 20260601-075124, 20260606-112752, 20260609-221756, 20260610-071644)
    solved the context problem in practice, so the kernel/reference
    restructure is shelved unless context complaints recur. The heading-based
    routing is now guarded by `tests/test_skill_routes.py`. #36's doc gaps are
-   closed. #6 and #19 (structural control points — #33 closed 2026-06-11
-   with `scratch-set-note`, #45 is next) remain the live direction for
-   prose-rule sprawl.
+   closed. #19 (structural control points — #33 closed 2026-06-11 with
+   `scratch-set-note`, #6 closed 2026-06-11 with `scratch-self-audit`, #45 is
+   next) remains the live direction for prose-rule sprawl.
 
 4. The 2026-06-11 verification sweep (log: `temp/issue-verify-20260611.md`)
    closed #9, #16, #23/#24, #25, #34, #39, the doc halves of #10, and the

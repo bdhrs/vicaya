@@ -909,7 +909,7 @@ class TestScratchDossier:
         assert _read_state() == {"scratch": str(path), "phase": "3"}
 
     def test_phase_7_gate_refuses_when_vault_note_has_rejected(self, tmp_path, monkeypatch):
-        from tools.research_sources import scratch_gate, scratch_init
+        from tools.research_sources import scratch_gate, scratch_init, scratch_self_audit
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-rejected-gate")
         # Point the scratch file at a vault note containing a [REJECTED] tag.
@@ -927,6 +927,7 @@ class TestScratchDossier:
         for phase in ("0", "1", "2", "2.5", "3", "3b", "4", "4b", "4c", "5", "6"):
             r = scratch_gate(phase)
             assert r["ok"], (phase, r)
+        assert scratch_self_audit(answers=["none"] * 6)["ok"]
         result = scratch_gate("7")
         assert result["ok"] is False
         assert "[REJECTED]" in result["reason"] or "REJECTED" in result["reason"]
@@ -1171,7 +1172,9 @@ class TestScratchSetNote:
         assert "<set at Phase 7>" not in text
 
     def test_gate_7_scans_note_set_via_helper(self, tmp_path, monkeypatch):
-        from tools.research_sources import scratch_gate, scratch_init, scratch_set_note
+        from tools.research_sources import (
+            scratch_gate, scratch_init, scratch_self_audit, scratch_set_note,
+        )
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("set-note-gate")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -1183,6 +1186,7 @@ class TestScratchSetNote:
         assert scratch_set_note(str(note))["ok"]
         for phase in ("0", "1", "2", "2.5", "3", "3b", "4", "4b", "4c", "5", "6"):
             assert scratch_gate(phase)["ok"]
+        assert scratch_self_audit(answers=["none"] * 6)["ok"]
 
         result = scratch_gate("7")
 
@@ -1250,6 +1254,125 @@ class TestScratchSetNote:
         new_text = path.read_text(encoding="utf-8")
         assert f"**Vault note:** {result['vault_note']}" in new_text
         assert new_text.index("**Run class:**") < new_text.index("**Vault note:**")
+
+
+class TestScratchSelfAudit:
+    """scratch-self-audit records the failure checklist the Phase 7 gate requires."""
+
+    def test_no_answers_prints_questions_without_writing(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_init, scratch_self_audit
+        from tools.scratch import _SELF_AUDIT_QUESTIONS
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("audit-questions")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+
+        result = scratch_self_audit()
+
+        assert result["ok"] is False
+        assert result["questions"] == _SELF_AUDIT_QUESTIONS
+        assert "### SELF-AUDIT" not in path.read_text(encoding="utf-8")
+
+    def test_wrong_answer_count_refuses(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_init, scratch_self_audit
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("audit-count")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+
+        result = scratch_self_audit(answers=["only one"])
+
+        assert result["ok"] is False
+        assert "expected" in result["error"]
+        assert "### SELF-AUDIT" not in path.read_text(encoding="utf-8")
+
+    def test_blank_answer_refuses(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_init, scratch_self_audit
+        from tools.scratch import _SELF_AUDIT_QUESTIONS
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("audit-blank")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        answers = ["checked"] * (len(_SELF_AUDIT_QUESTIONS) - 1) + ["  "]
+
+        result = scratch_self_audit(answers=answers)
+
+        assert result["ok"] is False
+        assert "### SELF-AUDIT" not in path.read_text(encoding="utf-8")
+
+    def test_records_block_under_phase_7(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_init, scratch_self_audit
+        from tools.scratch import _SELF_AUDIT_QUESTIONS
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("audit-record")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        answers = [f"answer {i}" for i in range(len(_SELF_AUDIT_QUESTIONS))]
+
+        result = scratch_self_audit(answers=answers)
+
+        assert result["ok"]
+        text = path.read_text(encoding="utf-8")
+        assert "### SELF-AUDIT" in text
+        assert text.index("## Phase 7") < text.index("### SELF-AUDIT")
+        for q, a in zip(_SELF_AUDIT_QUESTIONS, answers):
+            assert f"- Q: {q}" in text
+            assert f"  A: {a}" in text
+
+    def test_second_call_does_not_duplicate(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_init, scratch_self_audit
+        from tools.scratch import _SELF_AUDIT_QUESTIONS
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("audit-dup")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        n = len(_SELF_AUDIT_QUESTIONS)
+
+        assert scratch_self_audit(answers=["none"] * n)["ok"]
+        again = scratch_self_audit(answers=["none"] * n)
+
+        assert again["ok"]
+        assert "not duplicated" in again["note"]
+        assert path.read_text(encoding="utf-8").count("### SELF-AUDIT") == 1
+
+    def test_gate_7_refuses_without_audit(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_gate, scratch_init, scratch_set_note
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("audit-gate-refuse")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        note = tmp_path / "note.md"
+        note.write_text("# Note\n\nClean.\n", encoding="utf-8")
+        assert scratch_set_note(str(note))["ok"]
+        for phase in ("0", "1", "2", "2.5", "3", "3b", "4", "4b", "4c", "5", "6"):
+            assert scratch_gate(phase)["ok"]
+
+        result = scratch_gate("7")
+
+        assert result["ok"] is False
+        assert "scratch-self-audit" in result["message"]
+        assert "### PHASE 7 EXIT GATE" not in path.read_text(encoding="utf-8")
+
+    def test_gate_7_passes_with_audit_and_clean_note(self, tmp_path, monkeypatch):
+        from tools.research_sources import (
+            scratch_gate, scratch_init, scratch_self_audit, scratch_set_note,
+        )
+        from tools.scratch import _SELF_AUDIT_QUESTIONS
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("audit-gate-pass")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        note = tmp_path / "note.md"
+        note.write_text("# Note\n\nClean.\n", encoding="utf-8")
+        assert scratch_set_note(str(note))["ok"]
+        for phase in ("0", "1", "2", "2.5", "3", "3b", "4", "4b", "4c", "5", "6"):
+            assert scratch_gate(phase)["ok"]
+        assert scratch_self_audit(answers=["none"] * len(_SELF_AUDIT_QUESTIONS))["ok"]
+
+        result = scratch_gate("7")
+
+        assert result["ok"], result
+
+    def test_uninitialised_scratch_raises(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_self_audit
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        monkeypatch.setenv("VICAYA_SCRATCH", str(tmp_path / "no-such.md"))
+
+        with pytest.raises(FileNotFoundError):
+            scratch_self_audit()
 
 
 @canon_available

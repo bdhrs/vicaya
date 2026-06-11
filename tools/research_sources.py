@@ -1883,6 +1883,7 @@ from tools.scratch import (  # noqa: E402, F401
     _gate_marker,
     scratch_gate,
     scratch_set_note,
+    scratch_self_audit,
     scratch_verify,
     scratch_resume,
     _maybe_autolog,
@@ -2153,6 +2154,14 @@ def _cli() -> int:
         _dump(result)
         return _done(exit_code=0 if result.get("ok") else 1, autolog=False)
 
+    def _handle_scratch_self_audit(args):
+        try:
+            result = scratch_self_audit(answers=args.answer)
+        except (FileNotFoundError, ValueError) as e:
+            result = {"ok": False, "error": str(e)}
+        _dump(result)
+        return _done(exit_code=0 if result.get("ok") else 1, autolog=False)
+
     def _handle_scratch_verify(args):
         result = scratch_verify(through=args.through)
         _dump(result)
@@ -2348,6 +2357,14 @@ def _cli() -> int:
     pssn.add_argument("--pdf", default=None,
                       help="PDF path, or 'skipped' if PDF generation was skipped.")
     pssn.set_defaults(func=_handle_scratch_set_note)
+
+    psa = sub.add_parser("scratch-self-audit",
+                         help="Record the pre-completion failure checklist — "
+                              "scratch-gate 7 refuses until it is recorded.")
+    psa.add_argument("--answer", action="append", default=None, metavar="TEXT",
+                     help="One answer per checklist question, in order; run with "
+                          "no --answer flags to print the questions.")
+    psa.set_defaults(func=_handle_scratch_self_audit)
 
     psv = sub.add_parser("scratch-verify",
                          help="Verify every prior phase has its exit gate. Exits 1 on failure.")
