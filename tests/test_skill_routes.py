@@ -62,6 +62,16 @@ def test_route_list_headings_exist_in_skill_md(router):
     )
 
 
+def test_self_audit_section_routed_by_stage_3():
+    # scratch-gate 7 refuses until the self-audit is recorded (TODO #6), so
+    # the staged completion run must be routed to its instructions. The
+    # heading sits between two routed headings, where unlisted content is
+    # invisible to staged runs — this entry must never drop out.
+    assert "### Self-audit (required before the gate)" in routed_headings(
+        "vicaya-3-complete"
+    )
+
+
 def test_scratch_hand_edit_sequencing_rule_in_routed_section():
     # This rule was silently lost once in a doc restructure (TODO #43); it must
     # live inside "## Research scratchpad" because all four routers route that

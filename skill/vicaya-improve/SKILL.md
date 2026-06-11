@@ -119,13 +119,39 @@ regressions, channel-tuning actions applied.
 
 Then ask the user to pick one (AskUserQuestion, top 4 as options with the
 "Why now" as description; the 5th and the rest are reachable via Other).
-Work on the chosen issue in the normal way.
+Work on the chosen issue in the normal way. If the fix touches
+`skill/vicaya/SKILL.md`, the canonical-skill sync gate below is part of the
+fix — not an optional follow-up.
+
+## Canonical-skill sync gate
+
+`skill/vicaya/SKILL.md` is canonical; the staged skills (`vicaya-0-scope`
+… `vicaya-3-complete`) are section routers into it (kamma/project.md,
+Maintenance). Each router's Route List names exact headings, and a routed
+section is read only up to the next same-or-higher-level heading (or the
+next separately routed one). Any fix that edits `skill/vicaya/SKILL.md` is
+incomplete until this audit passes:
+
+1. **Heading added** → content under an unlisted heading is invisible to
+   staged runs, even when it sits between two routed headings. Decide which
+   stage(s) own it and add it to those Route Lists. If the new content is
+   load-bearing for a stage (a gate requirement, a hard rule), also pin it
+   with a guard test in `tests/test_skill_routes.py`.
+2. **Heading renamed or removed** → update every Route List that names it.
+3. **Behavioral text stays canonical** — never copy rules into a router;
+   routers carry only route lists, stage boundaries, and context-break
+   guards.
+4. Run `uv run -m pytest tests/test_skill_routes.py`. It catches dead route
+   entries (routed heading no longer in SKILL.md), **not** new unrouted
+   headings — check additions by hand against each router's extraction
+   rule.
 
 ## Phase 7 — Close the loop (automatic, do not wait to be asked)
 
-Finishing the fix INCLUDES the TODO bookkeeping. As soon as the fix is
-implemented and its tests pass — before reporting completion to the user —
-update `runs/TODO.md` in the same breath:
+Finishing the fix INCLUDES the TODO bookkeeping and, for canonical skill
+edits, the sync gate above. As soon as the fix is implemented and its tests
+pass — before reporting completion to the user — update `runs/TODO.md` in
+the same breath:
 
 1. Move the issue's row from Remaining to the Done table, with the commit
    subject (use the proposed subject if not yet committed).

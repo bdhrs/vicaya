@@ -31,6 +31,7 @@ Read these exact sections from `../vicaya/SKILL.md` before acting:
 - `### Frontmatter rules (agents get these wrong — read carefully)`
 - `### Correct frontmatter example (reference this when writing)`
 - `### PDF generation (run after every successful vault write)`
+- `### Self-audit (required before the gate)`
 - `### GitHub note sync (pre-approved)`
 - `## Final report to the user`
 - `## When something fails`
