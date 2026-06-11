@@ -68,6 +68,8 @@ Hard-coded for this machine. If a path is missing or a tool isn't installed, sto
 
 All user-specific paths come from the project's `.env` file (see `.env.example` at the repo root). The helper module resolves them on import. Agents do not hard-code paths; use the helpers and CLI.
 
+**Python env is a precondition, not a mid-run activity.** The project `.venv` must already be in sync with `uv.lock` (`uv sync`, run once per machine) before a research run starts. On a synced env `uv run` never needs uv's global cache — the lockfile has no git or local dependencies — which matters on macOS, where the sandbox denies `~/.cache/uv`. If a cache permission error appears mid-run, see **When something fails**.
+
 **⚠️ `$VICAYA_*` variables are NOT set in your shell.** They are `.env` keys, loaded only by the Python helpers — every Bash call starts a fresh shell where `$VICAYA_DPD_DB` etc. expand to empty strings, and a `~` read out of `.env` by hand is never tilde-expanded. Before any **direct** shell command that uses them (`sqlite3`, `grep`, `ls`, `cp`, `rg` on those paths), put this prefix in the same Bash call:
 
 ```bash
@@ -1991,6 +1993,7 @@ If fewer than 10, omit this section entirely.
 
 - **Helper raises `FileNotFoundError`**: a path is wrong — tell the user, don't fudge.
 - **`lookup-book` raises `RuntimeError: cst_book_translator not found`**: the dpd-db repo isn't at an expected path on this machine. Fall back to `resolve-citation` for passage and book names, plus direct sqlite against `$VICAYA_CANON_DB` for table↔book mapping.
+- **`uv run` fails with a cache permission error (`~/.cache/uv` denied — macOS sandbox)**: the `.venv` is cold or stale. On a synced env `uv run` never touches the global cache (no git deps in `uv.lock`), so this error means the env needs building — ask the user to run `uv sync` once outside the sandbox, then continue (`uv run --no-sync` skips the sync check on a known-good env). Do **not** export `UV_CACHE_DIR` as a workaround: it re-downloads every package into the repo, and the changed invocation environment it rides along with alters the process key that per-run scratch state is bound to — two runs lost their active scratch this way. If you ever must change the invocation environment mid-run, pin `VICAYA_SCRATCH` explicitly first.
 - **Canon search returns 0 hits**: try lang="any" and/or broader book scope before giving up.
 - **Library folders returns 0 hits**: first distinguish empty from error — `library-folders-check` exits 1 when the index path is missing or unreadable. If the index is reachable and truly empty: try fewer/looser terms; check `data/calibre_tags.csv` for the right tag vocabulary; try an author's surname as the query. Extract content directly with `pdftotext` or `ebook-convert` on known book files when needed.
 - **`WebSearch` returns 403 on every query**: the search backend is blocked or mis-credentialed on this machine (seen on macOS) — don't keep retrying. Fall back to `WebFetch` on directly constructed URLs (the mirror patterns in Phase 4a); for academic papers use the arXiv search endpoint (`http://export.arxiv.org/api/query?search_query=all:"<terms>"`) — arXiv IDs cannot be guessed.

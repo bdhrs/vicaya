@@ -53,6 +53,7 @@ Linux machine (real searches, real fetches, real helper calls — log in
 | #32 Phase-key naming mismatch — `scratch-log 4a` raw ValueError (2 runs: 20260528-143000, 20260609-230046) | done | `fix: accept phase 4a as alias for 4 with clean scratch CLI errors` — `4a` now normalizes to `4` everywhere a phase id enters (`scratch_log`, `scratch_gate`, `scratch_verify --through`, autolog via `VICAYA_PHASE`), so SKILL.md's "Phase 4a — Web search" wording and the helper agree; unknown phases get a clean ValueError listing valid ids + the alias, and the `scratch-log`/`scratch-gate` CLI handlers catch it (plus scratch-not-initialised) into `{ok: false, error}` JSON with exit 1 instead of a raw traceback; both argparse help strings document the alias; 7 regression tests |
 | #14 Web search 403 / parameter failures (absorbs #16 residue) | done | `docs: add WebSearch-403 and lookup-book fallbacks to failure section` — two bullets in SKILL.md "## When something fails": WebSearch-403 → stop retrying, WebFetch direct URLs (Phase 4a mirrors) + arXiv search endpoint (IDs cannot be guessed); `lookup-book` RuntimeError (dpd-db repo not at expected path) → resolve-citation + direct sqlite on `$VICAYA_CANON_DB`; route guard tests pass (seen in 3 runs: 20260605-025640, 20260609-112239, 20260609-230046) |
 | #6 Agent failure checklist before final response (3 supporting runs) | done | `feat: add scratch-self-audit failure checklist enforced by gate 7` — new subcommand holds the six fixed failure-mode questions (easy-source bias, dropped user seeds, early stopping, artifact-vs-completion, stale instructions, unverified cross-check corrections); no-args call prints the questions, `--answer`×6 appends the timestamped Q/A block under Phase 7; `scratch-gate 7` refuses until the block exists (same hard-gate pattern as the [REJECTED] scan), so the checklist is structural, not prose; SKILL.md updated (quick-start step 4, new Phase 7 "Self-audit" subsection, Phase 7 exit line); 8 regression tests + 2 existing gate-7 tests updated. Follow-up same day (`docs: route Self-audit section in stage 3 and add sync gate to vicaya-improve`): the new ### heading was unrouted — invisible to staged Stage-3 runs while gate 7 refused without it; added the Route List entry in vicaya-3-complete, a guard test pinning it, and a "Canonical-skill sync gate" section in vicaya-improve so SKILL.md edits always end with a route audit |
+| #27 uv cache needs escalated access (macOS sandbox, 4 runs) | done (re-scoped 2026-06-11) | `docs: replace UV_CACHE_DIR workaround with uv sync precondition` — premise was wrong: `uv.lock` has no git/local deps, so a synced `.venv` never touches `~/.cache/uv`; a mid-run cache error means the env was cold/stale (a setup failure upstream), and the repo-local `UV_CACHE_DIR` convention the runs converged on re-downloads every package and twice coincided with active-scratch loss (20260609-221756, 20260610-044213 — the changed invocation environment alters the process key scratch state is bound to); SKILL.md Setup now states `uv sync` as a once-per-machine precondition, and "When something fails" routes cache errors to `uv sync` / `--no-sync` and explicitly bans the `UV_CACHE_DIR` export, with the `VICAYA_SCRATCH` pin for unavoidable env changes; route guard tests pass |
 | #43 REGRESSION: sequential-scratch rule lost in doc restructure | done (re-scoped 2026-06-11) | `docs: re-add scratch sequencing rule scoped to hand-edits + guard test` — premise was partially stale: helper appends have been flock-serialized inside `_append_under_phase` since `ee5917a` (06-07), which postdates the last corruption sighting (20260606-110638) and survived `9a77539`, so parallel helper calls are structurally safe and the old blanket prose rule would be wrong; the only unprotected path is direct hand-edits to the scratch file (Edit/Write racing a helper append), so the restored rule targets exactly that, placed in `## Research scratchpad` (routed by all four staged routers); new guard test in `tests/test_skill_routes.py` fails if the rule ever leaves that section again |
 
 ## Remaining — prioritized
@@ -85,13 +86,6 @@ SQLite. Verified 2026-06-11: works on Linux; `_DPD_REPO_CANDIDATES`
 override. Concrete fix: append `Path($VICAYA_DPD_DB).parent` as a third
 candidate — the var is already required and points inside the repo. (seen
 in 2 runs: 20260609-221756, 20260610-044213)
-
-**#27 uv cache needs escalated access (macOS sandbox).** Refreshed, promoted
-from Low: 4 recent runs hit it; working convention is repo-local
-`UV_CACHE_DIR` (`temp/uv-cache` or `.uv-cache`). Document one standard
-location in SKILL.md — verified 2026-06-11 that no SKILL.md mentions
-`UV_CACHE_DIR`; macOS sandbox behaviour itself untestable on Linux. (seen
-in: 20260601-075124, 20260606-112752, 20260609-221756, 20260610-071644)
 
 ### Low severity
 
@@ -208,7 +202,8 @@ in: 20260601-075124, 20260606-112752, 20260609-221756, 20260610-071644)
    `ee5917a`, so the rule was restored scoped to hand-edits only, with a
    guard test); and added #45. Every surviving issue now carries a
    "verified 2026-06-11" line.
-   Still untestable on Linux: #27 (macOS sandbox), #35 (macOS path), and
-   the UV_CACHE_DIR scratch-state-loss note — those need one sighting check
+   Still untestable on Linux: #35 (macOS path) — needs one sighting check
    next time a run executes on the macOS machine. (#14's 403 itself remains
-   macOS-only, but its doc-fallback fix landed 2026-06-11 and closed it.)
+   macOS-only, but its doc-fallback fix landed 2026-06-11 and closed it.
+   #27 was re-scoped and closed 2026-06-11: cache errors now route to
+   `uv sync`, not `UV_CACHE_DIR` — confirm on the next macOS run.)
