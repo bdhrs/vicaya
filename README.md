@@ -12,7 +12,10 @@ on related topics, so the vault accumulates as a connected body of work.
 The main skill is invoked as `/vicaya <your question>` inside Claude Code (or
 any agent that reads a Markdown skill file). For lower-context staged runs, use
 the sibling skills `vicaya-0-scope`, `vicaya-1-gather`,
-`vicaya-2-synthesize-review`, and `vicaya-3-complete`; they route to exact sections in `skill/vicaya/SKILL.md`, which remains the behavioral source of truth.
+`vicaya-2-synthesize-review`, and `vicaya-3-complete`; they route to exact
+sections in `skill/vicaya/SKILL.md`, which remains the behavioral source of
+truth. For periodic maintenance, use `vicaya-improve` to process run
+retrospectives into the improvement backlog.
 
 ## Sources
 
@@ -39,17 +42,23 @@ Each source is optional — if the tool or path isn't configured it is silently 
    symlinks ensures that changes made in this repository are immediately
    reflected in all agents. If you use staged runs, symlink the staged sibling
    folders too: `vicaya-0-scope`, `vicaya-1-gather`,
-   `vicaya-2-synthesize-review`, and `vicaya-3-complete`.
+   `vicaya-2-synthesize-review`, and `vicaya-3-complete`. If you use the
+   retrospective improvement loop, symlink `vicaya-improve` too.
 
-   **Gemini CLI / OpenCode:**
+   **Gemini CLI / OpenCode / Codex when `~/.agents/skills` is shared:**
    ```bash
    ln -sf "$(pwd)/skill/vicaya" ~/.agents/skills/vicaya
+   ln -sf "$(pwd)/skill/vicaya-improve" ~/.agents/skills/vicaya-improve
    ```
 
    **Claude Code:**
    ```bash
    ln -sf "$(pwd)/skill/vicaya" ~/.claude/skills/vicaya
+   ln -sf "$(pwd)/skill/vicaya-improve" ~/.claude/skills/vicaya-improve
    ```
+
+   Open a fresh agent session after adding a new skill symlink; skill discovery
+   happens when the session starts.
 
 5. (Optional) Clone the GRETIL Sanskrit corpus for pre-Buddhist source search:
    ```bash
@@ -281,13 +290,15 @@ To make the main skill available across all your agents while keeping it in
 sync with this repository, create symlinks in the following locations. If you
 use staged runs, create matching symlinks for `skill/vicaya-0-scope`,
 `skill/vicaya-1-gather`, `skill/vicaya-2-synthesize-review`, and
-`skill/vicaya-3-complete`.
+`skill/vicaya-3-complete`. Also symlink `skill/vicaya-improve` if you want
+the retrospective improvement loop available as an agent skill.
 
-**For Gemini CLI and OpenCode (shared central directory):**
+**For Gemini CLI, OpenCode, and Codex where `~/.agents/skills` is shared:**
 
 ```bash
 mkdir -p ~/.agents/skills
 ln -sf "$(pwd)/skill/vicaya" ~/.agents/skills/vicaya
+ln -sf "$(pwd)/skill/vicaya-improve" ~/.agents/skills/vicaya-improve
 ```
 
 **For Claude Code:**
@@ -295,6 +306,7 @@ ln -sf "$(pwd)/skill/vicaya" ~/.agents/skills/vicaya
 ```bash
 mkdir -p ~/.claude/skills
 ln -sf "$(pwd)/skill/vicaya" ~/.claude/skills/vicaya
+ln -sf "$(pwd)/skill/vicaya-improve" ~/.claude/skills/vicaya-improve
 ```
 
 **Verification:**
@@ -302,9 +314,11 @@ ln -sf "$(pwd)/skill/vicaya" ~/.claude/skills/vicaya
 ```bash
 # Check Gemini/OpenCode
 ls ~/.agents/skills/vicaya/SKILL.md
+ls ~/.agents/skills/vicaya-improve/SKILL.md
 
 # Check Claude
 ls ~/.claude/skills/vicaya/SKILL.md
+ls ~/.claude/skills/vicaya-improve/SKILL.md
 ```
 
 If you ever move or rename this repository, you will need to re-run these
@@ -341,6 +355,7 @@ vicaya/
 │   ├── youtube_channels.md      # YouTube channel allowlist
 │   └── youtube_cache/           # cached transcripts (gitignored)
 ├── skill/vicaya/                # the main skill prompt
+├── skill/vicaya-improve/        # retrospective triage skill
 ├── skill/vicaya-*/              # staged skill routers
 └── kamma/                       # design history
 ```
