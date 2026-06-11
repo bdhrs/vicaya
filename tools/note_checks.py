@@ -35,6 +35,26 @@ REQUIRED_SECTIONS = (
 # omit them. All other required sections remain hard errors.
 SOFT_SECTIONS = frozenset({"## Canon Evidence (T1)"})
 
+# Series-format bodies ("What the EBTs say / don't say about X") hold their
+# block-quoted canon evidence inside those sections, so a separate Canon
+# Evidence (T1) section is not expected and its soft warning is suppressed.
+_SERIES_HEADING_RE = re.compile(
+    r"^##\s+.*\bwhat the (ebts|suttas)\b.*\bsay\b", re.IGNORECASE
+)
+
+# Hints appended to missing-section errors that series runs hit repeatedly:
+# the fixed series body replaces the evidence sections but never the
+# scaffolding, and agents kept re-deriving that rule from sibling notes.
+_SECTION_HINTS = {
+    "## Question": (
+        "fixed-format/series notes keep `## Question` above the custom body"
+    ),
+    "## Findings": (
+        "fixed-format/series notes keep a short `## Findings` overview "
+        "above the custom body"
+    ),
+}
+
 
 @dataclass(frozen=True)
 class ValidationIssue:
@@ -179,16 +199,24 @@ def _validate_body(
                 )
             )
 
+    series_body = any(_SERIES_HEADING_RE.match(line.strip()) for line in lines)
     for heading in REQUIRED_SECTIONS:
-        if not any(line.strip() == heading for line in lines):
-            issues.append(
-                ValidationIssue(
-                    "missing-section",
-                    f"required section missing: {heading}",
-                    1 + line_offset,
-                    "warning" if heading in SOFT_SECTIONS else "error",
-                )
+        if any(line.strip() == heading for line in lines):
+            continue
+        if heading in SOFT_SECTIONS and series_body:
+            continue
+        hint = _SECTION_HINTS.get(heading)
+        message = f"required section missing: {heading}"
+        if hint:
+            message = f"{message} ({hint})"
+        issues.append(
+            ValidationIssue(
+                "missing-section",
+                message,
+                1 + line_offset,
+                "warning" if heading in SOFT_SECTIONS else "error",
             )
+        )
 
     if _section_has_content(lines, "## Canon Evidence (T1)") and not _list_items(
         frontmatter, "canon_refs"

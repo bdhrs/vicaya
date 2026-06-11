@@ -1562,6 +1562,24 @@ Pāḷi/English presentation rules in Style notes — *before* writing the first
 line of the draft. Drafting from memory of the template has produced notes in
 the wrong shape that needed a full rewrite before validation.
 
+**Caller-supplied fixed formats (e.g. the "What the suttas say about X"
+series).** When the user's command supplies a fixed note format, do not choose
+between that format and the template below — use the established hybrid. This
+paragraph is the spec; do not reverse-engineer the shape from sibling notes.
+
+- Keep the standard frontmatter, `## Question`, and a short `## Findings`
+  overview (a few orienting paragraphs). The validator hard-requires all
+  three; every series run that omitted them failed validation and had to
+  retrofit them.
+- Place the caller's sections verbatim beneath the Findings overview (for the
+  series: `## What the EBTs say about X` / `## What the EBTs don't say about
+  X`, each claim backed by block-quoted Pāḷi + English).
+- Omit `## Canon Evidence (T1)` when the quotes live inside the caller's
+  sections — the validator recognizes series-body headings and does not warn.
+- Keep the standard tail: `## Sources Investigated, Not Used`,
+  `## Critical Gaps`, `## Bibliography`, and `## Angles Not Pursued` when
+  applicable.
+
 **Before writing, run this source-coverage check:**
 - Is every position from the perspective map represented by at least one block-quoted canon passage?
 - Is every *applicable* angle from the Phase 1 triage represented by at least one citation, and is every *non-applicable* angle logged in `## Angles Not Pursued` with a one-line reason?
