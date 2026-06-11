@@ -407,6 +407,16 @@ force a specific scratch when resuming a run from a different process). `export`
 does not survive between Bash calls in most agent harnesses anyway — rely on the
 automatic per-run isolation instead.
 
+**Within one run, helper writes are lock-serialized — hand-edits are not.**
+Every scratch-mutating helper call (auto-logs, `scratch-log`, `scratch-gate`)
+holds a blocking file lock for its whole read→splice→write, so helper calls in
+the same parallel tool batch cannot clobber each other's appends. That lock
+does **not** cover direct edits to the scratch file (Edit/Write tools, ad-hoc
+scripts): never hand-edit the scratch in the same parallel batch as any
+scratch-mutating helper call — a racing hand-edit silently drops the helper's
+append (a real run lost a phase append this way). Run hand-edits alone, then
+continue.
+
 **Iron rule:** a phase cannot be left without calling `scratch-gate <phase>`.
 `scratch-verify` is the enforcement mechanism at Phase 5 start — it exits 1 and
 prints the missing gate plus its expected evidence list, so backfilling is

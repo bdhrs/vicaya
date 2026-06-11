@@ -49,21 +49,13 @@ Linux machine (real searches, real fetches, real helper calls — log in
 | #39 search-canon JSON-parsing notes | done | jq-absent caveat documented at SKILL.md:93 (minor residue: SKILL.md:124 still says "Parse the JSON with `jq`" — one-line cleanup) |
 | #41 scratch-gate missing-gate visibility (half) | done | verified 2026-06-11: refusal JSON carries `missing_phase`, `missing_title`, expected evidence, and "run scratch-gate 1 first"; the validate_note silent-pass half stays open as #41 |
 | #10 Obsidian CLI bypass (doc halves) | done | "When Obsidian isn't running" section documents the disk fallback and the final-report declaration; optional `vault-write` wrapper demoted to Low residue |
+| #43 REGRESSION: sequential-scratch rule lost in doc restructure | done (re-scoped 2026-06-11) | `docs: re-add scratch sequencing rule scoped to hand-edits + guard test` — premise was partially stale: helper appends have been flock-serialized inside `_append_under_phase` since `ee5917a` (06-07), which postdates the last corruption sighting (20260606-110638) and survived `9a77539`, so parallel helper calls are structurally safe and the old blanket prose rule would be wrong; the only unprotected path is direct hand-edits to the scratch file (Edit/Write racing a helper append), so the restored rule targets exactly that, placed in `## Research scratchpad` (routed by all four staged routers); new guard test in `tests/test_skill_routes.py` fails if the rule ever leaves that section again |
 
 ## Remaining — prioritized
 
 ### High severity
 
-**#43 REGRESSION — same-run sequential-scratch rule lost in the doc
-restructure.** The Done table records "sequencing rule added to SKILL.md +
-vicaya-3-complete + shared/core.md" after the lost-append incident
-(20260602-144756), but `shared/core.md` no longer exists and no current
-SKILL.md mentions that scratch-mutating helper calls must run sequentially
-(verified absent 2026-06-11 — `rg` across `skill/` for sequential/parallel/
-scratch-mutating finds nothing). The protection is gone while the failure
-mode remains real: one post-isolation sighting of same-run parallel autolog
-corruption (20260606-110638). Fix: re-add the hard rule to
-`skill/vicaya/SKILL.md` (scratch section) and check the staged routers.
+_None._
 
 ### Medium severity
 
@@ -240,8 +232,11 @@ in: 20260601-075124, 20260606-112752, 20260609-221756, 20260610-071644)
 4. The 2026-06-11 verification sweep (log: `temp/issue-verify-20260611.md`)
    closed #9, #16, #23/#24, #25, #34, #39, the doc halves of #10, and the
    gate-refusal half of #41; escalated #43 to High as a regression (the
-   sequencing rule was lost when `shared/core.md` was removed); and added
-   #45. Every surviving issue now carries a "verified 2026-06-11" line.
+   sequencing rule was lost when `shared/core.md` was removed — closed later
+   the same day: helper appends turned out to be flock-protected since
+   `ee5917a`, so the rule was restored scoped to hand-edits only, with a
+   guard test); and added #45. Every surviving issue now carries a
+   "verified 2026-06-11" line.
    Still untestable on Linux: #14 (403), #27 (macOS sandbox), #35 (macOS
    path), and the UV_CACHE_DIR scratch-state-loss note — those need one
    sighting check next time a run executes on the macOS machine.

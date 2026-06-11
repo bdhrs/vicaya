@@ -60,3 +60,14 @@ def test_route_list_headings_exist_in_skill_md(router):
     assert not missing, (
         f"{router} routes headings missing from skill/vicaya/SKILL.md: {missing}"
     )
+
+
+def test_scratch_hand_edit_sequencing_rule_in_routed_section():
+    # This rule was silently lost once in a doc restructure (TODO #43); it must
+    # live inside "## Research scratchpad" because all four routers route that
+    # section, so every staged run reads it.
+    text = CANONICAL.read_text(encoding="utf-8")
+    start = text.index("## Research scratchpad")
+    end = text.index("\n## ", start + 1)
+    section = text[start:end]
+    assert "never hand-edit the scratch in the same parallel batch" in section
