@@ -16,6 +16,9 @@ For lower-context staged runs, use the sibling skills `vicaya-0-scope`,
 route back to exact sections in `SKILL.md`; `SKILL.md` remains the behavioral
 source of truth.
 
+For maintenance, use `vicaya-improve` to process accumulated run retrospectives
+into `runs/TODO.md` and choose the next improvement.
+
 Examples:
 ```
 /vicaya what does the Buddha mean by "the dart" in MN 105?
@@ -96,6 +99,7 @@ vicaya/
 │   ├── youtube_channels.md      # channel allowlist (trusted / probationary / excluded)
 │   └── youtube_cache/           # cached transcripts (gitignored)
 ├── skill/vicaya/                # this main skill
+├── skill/vicaya-improve/        # retrospective triage skill
 ├── skill/vicaya-*/              # staged skill routers
 └── kamma/                       # design history
 ```
