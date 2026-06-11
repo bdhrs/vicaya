@@ -68,6 +68,14 @@ Hard-coded for this machine. If a path is missing or a tool isn't installed, sto
 
 All user-specific paths come from the project's `.env` file (see `.env.example` at the repo root). The helper module resolves them on import. Agents do not hard-code paths; use the helpers and CLI.
 
+**⚠️ `$VICAYA_*` variables are NOT set in your shell.** They are `.env` keys, loaded only by the Python helpers — every Bash call starts a fresh shell where `$VICAYA_DPD_DB` etc. expand to empty strings, and a `~` read out of `.env` by hand is never tilde-expanded. Before any **direct** shell command that uses them (`sqlite3`, `grep`, `ls`, `cp`, `rg` on those paths), put this prefix in the same Bash call:
+
+```bash
+eval "$(uv run tools/research_sources.py env)"
+```
+
+It prints all `VICAYA_*` values as shell-quoted `export` lines with `~` expanded, whatever style the `.env` uses. Helper CLI calls need no prefix — they load `.env` themselves.
+
 - Vault Root: `$VICAYA_VAULT_PATH` (This is the absolute path to the root directory of the vault).
 - Output folder in vault: `$VICAYA_VAULT_PATH/Vicaya/` (this folder is its own git repo — publish notes only through the pre-approved `scripts/sync_notes.py` path after Phase 7 validation/gating)
 - Helper module: `<repo>/tools/research_sources.py`
@@ -95,6 +103,7 @@ Subcommands (each prints JSON to stdout):
 
 | Subcommand | Args | Notes |
 |---|---|---|
+| `env` | — | Prints `VICAYA_*` config as shell `export` lines (not JSON), `~` expanded, shell-quoted. Use as `eval "$(uv run tools/research_sources.py env)"` before direct shell commands that need `$VICAYA_*` paths (see Setup). |
 | `search-vault QUERY` | `--folder PATH` `--limit N` | Obsidian vault full-text search |
 | `search-canon QUERY` | `--books PAT...` `--lang pali\|english\|any` `--limit N` | Default books: sutta mūla (`s*_mul`) |
 | `resolve-citation BOOK_CODE PARANUM` | — | Returns `Citation` JSON |
@@ -164,7 +173,8 @@ Read-only, ~2 GB. If the variable is unset, tell the user to add
 guess the path.
 
 **Access.** Query it directly with `sqlite3`, exactly as the canon db is queried
-above. The dpd-db repo ships a full SQLAlchemy model layer (`db/models.py`), but
+above. `$VICAYA_DPD_DB` is empty in a fresh shell — every direct-SQL call starts
+with the `eval "$(uv run tools/research_sources.py env)"` prefix (see Setup). The dpd-db repo ships a full SQLAlchemy model layer (`db/models.py`), but
 that is for building/editing the dictionary and pins you to that repo's
 environment; for read-only lookups raw SQL is simpler and the table/column schema
 is stable. Resolve the JSON columns in Python (`json.loads`) when you need them.
@@ -182,6 +192,7 @@ You know a dictionary word and want its meaning, grammar, and derivation. Query
 `LIKE 'word%'` to get every sense:
 
 ```bash
+eval "$(uv run tools/research_sources.py env)"
 sqlite3 "$VICAYA_DPD_DB" \
   "SELECT lemma_1, pos, grammar, plus_case, meaning_1, meaning_lit, construction, root_key
    FROM dpd_headwords WHERE lemma_1 LIKE 'dukkha%' LIMIT 10;"
@@ -200,6 +211,7 @@ dictionary form. Look the exact form up in `lookup`; it returns a JSON array of
 `dpd_headwords.id` values plus a grammatical analysis:
 
 ```bash
+eval "$(uv run tools/research_sources.py env)"
 sqlite3 "$VICAYA_DPD_DB" \
   "SELECT headwords, grammar, deconstructor, roots FROM lookup WHERE lookup_key='dukkhassa';"
 # headwords  -> [32875, 32876, 32877, 32878]   (ids into dpd_headwords)
@@ -211,6 +223,7 @@ sqlite3 "$VICAYA_DPD_DB" \
 Then resolve the ids against `dpd_headwords` to get the actual entries:
 
 ```bash
+eval "$(uv run tools/research_sources.py env)"
 sqlite3 "$VICAYA_DPD_DB" \
   "SELECT id, lemma_1, pos, meaning_1 FROM dpd_headwords WHERE id IN (32875,32876,32877,32878);"
 ```
@@ -903,7 +916,7 @@ between entries after renumbering — they do not update themselves.
 
 **EBC seed lookup** — if the question is anchored on one or more specific suttas (named in the user's question, or surfaced by the vault search), call `get-ebc-overview <code>` once per sutta. The returned `parallels_agama` and `parallels_partial` lists feed directly into the perspective map and the Phase 3 parallel-evidence search; the `themes`, `formula`, and `training` fields can suggest related suttas you might otherwise miss. This costs nothing and replaces a SuttaCentral parallel-table lookup.
 
-For thematic (non-sutta-anchored) questions, `grep -F "<theme>" "$VICAYA_EBC_VAULT_PATH/Catalogue/Suttas-Catalogue.tsv"` is the cheapest way to surface a candidate sutta list before Phase 2 — the TSV has columns for theme, topic, training, formula, and parallels.
+For thematic (non-sutta-anchored) questions, `eval "$(uv run tools/research_sources.py env)" && grep -F "<theme>" "$VICAYA_EBC_VAULT_PATH/Catalogue/Suttas-Catalogue.tsv"` is the cheapest way to surface a candidate sutta list before Phase 2 — the TSV has columns for theme, topic, training, formula, and parallels.
 
 **Perspective map.** Before moving to Phase 2, explicitly name the 2–5 competing positions or schools of thought the question touches. Examples: "Theravāda commentarial vs. Ñāṇavīra structural", "cessationist vs. realist readings of Nibbāna", "three-lives vs. momentary paṭiccasamuppāda". If the question is purely factual with no interpretive dispute, skip this step. Otherwise, tag subsequent evidence — canon hits, library sources, web sources — as supporting a named position. This ensures the final note covers all significant views, not just the first position the search surfaces.
 
@@ -1104,19 +1117,19 @@ uv run tools/research_sources.py resolve-citation s0201m_mul 23
 **Parallel argument structures — pull the whole range.** Many suttas run the same argument across multiple parallel blocks (e.g. MN60's five rebirth-wager positions, AN 4.170's four paths, the five-aggregate formulae). Keyword search returns only the blocks containing your keyword — typically 1–2 of 5–10. When hits show a repeating formula (`''Tatra, gahapatayo…`, `''Kathañca…`, `''Idha bhikkhave…`), the other blocks carry the same structure with different terms and will be missed. Fix: find the `id` of the first hit and the `id` of the next sutta subhead, then pull everything in between:
 
 ```bash
-CANON_DB=$(grep '^VICAYA_CANON_DB=' .env | cut -d= -f2- | sed "s|^~|$HOME|")
-test -s "$CANON_DB" || { echo "VICAYA_CANON_DB missing or empty: $CANON_DB" >&2; exit 1; }
-sqlite3 -readonly "$CANON_DB" \
+eval "$(uv run tools/research_sources.py env)"
+test -s "$VICAYA_CANON_DB" || { echo "VICAYA_CANON_DB missing or empty: $VICAYA_CANON_DB" >&2; exit 1; }
+sqlite3 -readonly "$VICAYA_CANON_DB" \
   "SELECT id, paranum, pali_text, english_translation FROM <table> WHERE id BETWEEN <start_id> AND <end_id>;"
 ```
 
 **When a direct-SQL hit has empty `paranum`** — this is normal for subhead, gatha, and continuation rows within a paragraph (only the first row of each paragraph carries `paranum`). `search-canon` hits already arrive with the owning paranum filled in; this recipe is only needed when you query the db directly. To find the owning sutta, query by `id`:
 
 ```bash
-CANON_DB=$(grep '^VICAYA_CANON_DB=' .env | cut -d= -f2- | sed "s|^~|$HOME|")
-test -s "$CANON_DB" || { echo "VICAYA_CANON_DB missing or empty: $CANON_DB" >&2; exit 1; }
+eval "$(uv run tools/research_sources.py env)"
+test -s "$VICAYA_CANON_DB" || { echo "VICAYA_CANON_DB missing or empty: $VICAYA_CANON_DB" >&2; exit 1; }
 # Find the nearest preceding paranum for a hit at row <id>:
-sqlite3 -readonly "$CANON_DB" \
+sqlite3 -readonly "$VICAYA_CANON_DB" \
   "SELECT paranum FROM <table> WHERE id < <hit_id> AND paranum != '' ORDER BY id DESC LIMIT 1;"
 # Then resolve it:
 uv run tools/research_sources.py resolve-citation <table> <paranum>
@@ -1131,9 +1144,9 @@ If the hit is a `subhead` rend (the row introduces the next sutta), prefer looki
 **After individual hits cluster in the same book or nipāta, scan the wider structural unit.** Stem-search returns scattered paragraph hits but misses thematic chapter blocks (e.g. AN8.31–39 dāna chapter, SN35.* sense-contact group). When hits concentrate in one table, do a broader window query:
 
 ```bash
-CANON_DB=$(grep '^VICAYA_CANON_DB=' .env | cut -d= -f2- | sed "s|^~|$HOME|")
-test -s "$CANON_DB" || { echo "VICAYA_CANON_DB missing or empty: $CANON_DB" >&2; exit 1; }
-sqlite3 -readonly "$CANON_DB" \
+eval "$(uv run tools/research_sources.py env)"
+test -s "$VICAYA_CANON_DB" || { echo "VICAYA_CANON_DB missing or empty: $VICAYA_CANON_DB" >&2; exit 1; }
+sqlite3 -readonly "$VICAYA_CANON_DB" \
   "SELECT id, paranum, pali_text, english_translation FROM <table> \
    WHERE id BETWEEN <first_cluster_id - 50> AND <last_cluster_id + 200> \
    AND pali_text != '' ORDER BY id;"
@@ -1326,7 +1339,7 @@ but the original source tree is unavailable.
 
 ### Phase 3b — Sanskrit source search
 
-**Skip this phase** unless angle 7 was marked applicable in Phase 1, or unless `VICAYA_GRETIL_PATH` is configured (check with `echo $VICAYA_GRETIL_PATH`).
+**Skip this phase** unless angle 7 was marked applicable in Phase 1, or unless `VICAYA_GRETIL_PATH` is configured (check with `grep '^VICAYA_GRETIL_PATH=' .env` — the variable is not set in your shell).
 
 Search the local GRETIL corpus for IAST terms or transliterated Sanskrit relevant to the question:
 

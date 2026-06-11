@@ -1972,6 +1972,14 @@ def _cli() -> int:
         _dump(result)
         return _done([args.book_code, str(args.paranum)], result)
 
+    def _handle_env(args):
+        import shlex
+
+        for key in sorted(k for k in os.environ if k.startswith("VICAYA_")):
+            value = os.path.expanduser(os.environ[key])
+            print(f"export {key}={shlex.quote(value)}")
+        return _done(autolog=False)
+
     def _handle_search_youtube(args):
         channels = {} if args.no_filter else None
         result = search_youtube(args.query, channels=channels, limit=args.limit)
@@ -2336,6 +2344,13 @@ def _cli() -> int:
                          help="Confirm a human sutta reference exists in dpd.db sutta_info.")
     pvc.add_argument("ref", help='Reference, e.g. "SN 46.42", "MN60", "Sn 4.8".')
     pvc.set_defaults(func=_handle_verify_citation)
+
+    pe = sub.add_parser(
+        "env",
+        help="Print VICAYA_* config as shell export lines (~ expanded, "
+             'shell-quoted). Usage: eval "$(uv run tools/research_sources.py env)"',
+    )
+    pe.set_defaults(func=_handle_env)
 
     args = p.parse_args()
 

@@ -1247,3 +1247,55 @@ class TestSearchVaultErrorHandling:
         assert hits[0].path == "Vicaya/test.md"
         assert hits[0].snippet == "dukkha arises"
         assert hits[0].line == 3
+
+
+class TestEnvSubcommand:
+    """`env` prints VICAYA_* config as eval-able shell export lines (#37)."""
+
+    def _run_env(self, monkeypatch, capsys):
+        import tools.research_sources as rs
+
+        monkeypatch.setattr(sys, "argv", ["research_sources", "env"])
+        assert rs._cli() == 0
+        return capsys.readouterr().out.splitlines()
+
+    def test_tilde_is_expanded(self, monkeypatch, capsys):
+        monkeypatch.setenv("VICAYA_TEST_TILDE", "~/MyFiles/Obsidian")
+        lines = self._run_env(monkeypatch, capsys)
+        home = str(Path.home())
+        assert f"export VICAYA_TEST_TILDE={home}/MyFiles/Obsidian" in lines
+
+    def test_value_with_spaces_survives_shell_eval(self, monkeypatch, capsys):
+        import shlex
+
+        monkeypatch.setenv(
+            "VICAYA_TEST_SPACES", "~/MyFiles/2_Resources/Early Buddhist Connections"
+        )
+        lines = self._run_env(monkeypatch, capsys)
+        line = next(l for l in lines if "VICAYA_TEST_SPACES" in l)
+        words = shlex.split(line)
+        assert words[0] == "export"
+        assert words[1] == (
+            f"VICAYA_TEST_SPACES={Path.home()}/MyFiles/2_Resources/"
+            "Early Buddhist Connections"
+        )
+
+    def test_non_vicaya_keys_excluded(self, monkeypatch, capsys):
+        monkeypatch.setenv("OPENROUTER_TEST_KEY", "secret")
+        lines = self._run_env(monkeypatch, capsys)
+        assert not any("OPENROUTER_TEST_KEY" in l for l in lines)
+
+    def test_output_is_sorted_by_key(self, monkeypatch, capsys):
+        lines = self._run_env(monkeypatch, capsys)
+        keys = [l.split("=", 1)[0].removeprefix("export ") for l in lines]
+        assert keys == sorted(keys)
+
+    def test_eval_in_real_bash_sets_variable(self, monkeypatch, capsys):
+        """End-to-end: bash eval of the output yields the expanded value."""
+        monkeypatch.setenv("VICAYA_TEST_E2E", "~/some dir/with spaces")
+        lines = self._run_env(monkeypatch, capsys)
+        script = "\n".join(lines) + '\necho "$VICAYA_TEST_E2E"'
+        result = subprocess.run(
+            ["bash", "-c", script], capture_output=True, text=True, check=True
+        )
+        assert result.stdout.strip() == f"{Path.home()}/some dir/with spaces"
