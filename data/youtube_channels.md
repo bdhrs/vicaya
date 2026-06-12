@@ -54,6 +54,7 @@ Prune dead links periodically.
 - Guru Viking
 - Yongey Mingyur Rinpoche
 - Ajahn Anan Dhamma
+- Buddhist Society of Western Australia | UC6M_EhnSSdTG_SXUp6IAWmQ
 
 ## probationary
 - Clear Mountain Monastery Project
