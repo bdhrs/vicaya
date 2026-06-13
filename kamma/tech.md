@@ -67,6 +67,8 @@
 
 ## Documentation Ownership
 - `tools/research_sources.py`: actual helper behavior and CLI implementation (library-folders commands delegate to `tools/library_folders.py`).
+- `tools/align_translations.py`: standalone Pāḷi word/phrase translator-comparison tool (issue #23). Deterministic Bilara segment alignment (root Pāḷi + English authors share one segment key); locates the sutta and lists EBC translator files for the agent to read. On a phrase spanning >1 sutta with no `--in`, prints `AMBIGUOUS` and stops — never guesses. Prints a Markdown table to stdout; reuses `research_sources` helpers; no new deps. Agent procedure lives in `skill/align/SKILL.md`.
+- `skill/align/SKILL.md`: agent procedure for the translation aligner — run the tool, ask the user on `AMBIGUOUS`, read EBC files to fill those rows.
 - `skill/vicaya/SKILL.md`: canonical agent workflow and source-use procedure.
 - `README.md`: user-facing setup and project overview.
 - `kamma/tech.md`: architecture summary, constraints, and resource map.

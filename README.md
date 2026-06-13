@@ -349,6 +349,7 @@ ready to use: `/vicaya <your question>` in Claude Code.
 vicaya/
 ├── tools/research_sources.py   # source helpers + CLI subcommands
 ├── tools/library_folders.py     # library folders SQLite index/search
+├── tools/align_translations.py  # compare translator renderings of a Pāḷi term
 ├── tests/                       # pytest suite
 ├── data/
 │   ├── calibre_tags.csv         # tag vocabulary
