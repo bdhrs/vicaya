@@ -10,12 +10,13 @@ note into your vault under `Vicaya/`. Notes link back to existing notes
 on related topics, so the vault accumulates as a connected body of work.
 
 The main skill is invoked as `/vicaya <your question>` inside Claude Code (or
-any agent that reads a Markdown skill file). For lower-context staged runs, use
-the sibling skills `vicaya-0-scope`, `vicaya-1-gather`,
-`vicaya-2-synthesize-review`, and `vicaya-3-complete`; they route to exact
-sections in `skill/vicaya/SKILL.md`, which remains the behavioral source of
-truth. For periodic maintenance, use `vicaya-improve` to process run
-retrospectives into the improvement backlog.
+any agent that reads a Markdown skill file). It runs as a single orchestrating
+session that delegates the high-volume evidence-gathering phases to a Sonnet
+sub-agent — the sub-agent searches the sources and writes findings to a shared
+scratch file, keeping the main session's context clear for synthesis and
+review. No manual stage switching is needed. `skill/vicaya/SKILL.md` remains the
+behavioral source of truth. For periodic maintenance, use `vicaya-improve` to
+process run retrospectives into the improvement backlog.
 
 ## Sources
 

@@ -7,10 +7,11 @@ description: Run a structured Pāḷi/Buddhist research session across the user'
 
 Run a multi-phase research session across the user's local + web sources and write a single structured note into their Obsidian vault.
 
-For lower-context staged runs, use `vicaya-0-scope`, `vicaya-1-gather`,
-`vicaya-2-synthesize-review`, and `vicaya-3-complete`; those staged skills are
-section routers that read exact sections from this file. This file remains the
-canonical one-goal `/vicaya` workflow and the only behavioral source of truth.
+This skill runs as a single orchestrating session. After Phase 1, all gather
+phases (2, 2.5, 3, 3b, 4a, 4b, 4c) are delegated to a Sonnet sub-agent that
+writes findings to the shared scratch file; the orchestrating session handles
+Phase 0, Phase 1, Phase 5, Phase 6, and Phase 7. This file is the canonical
+one-goal `/vicaya` workflow and the only behavioral source of truth.
 
 ## Critical execution rules
 
@@ -941,6 +942,75 @@ For thematic (non-sutta-anchored) questions, `eval "$(uv run tools/research_sour
 **Counter-perspective search.** For each position named in the perspective map, actively search for sources that support it — don't rely on the first position the keyword searches happen to surface. If a web or canon search returns only one school's voice, run a second search scoped to a known proponent of the opposing view (e.g. `authors:Analayo` for early-Buddhist readings, a specific scholar for the academic critique). Evidence gaps for any named position belong in Critical Gaps, not silent omission.
 
 → **Phase 1 exit:** `uv run tools/research_sources.py scratch-gate 1`. Auto-log has already captured the helper calls; the gate writes the canonical checklist (angle triage, vault hits, perspective map, counter-perspective targets) — tick the boxes once each is true.
+
+### Sub-agent dispatch (after Phase 1 gate)
+
+After the Phase 1 gate passes, spawn a Sonnet gather sub-agent that runs all gather phases (2, 2.5, 3, 3b, 4a, 4b, 4c) sequentially in one session. This keeps the main context clear for synthesis. The sub-agent attaches to the current run via `scratch-resume`, reads its own briefing from the scratch file (Phase 0 and Phase 1 already wrote the question, angle triage, perspective map, and sutta seeds there), runs each phase, gates each one, and returns a completion report. The orchestrating session waits for it to return, then runs `scratch-verify` before Phase 5.
+
+The only datum the prompt must carry is the **scratch slug** — `uv run tools/research_sources.py scratch-which` resolves the active scratch path (the slug is its filename stem). Everything else the sub-agent needs is already in the scratch file; do **not** re-transcribe the angle triage, perspective map, or seeds into the prompt.
+
+**Spawn** using the Agent tool with `model: "sonnet"`. Replace `<slug>` with the active slug:
+
+```text
+You are a Vicaya gather sub-agent. Run all assigned gather phases for an
+in-progress research run and write your findings to the shared dossier.
+Do NOT run Phase 0, 1, 5, 6, or 7. Do NOT write to the vault.
+
+Repo root: /Users/deva/Documents/dps/vicaya
+Scratch slug: <slug>
+
+Phases assigned: 2, 2.5, 3, 3b, 4a, 4b, 4c
+(Thematic-class runs auto-skip 2.5 and 3b — the gate helper confirms.)
+
+Steps:
+1. cd /Users/deva/Documents/dps/vicaya
+   uv run tools/research_sources.py scratch-resume <slug>
+   (Attaches to the run; prints the scratch path, last gate, and next phase.
+   Auto-logging then writes to this run's scratch file automatically.)
+2. Read your briefing from the scratch file whose path step 1 printed. Phase 0
+   and Phase 1 already recorded everything you need:
+   - the research question
+   - the full angle triage — which angles apply, including angle 7
+     (Sanskrit/Indic), which decides whether Phase 3b runs
+   - the perspective map — the named competing positions to cover
+   - any sutta UID seeds from the Phase 1 EBC lookup — feed these to
+     sc-parallels in Phase 2.5
+   - the principal technical terms — derive the ASCII, no-diacritics forms
+     for WisdomLib in Phase 4c
+3. Read these sections from skill/vicaya/SKILL.md (read the actual file —
+   do not rely on training data for any instruction detail):
+   - ## Critical execution rules
+   - ## Hard rules (read first — these are not preferences)
+   - ## Setup — paths and tools
+   - ## Calling the helpers
+   - ## Helper return shapes (read before calling)
+   - ## Book-identifier lookups (`lookup-book`)
+   - ## EBC vault (Early Buddhist Connections)
+   - ## Research scratchpad
+   - ## Evidence tiers
+   - ## Investigation angles (all subsections through Phase 1)
+   - ### Phase 2 — Canon search (including the EBC parallel-evidence pull subsection)
+   - ### Phase 2.5 — SuttaCentral offline parallel search
+   - ### Phase 3 — Library search
+   - ### Phase 3b — Sanskrit source search
+   - ### Phase 4a — Web search
+   - ### Phase 4b — YouTube search
+   - ### Phase 4c — WisdomLib
+   - ## When something fails
+4. Execute each phase in order per the canonical instructions. After each
+   phase, gate it: uv run tools/research_sources.py scratch-gate <phase>
+5. Return a completion report: phases completed, source counts per phase,
+   gate status of each phase (passed / skipped / failed).
+```
+
+**After the sub-agent returns**, run:
+
+```bash
+uv run tools/research_sources.py scratch-verify
+```
+
+- Exit 0 → proceed to Phase 5.
+- Exit 1 → the output names the missing gate and its expected evidence. Either run that phase yourself or re-spawn the sub-agent for just that phase. Never proceed to Phase 5 with a missing gate.
 
 ### Phase 2 — Canon search
 
