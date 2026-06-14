@@ -949,12 +949,10 @@ After the Phase 1 gate passes, spawn a gather sub-agent that runs all gather pha
 
 The only datum the prompt must carry is the **scratch slug** — `uv run tools/research_sources.py scratch-which` resolves the active scratch path (the slug is its filename stem). Everything else the sub-agent needs is already in the scratch file; do **not** re-transcribe the angle triage, perspective map, or seeds into the prompt.
 
-**Spawn** a gather sub-agent. The tool depends on your environment:
+**Spawn** a gather sub-agent:
 
-- **Claude Code:** Use the Agent tool with `model: "sonnet"` (cost-optimal for gather work).
-- **OpenCode:** Use the `task` tool with `subagent_type: "general"`. The model inherits from the parent session.
-- **Antigravity CLI (`agy`):** Use `agy`'s sub-agent mechanism with model tier `low` (Gemini 3.5 Flash).
-- **Other environments:** Use that environment's sub-agent mechanism; the model inherits from the parent.
+- **Claude Code:** Use the Agent tool with `model: "sonnet"` (only environment where a cheaper model can be selected). Every other environment inherits the parent model — context isolation is the benefit, not cost savings.
+- **Any other environment:** Use that environment's sub-agent mechanism.
 
 Replace `<slug>` with the active slug:
 
