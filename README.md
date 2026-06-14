@@ -46,16 +46,30 @@ Each source is optional — if the tool or path isn't configured it is silently 
    `vicaya-2-synthesize-review`, and `vicaya-3-complete`. If you use the
    retrospective improvement loop, symlink `vicaya-improve` too.
 
-   **Gemini CLI / OpenCode / Codex when `~/.agents/skills` is shared:**
+   **OpenCode:**
    ```bash
-   ln -sf "$(pwd)/skill/vicaya" ~/.agents/skills/vicaya
-   ln -sf "$(pwd)/skill/vicaya-improve" ~/.agents/skills/vicaya-improve
+   # Symlink skills
+   for skill in vicaya vicaya-improve vicaya-0-scope vicaya-1-gather vicaya-2-synthesize-review vicaya-3-complete; do
+     ln -sf "$(pwd)/skill/$skill" ~/.agents/skills/$skill
+   done
+   # Symlink slash commands (for autocomplete)
+   for cmd in vicaya vicaya-improve vicaya-0-scope vicaya-1-gather vicaya-2-synthesize-review vicaya-3-complete; do
+     ln -sf "$(pwd)/config/opencode/commands/$cmd.md" ~/.config/opencode/commands/$cmd.md
+   done
+   ```
+
+   **Antigravity CLI (`agy`):**
+   ```bash
+   for skill in vicaya vicaya-improve vicaya-0-scope vicaya-1-gather vicaya-2-synthesize-review vicaya-3-complete; do
+     ln -sf "$(pwd)/skill/$skill" ~/.gemini/skills/$skill
+   done
    ```
 
    **Claude Code:**
    ```bash
-   ln -sf "$(pwd)/skill/vicaya" ~/.claude/skills/vicaya
-   ln -sf "$(pwd)/skill/vicaya-improve" ~/.claude/skills/vicaya-improve
+   for skill in vicaya vicaya-improve vicaya-0-scope vicaya-1-gather vicaya-2-synthesize-review vicaya-3-complete; do
+     ln -sf "$(pwd)/skill/$skill" ~/.claude/skills/$skill
+   done
    ```
 
    Open a fresh agent session after adding a new skill symlink; skill discovery
@@ -67,7 +81,7 @@ Each source is optional — if the tool or path isn't configured it is silently 
    ```
    Set `VICAYA_GRETIL_PATH` in `.env` to match. If skipped, Sanskrit source search is silently disabled.
 
-6. Run `/vicaya <a question>` in Claude Code.
+6. Run `/vicaya <a question>` in Claude Code, OpenCode, or `agy`.
 
 Full setup notes are in [`skill/vicaya/SKILL.md`](skill/vicaya/SKILL.md).
 
