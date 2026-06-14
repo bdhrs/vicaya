@@ -954,21 +954,21 @@ The only datum the prompt must carry is the **scratch slug** — `uv run tools/r
 - **Claude Code:** Use the Agent tool with `model: "sonnet"` (only environment where a cheaper model can be selected). Every other environment inherits the parent model — context isolation is the benefit, not cost savings.
 - **Any other environment:** Use that environment's sub-agent mechanism.
 
-Replace `<slug>` with the active slug:
+Replace `<repo-root>` with the repository's absolute path and `<slug>` with the active slug:
 
 ```text
 You are a Vicaya gather sub-agent. Run all assigned gather phases for an
 in-progress research run and write your findings to the shared dossier.
 Do NOT run Phase 0, 1, 5, 6, or 7. Do NOT write to the vault.
 
-Repo root: /Users/deva/Documents/dps/vicaya
+Repo root: <repo-root>
 Scratch slug: <slug>
 
 Phases assigned: 2, 2.5, 3, 3b, 4a, 4b, 4c
 (Thematic-class runs auto-skip 2.5 and 3b — the gate helper confirms.)
 
 Steps:
-1. cd /Users/deva/Documents/dps/vicaya
+1. cd <repo-root>
    uv run tools/research_sources.py scratch-resume <slug>
    (Attaches to the run; prints the scratch path, last gate, and next phase.
    Auto-logging then writes to this run's scratch file automatically.)
