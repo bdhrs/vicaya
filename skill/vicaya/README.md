@@ -11,10 +11,10 @@ into your Obsidian vault.
 /vicaya <your question>
 ```
 
-For lower-context staged runs, use the sibling skills `vicaya-0-scope`,
-`vicaya-1-gather`, `vicaya-2-synthesize-review`, and `vicaya-3-complete`. They
-route back to exact sections in `SKILL.md`; `SKILL.md` remains the behavioral
-source of truth.
+The skill orchestrates sub-agents internally: after Phase 1 a gather
+sub-agent handles all evidence collection (Phases 2–4c), keeping the main
+session's context clear for synthesis (Phases 5–7). No manual stage switching
+needed. `SKILL.md` remains the behavioral source of truth.
 
 For maintenance, use `vicaya-improve` to process accumulated run retrospectives
 into `runs/TODO.md` and choose the next improvement.

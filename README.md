@@ -10,12 +10,13 @@ note into your vault under `Vicaya/`. Notes link back to existing notes
 on related topics, so the vault accumulates as a connected body of work.
 
 The main skill is invoked as `/vicaya <your question>` inside Claude Code (or
-any agent that reads a Markdown skill file). For lower-context staged runs, use
-the sibling skills `vicaya-0-scope`, `vicaya-1-gather`,
-`vicaya-2-synthesize-review`, and `vicaya-3-complete`; they route to exact
-sections in `skill/vicaya/SKILL.md`, which remains the behavioral source of
-truth. For periodic maintenance, use `vicaya-improve` to process run
-retrospectives into the improvement backlog.
+any agent that reads a Markdown skill file). It runs as a single orchestrating
+session that delegates the high-volume evidence-gathering phases to a gather
+sub-agent — the sub-agent searches the sources and writes findings to a shared
+scratch file, keeping the main session's context clear for synthesis and
+review. No manual stage switching is needed. `skill/vicaya/SKILL.md` remains the
+behavioral source of truth. For periodic maintenance, use `vicaya-improve` to
+process run retrospectives into the improvement backlog.
 
 ## Sources
 
@@ -45,16 +46,30 @@ Each source is optional — if the tool or path isn't configured it is silently 
    `vicaya-2-synthesize-review`, and `vicaya-3-complete`. If you use the
    retrospective improvement loop, symlink `vicaya-improve` too.
 
-   **Gemini CLI / OpenCode / Codex when `~/.agents/skills` is shared:**
+   **OpenCode:**
    ```bash
-   ln -sf "$(pwd)/skill/vicaya" ~/.agents/skills/vicaya
-   ln -sf "$(pwd)/skill/vicaya-improve" ~/.agents/skills/vicaya-improve
+   # Symlink skills
+   for skill in vicaya vicaya-improve vicaya-0-scope vicaya-1-gather vicaya-2-synthesize-review vicaya-3-complete; do
+     ln -sf "$(pwd)/skill/$skill" ~/.agents/skills/$skill
+   done
+   # Symlink slash commands (for autocomplete)
+   for cmd in vicaya vicaya-improve vicaya-0-scope vicaya-1-gather vicaya-2-synthesize-review vicaya-3-complete; do
+     ln -sf "$(pwd)/config/opencode/commands/$cmd.md" ~/.config/opencode/commands/$cmd.md
+   done
+   ```
+
+   **Antigravity CLI (`agy`):**
+   ```bash
+   for skill in vicaya vicaya-improve vicaya-0-scope vicaya-1-gather vicaya-2-synthesize-review vicaya-3-complete; do
+     ln -sf "$(pwd)/skill/$skill" ~/.gemini/skills/$skill
+   done
    ```
 
    **Claude Code:**
    ```bash
-   ln -sf "$(pwd)/skill/vicaya" ~/.claude/skills/vicaya
-   ln -sf "$(pwd)/skill/vicaya-improve" ~/.claude/skills/vicaya-improve
+   for skill in vicaya vicaya-improve vicaya-0-scope vicaya-1-gather vicaya-2-synthesize-review vicaya-3-complete; do
+     ln -sf "$(pwd)/skill/$skill" ~/.claude/skills/$skill
+   done
    ```
 
    Open a fresh agent session after adding a new skill symlink; skill discovery
@@ -66,7 +81,7 @@ Each source is optional — if the tool or path isn't configured it is silently 
    ```
    Set `VICAYA_GRETIL_PATH` in `.env` to match. If skipped, Sanskrit source search is silently disabled.
 
-6. Run `/vicaya <a question>` in Claude Code.
+6. Run `/vicaya <a question>` in Claude Code, OpenCode, or `agy`.
 
 Full setup notes are in [`skill/vicaya/SKILL.md`](skill/vicaya/SKILL.md).
 
