@@ -11,7 +11,7 @@ on related topics, so the vault accumulates as a connected body of work.
 
 The main skill is invoked as `/vicaya <your question>` inside Claude Code (or
 any agent that reads a Markdown skill file). It runs as a single orchestrating
-session that delegates the high-volume evidence-gathering phases to a Sonnet
+session that delegates the high-volume evidence-gathering phases to a gather
 sub-agent — the sub-agent searches the sources and writes findings to a shared
 scratch file, keeping the main session's context clear for synthesis and
 review. No manual stage switching is needed. `skill/vicaya/SKILL.md` remains the

@@ -11,7 +11,7 @@ into your Obsidian vault.
 /vicaya <your question>
 ```
 
-The skill orchestrates sub-agents internally: after Phase 1 a Sonnet gather
+The skill orchestrates sub-agents internally: after Phase 1 a gather
 sub-agent handles all evidence collection (Phases 2–4c), keeping the main
 session's context clear for synthesis (Phases 5–7). No manual stage switching
 needed. `SKILL.md` remains the behavioral source of truth.

@@ -8,7 +8,7 @@ description: Run a structured Pāḷi/Buddhist research session across the user'
 Run a multi-phase research session across the user's local + web sources and write a single structured note into their Obsidian vault.
 
 This skill runs as a single orchestrating session. After Phase 1, all gather
-phases (2, 2.5, 3, 3b, 4a, 4b, 4c) are delegated to a Sonnet sub-agent that
+phases (2, 2.5, 3, 3b, 4a, 4b, 4c) are delegated to a gather sub-agent that
 writes findings to the shared scratch file; the orchestrating session handles
 Phase 0, Phase 1, Phase 5, Phase 6, and Phase 7. This file is the canonical
 one-goal `/vicaya` workflow and the only behavioral source of truth.
@@ -945,11 +945,18 @@ For thematic (non-sutta-anchored) questions, `eval "$(uv run tools/research_sour
 
 ### Sub-agent dispatch (after Phase 1 gate)
 
-After the Phase 1 gate passes, spawn a Sonnet gather sub-agent that runs all gather phases (2, 2.5, 3, 3b, 4a, 4b, 4c) sequentially in one session. This keeps the main context clear for synthesis. The sub-agent attaches to the current run via `scratch-resume`, reads its own briefing from the scratch file (Phase 0 and Phase 1 already wrote the question, angle triage, perspective map, and sutta seeds there), runs each phase, gates each one, and returns a completion report. The orchestrating session waits for it to return, then runs `scratch-verify` before Phase 5.
+After the Phase 1 gate passes, spawn a gather sub-agent that runs all gather phases (2, 2.5, 3, 3b, 4a, 4b, 4c) sequentially in one session. This keeps the main context clear for synthesis. The sub-agent attaches to the current run via `scratch-resume`, reads its own briefing from the scratch file (Phase 0 and Phase 1 already wrote the question, angle triage, perspective map, and sutta seeds there), runs each phase, gates each one, and returns a completion report. The orchestrating session waits for it to return, then runs `scratch-verify` before Phase 5.
 
 The only datum the prompt must carry is the **scratch slug** — `uv run tools/research_sources.py scratch-which` resolves the active scratch path (the slug is its filename stem). Everything else the sub-agent needs is already in the scratch file; do **not** re-transcribe the angle triage, perspective map, or seeds into the prompt.
 
-**Spawn** using the Agent tool with `model: "sonnet"`. Replace `<slug>` with the active slug:
+**Spawn** a gather sub-agent. The tool depends on your environment:
+
+- **Claude Code:** Use the Agent tool with `model: "sonnet"` (cost-optimal for gather work).
+- **OpenCode:** Use the `task` tool with `subagent_type: "general"`. The model inherits from the parent session.
+- **Antigravity CLI (`agy`):** Use `agy`'s sub-agent mechanism with model tier `low` (Gemini 3.5 Flash).
+- **Other environments:** Use that environment's sub-agent mechanism; the model inherits from the parent.
+
+Replace `<slug>` with the active slug:
 
 ```text
 You are a Vicaya gather sub-agent. Run all assigned gather phases for an
