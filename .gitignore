@@ -26,9 +26,6 @@ data/tipitaka-translation-data.db
 *.sqlite3
 kamma/**/dup-evidence.json
 
-# OpenCode slash-command stubs — thin delegates, symlinked from ~/.config/opencode/commands/
-config/
-
 # Kamma run logs — machine-specific operational data
 kamma/runs/
 kamma/setup_state.json
