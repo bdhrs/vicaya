@@ -312,7 +312,8 @@ def _iter_files(
             dirnames[:] = sorted(
                 d
                 for d in dirnames
-                if not d.startswith(".") and not _is_excluded(Path(dirpath) / d, exclude)
+                if not d.startswith(".")
+                and not _is_excluded(Path(dirpath) / d, exclude)
             )
             for filename in sorted(filenames):
                 if filename.startswith("."):
@@ -467,7 +468,11 @@ def _extract_ebook(path: Path) -> ExtractedText:
             detail = message[-1] if message else "ebook-convert failed"
             return ExtractedText(text="", status=f"error: {detail}")
         try:
-            text = out.read_text(encoding="utf-8", errors="replace") if out.exists() else ""
+            text = (
+                out.read_text(encoding="utf-8", errors="replace")
+                if out.exists()
+                else ""
+            )
         except OSError as e:
             return ExtractedText(text="", status=f"error: {e}")
     return ExtractedText(text=text, status="ok" if text.strip() else "empty")
@@ -633,12 +638,16 @@ def extract_text(path: Path) -> ExtractedText:
     if extension == ".docx":
         return _extract_zip_members(
             path,
-            lambda name: name.lower().startswith("word/") and name.lower().endswith(".xml"),
+            lambda name: (
+                name.lower().startswith("word/") and name.lower().endswith(".xml")
+            ),
         )
     if extension == ".pptx":
         return _extract_zip_members(
             path,
-            lambda name: name.lower().startswith("ppt/slides/") and name.lower().endswith(".xml"),
+            lambda name: (
+                name.lower().startswith("ppt/slides/") and name.lower().endswith(".xml")
+            ),
         )
     if extension == ".odt":
         return _extract_zip_members(path, lambda name: name.lower() == "content.xml")
@@ -670,7 +679,7 @@ def _safe_fts_query(query: str) -> str:
     terms = re.findall(r"[\w-￿]+", query, flags=re.UNICODE)
     if not terms:
         return query
-    return " ".join(f'"{term.replace("\"", "\"\"")}"' for term in terms)
+    return " ".join(f'"{term.replace('"', '""')}"' for term in terms)
 
 
 def _build_calibre_metadata_lookup(calibre_root: Path) -> dict[str, str]:
@@ -695,7 +704,9 @@ def _build_calibre_metadata_lookup(calibre_root: Path) -> dict[str, str]:
                 "SELECT b.id, b.path, d.name, d.format FROM books b JOIN data d ON b.id = d.book"
             ).fetchall():
                 book_id = int(book_id)
-                file_path = str(calibre_root / str(book_path) / f"{file_name}.{fmt.lower()}")
+                file_path = str(
+                    calibre_root / str(book_path) / f"{file_name}.{fmt.lower()}"
+                )
                 authors = ", ".join(authors_by_book.get(book_id, []))
                 tags = ", ".join(tags_by_book.get(book_id, []))
                 parts = [f"Calibre #{book_id}"]
@@ -813,9 +824,13 @@ def _should_skip(
     return True
 
 
-def _delete_missing_documents(conn: sqlite3.Connection, seen_source_paths: set[str]) -> int:
+def _delete_missing_documents(
+    conn: sqlite3.Connection, seen_source_paths: set[str]
+) -> int:
     deleted = 0
-    for doc_id, source_path in conn.execute("SELECT id, source_path FROM documents").fetchall():
+    for doc_id, source_path in conn.execute(
+        "SELECT id, source_path FROM documents"
+    ).fetchall():
         if source_path in seen_source_paths:
             continue
         conn.execute("DELETE FROM document_fts WHERE rowid = ?", (doc_id,))
@@ -888,15 +903,23 @@ def refresh(
             try:
                 content_hash = _hash_file(path)
             except OSError as e:
-                content_hash = _unreadable_content_hash(source_path, stat.st_size, stat.st_mtime)
-                extracted = ExtractedText(text="", status=f"error: file read failed: {e}")
+                content_hash = _unreadable_content_hash(
+                    source_path, stat.st_size, stat.st_mtime
+                )
+                extracted = ExtractedText(
+                    text="", status=f"error: file read failed: {e}"
+                )
                 errors.append({"relative_path": rel_path, "error": extracted.status})
             else:
                 try:
                     extracted = extract_text(path)
                 except Exception as e:
-                    extracted = ExtractedText(text="", status=f"error: extraction failed: {e}")
-                    errors.append({"relative_path": rel_path, "error": extracted.status})
+                    extracted = ExtractedText(
+                        text="", status=f"error: extraction failed: {e}"
+                    )
+                    errors.append(
+                        {"relative_path": rel_path, "error": extracted.status}
+                    )
             doc_id = _upsert_document(
                 conn,
                 source_root=source_root,
@@ -908,7 +931,9 @@ def refresh(
             )
             written += 1
             prefix = calibre_lookup.get(source_path, "")
-            fts_text = (prefix + "\n\n" + extracted.text).strip() if prefix else extracted.text
+            fts_text = (
+                (prefix + "\n\n" + extracted.text).strip() if prefix else extracted.text
+            )
             _replace_fts_text(conn, doc_id, fts_text)
             if fts_text.strip():
                 extracted_count += 1
@@ -985,7 +1010,9 @@ def _union(parent: dict[int, int], left: int, right: int) -> None:
         parent[right_root] = left_root
 
 
-def _exact_duplicate_map(conn: sqlite3.Connection) -> dict[int, list[tuple[int, str, str]]]:
+def _exact_duplicate_map(
+    conn: sqlite3.Connection,
+) -> dict[int, list[tuple[int, str, str]]]:
     rows = conn.execute(
         "SELECT id, source_path, rel_path, content_hash, text_hash FROM documents"
     ).fetchall()
@@ -1050,7 +1077,9 @@ def _weak_duplicate_hints(
     conn: sqlite3.Connection,
     exact_duplicate_map: dict[int, list[tuple[int, str, str]]],
 ) -> dict[int, list[dict[str, Any]]]:
-    rows = conn.execute("SELECT id, source_path, filename, extension FROM documents").fetchall()
+    rows = conn.execute(
+        "SELECT id, source_path, filename, extension FROM documents"
+    ).fetchall()
     source_paths = {int(row["id"]): str(row["source_path"]) for row in rows}
     exact_sets = {
         doc_id: {member_id for member_id, *_ in members}
@@ -1076,7 +1105,9 @@ def _weak_duplicate_hints(
             for other_id in ids:
                 if other_id == doc_id or other_id in exact_sets.get(doc_id, set()):
                     continue
-                signals_by_doc.setdefault(doc_id, {}).setdefault(other_id, set()).add(signal)
+                signals_by_doc.setdefault(doc_id, {}).setdefault(other_id, set()).add(
+                    signal
+                )
     hints: dict[int, list[dict[str, Any]]] = {}
     for doc_id, candidates in signals_by_doc.items():
         ordered = sorted(candidates.items(), key=lambda item: source_paths[item[0]])
@@ -1178,7 +1209,9 @@ def duplicates(
             if len(cluster_rows) > 1:
                 candidate_ids.update(int(row["id"]) for row in cluster_rows)
     non_text_rows = [
-        row for row in rows_list if int(row["id"]) in candidate_ids and row["text_hash"] is None
+        row
+        for row in rows_list
+        if int(row["id"]) in candidate_ids and row["text_hash"] is None
     ]
     by_extension: dict[str, int] = {}
     for row in non_text_rows:

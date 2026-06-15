@@ -41,7 +41,9 @@ def main(argv: list[str] | None = None) -> int:
 
     errors = [issue for issue in issues if issue.severity == "error"]
     for issue in issues:
-        print(f"{note_path}:{issue.line}: {issue.severity}: {issue.code}: {issue.message}")
+        print(
+            f"{note_path}:{issue.line}: {issue.severity}: {issue.code}: {issue.message}"
+        )
     return 1 if errors else 0
 
 

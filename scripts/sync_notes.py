@@ -1,4 +1,5 @@
 """Commit a single Vicaya note and best-effort push it to the remote."""
+
 import os
 import subprocess
 import sys
@@ -22,14 +23,20 @@ def load_dotenv(path: Path) -> None:
         os.environ.setdefault(key, val)
 
 
-def run_git(args: list[str], repo_path: Path, check: bool = True) -> subprocess.CompletedProcess:
+def run_git(
+    args: list[str], repo_path: Path, check: bool = True
+) -> subprocess.CompletedProcess:
     cmd = ["git", "-C", str(repo_path)] + args
     return subprocess.run(cmd, check=check, capture_output=True, text=True)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Pull, commit, and push Vicaya notes.")
-    parser.add_argument("filename", nargs="?", help="Note filename to commit and push (relative to Vicaya/ folder).")
+    parser.add_argument(
+        "filename",
+        nargs="?",
+        help="Note filename to commit and push (relative to Vicaya/ folder).",
+    )
     args = parser.parse_args()
 
     load_dotenv(project_root / ".env")
@@ -64,7 +71,9 @@ def main():
         run_git(["add", "--", filename], notes_repo)
         rprint("[green]ok[/green]")
 
-        staged = run_git(["diff", "--cached", "--quiet", "--", filename], notes_repo, check=False)
+        staged = run_git(
+            ["diff", "--cached", "--quiet", "--", filename], notes_repo, check=False
+        )
         if staged.returncode == 0:
             rprint("[yellow]Nothing to commit[/yellow]")
         else:

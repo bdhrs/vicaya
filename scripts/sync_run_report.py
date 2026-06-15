@@ -1,4 +1,5 @@
 """Sync today's Vicaya run reports to origin/main."""
+
 import os
 import subprocess
 import sys
@@ -52,7 +53,9 @@ def main() -> None:
 
         reports = today_reports(project_root, today)
         if not reports:
-            rprint(f"[yellow]No uncommitted run reports for {today}; nothing to push.[/yellow]")
+            rprint(
+                f"[yellow]No uncommitted run reports for {today}; nothing to push.[/yellow]"
+            )
             return
 
         rprint(f"[cyan]Git add {len(reports)} run report(s)...[/cyan]", end=" ")
@@ -66,7 +69,9 @@ def main() -> None:
         rprint("[cyan]Git push...[/cyan]", end=" ")
         run_git(["push", "origin", "HEAD"], project_root)
         rprint("[green]ok[/green]")
-        rprint(f"[green]Successfully synced {len(reports)} run report(s) for {today}[/green]")
+        rprint(
+            f"[green]Successfully synced {len(reports)} run report(s) for {today}[/green]"
+        )
     except subprocess.CalledProcessError as e:
         rprint("[red]failed[/red]")
         rprint(f"[red]Git command failed: git {' '.join(e.cmd)}[/red]")

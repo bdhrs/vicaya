@@ -31,7 +31,7 @@ _ENV_PATH = _REPO_ROOT / ".env"
 
 _RENAMES: list[tuple[str, str]] = [
     ("VICAYA_FOLDER_CORPUS_SOURCES", "VICAYA_LIBRARY_FOLDERS"),
-    ("VICAYA_FOLDER_CORPUS_INDEX",   "VICAYA_LIBRARY_FOLDERS_INDEX"),
+    ("VICAYA_FOLDER_CORPUS_INDEX", "VICAYA_LIBRARY_FOLDERS_INDEX"),
     ("VICAYA_FOLDER_CORPUS_EXCLUDE", "VICAYA_LIBRARY_FOLDERS_EXCLUDE"),
 ]
 _REMOVE = {"VICAYA_CALIBRE_LIBRARY"}
@@ -55,7 +55,7 @@ def _migrate_lines(lines: list[str]) -> tuple[list[str], list[str]]:
             continue
         if key in rename_map:
             new_key = rename_map[key]
-            new_line = new_key + line[len(key):]
+            new_line = new_key + line[len(key) :]
             out.append(new_line)
             log.append(f"  renamed  {key} → {new_key}")
         else:
@@ -65,7 +65,9 @@ def _migrate_lines(lines: list[str]) -> tuple[list[str], list[str]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dry-run", action="store_true", help="Print changes without writing")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print changes without writing"
+    )
     parser.add_argument("--env", default=str(_ENV_PATH), help="Path to .env file")
     args = parser.parse_args()
 
@@ -98,8 +100,12 @@ def main() -> None:
     print(f"Updated {env_path}")
     print("\nNext steps:")
     print("  • If VICAYA_LIBRARY_FOLDERS is blank, set it to your library root(s).")
-    print("  • If you had VICAYA_CALIBRE_LIBRARY set, add that path to VICAYA_LIBRARY_FOLDERS.")
-    print("    The indexer auto-detects Calibre's metadata.db — no separate variable needed.")
+    print(
+        "  • If you had VICAYA_CALIBRE_LIBRARY set, add that path to VICAYA_LIBRARY_FOLDERS."
+    )
+    print(
+        "    The indexer auto-detects Calibre's metadata.db — no separate variable needed."
+    )
     print("  • Run: uv run tools/research_sources.py library-folders-check")
 
 

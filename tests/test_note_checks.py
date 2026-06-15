@@ -79,7 +79,9 @@ def issue_codes(text: str) -> set[str]:
 def test_resolve_vicaya_prefixed_note_path() -> None:
     vault_path = Path("/tmp/vault")
 
-    resolved = note_checks.resolve_note_path("Vicaya/2099-01-01 - sample.md", vault_path)
+    resolved = note_checks.resolve_note_path(
+        "Vicaya/2099-01-01 - sample.md", vault_path
+    )
 
     assert resolved == vault_path / "Vicaya" / "2099-01-01 - sample.md"
 

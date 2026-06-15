@@ -48,8 +48,16 @@ dpd_available = pytest.mark.skipif(
 
 def _dpd_translator_present() -> bool:
     for candidate in (
-        Path(__file__).resolve().parents[2] / "dpd-db" / "tools" / "cst_book_translator.py",
-        Path.home() / "MyFiles" / "3_Active" / "dpd-db" / "tools" / "cst_book_translator.py",
+        Path(__file__).resolve().parents[2]
+        / "dpd-db"
+        / "tools"
+        / "cst_book_translator.py",
+        Path.home()
+        / "MyFiles"
+        / "3_Active"
+        / "dpd-db"
+        / "tools"
+        / "cst_book_translator.py",
     ):
         if candidate.exists():
             return True
@@ -195,9 +203,7 @@ class TestSearchCanon:
             assert "dukkha" in h.pali.lower()
 
     def test_english_search(self):
-        hits = search_canon(
-            "suffering", books=["s0201m_mul"], lang="english", limit=3
-        )
+        hits = search_canon("suffering", books=["s0201m_mul"], lang="english", limit=3)
         # English translations may be sparse; tolerate empty result but not crash.
         for h in hits:
             assert "suffering" in h.english.lower()
@@ -228,6 +234,7 @@ class TestSearchCanonNormalisation:
     def canon_db(self, tmp_path):
         db = tmp_path / "canon.db"
         import sqlite3
+
         with sqlite3.connect(db) as conn:
             conn.execute(
                 "CREATE TABLE s0201m_mul (id INTEGER PRIMARY KEY, rend TEXT, "
@@ -237,16 +244,28 @@ class TestSearchCanonNormalisation:
                 "INSERT INTO s0201m_mul (id, rend, paranum, pali_text, "
                 "english_translation) VALUES (?, ?, ?, ?, ?)",
                 [
-                    (0, "bodytext", "1",
-                     '<p rend="bodytext">Evaṃ me su<pb ed="V" n="1.0001" />taṃ – '
-                     "ekaṃ samayaṃ bhagavā…</p>",
-                     "Thus have I heard. On one   occasion the Blessed One…"),
-                    (1, "gatha", "",
-                     '<p rend="gatha1">Karuṇāsītalahadayaṃ, paññāpajjota…</p>',
-                     ""),
-                    (2, "bodytext", "5",
-                     '<p rend="bodytext">Sabbe saṅkhārā aniccā.</p>',
-                     "All conditioned things are impermanent."),
+                    (
+                        0,
+                        "bodytext",
+                        "1",
+                        '<p rend="bodytext">Evaṃ me su<pb ed="V" n="1.0001" />taṃ – '
+                        "ekaṃ samayaṃ bhagavā…</p>",
+                        "Thus have I heard. On one   occasion the Blessed One…",
+                    ),
+                    (
+                        1,
+                        "gatha",
+                        "",
+                        '<p rend="gatha1">Karuṇāsītalahadayaṃ, paññāpajjota…</p>',
+                        "",
+                    ),
+                    (
+                        2,
+                        "bodytext",
+                        "5",
+                        '<p rend="bodytext">Sabbe saṅkhārā aniccā.</p>',
+                        "All conditioned things are impermanent.",
+                    ),
                 ],
             )
         return db
@@ -267,13 +286,16 @@ class TestSearchCanonNormalisation:
 
     def test_nfd_query_matches_nfc_storage(self, canon_db):
         import unicodedata
+
         nfd_query = unicodedata.normalize("NFD", "saṅkhārā aniccā")
         hits = search_canon(nfd_query, books=["s0201m_mul"], db_path=canon_db)
         assert len(hits) == 1
         assert hits[0].paranum == "5"
 
     def test_continuation_row_gets_preceding_paranum(self, canon_db):
-        hits = search_canon("karuṇāsītalahadayaṃ", books=["s0201m_mul"], db_path=canon_db)
+        hits = search_canon(
+            "karuṇāsītalahadayaṃ", books=["s0201m_mul"], db_path=canon_db
+        )
         assert len(hits) == 1
         assert hits[0].paranum == "1"
 
@@ -410,6 +432,7 @@ class TestTranscriptCache:
 
         try:
             import youtube_transcript_api
+
             monkeypatch.setattr(
                 youtube_transcript_api.YouTubeTranscriptApi, "__init__", _boom
             )
@@ -631,8 +654,9 @@ class TestSCParallels:
         # MA115 isn't in the partial offline archive — gap must be reported,
         # not silently rendered as empty text.
         if ma115 is not None:
-            assert not any([ma115.text_pali, ma115.text_lzh,
-                            ma115.text_san, ma115.text_pra])
+            assert not any(
+                [ma115.text_pali, ma115.text_lzh, ma115.text_san, ma115.text_pra]
+            )
             assert ma115.text_gaps  # non-empty
 
 
@@ -662,9 +686,8 @@ class TestScratchDossier:
             _SCRATCH_PHASES,
             scratch_init,
         )
-        monkeypatch.setattr(
-            "tools.scratch._SCRATCH_DIR", tmp_path
-        )
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-slug")
         assert path.exists()
         text = path.read_text(encoding="utf-8")
@@ -679,6 +702,7 @@ class TestScratchDossier:
         # question fields, then forgot scratch-gate 0 — every later gate
         # refused until gate 0 was backfilled. One-shot init must end that.
         from tools.research_sources import _read_state, scratch_gate, scratch_init
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
         path = scratch_init(
@@ -704,6 +728,7 @@ class TestScratchDossier:
         self, tmp_path, monkeypatch
     ):
         from tools.research_sources import _read_state, scratch_init
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
         path = scratch_init("test-bare")
@@ -716,6 +741,7 @@ class TestScratchDossier:
         self, tmp_path, monkeypatch
     ):
         from tools.research_sources import _read_state, scratch_init
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
         path = scratch_init(
@@ -732,12 +758,14 @@ class TestScratchDossier:
         import pytest
 
         from tools.research_sources import scratch_init
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         with pytest.raises(ValueError, match="ambiguity"):
             scratch_init("test-bad-ambiguity", ambiguity="maybe")
 
     def test_init_with_fields_on_thematic_run_gates_phase0(self, tmp_path, monkeypatch):
         from tools.research_sources import _read_state, scratch_gate, scratch_init
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
         path = scratch_init(
@@ -756,6 +784,7 @@ class TestScratchDossier:
 
     def test_init_on_existing_file_ignores_fields(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_init
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
         path = scratch_init("test-existing")
@@ -774,6 +803,7 @@ class TestScratchDossier:
         # Issue #31, second half: the refusal must name the exact command,
         # not just describe the missing gate.
         from tools.research_sources import scratch_gate, scratch_init
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-refusal-message")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -783,11 +813,17 @@ class TestScratchDossier:
 
     def test_log_appends_entry_under_named_phase(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_init, scratch_log
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-log")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
-        scratch_log("2", "search-canon", args=["pabhassara", "--limit", "1"],
-                    summary="2 hits in AN", hits=2)
+        scratch_log(
+            "2",
+            "search-canon",
+            args=["pabhassara", "--limit", "1"],
+            summary="2 hits in AN",
+            hits=2,
+        )
         text = path.read_text(encoding="utf-8")
         assert "search-canon" in text
         assert "pabhassara" in text
@@ -798,6 +834,7 @@ class TestScratchDossier:
 
     def test_gate_refuses_when_prior_gate_missing(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_gate, scratch_init
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-gate-refuse")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -817,6 +854,7 @@ class TestScratchDossier:
             scratch_gate,
             scratch_init,
         )
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-gate-ok")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -831,6 +869,7 @@ class TestScratchDossier:
 
     def test_verify_reports_missing_with_expected_evidence(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_gate, scratch_init, scratch_verify
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-verify")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -848,6 +887,7 @@ class TestScratchDossier:
 
     def test_resume_reports_last_gate_and_next_phase(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_gate, scratch_init, scratch_resume
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-resume")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -860,6 +900,7 @@ class TestScratchDossier:
 
     def test_resume_slug_ignores_stale_active_state(self, tmp_path, monkeypatch):
         from tools.research_sources import _write_state, scratch_init, scratch_resume
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
         stale_path = scratch_init("stale-run")
@@ -871,7 +912,9 @@ class TestScratchDossier:
         assert result["ok"]
         assert result["path"] == str(selected_path)
 
-    def test_resume_updates_active_state_to_selected_scratch(self, tmp_path, monkeypatch):
+    def test_resume_updates_active_state_to_selected_scratch(
+        self, tmp_path, monkeypatch
+    ):
         from tools.research_sources import (
             _read_state,
             _write_state,
@@ -879,6 +922,7 @@ class TestScratchDossier:
             scratch_init,
             scratch_resume,
         )
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
         stale_path = scratch_init("stale-active")
@@ -894,8 +938,16 @@ class TestScratchDossier:
         assert result["next_phase"] == "1"
         assert _read_state() == {"scratch": str(selected_path), "phase": "1"}
 
-    def test_resume_thematic_run_reattaches_next_worked_phase(self, tmp_path, monkeypatch):
-        from tools.research_sources import _read_state, scratch_gate, scratch_init, scratch_resume
+    def test_resume_thematic_run_reattaches_next_worked_phase(
+        self, tmp_path, monkeypatch
+    ):
+        from tools.research_sources import (
+            _read_state,
+            scratch_gate,
+            scratch_init,
+            scratch_resume,
+        )
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
         path = scratch_init("thematic-resume", run_class="thematic")
@@ -908,8 +960,15 @@ class TestScratchDossier:
         assert result["next_phase"] == "3"
         assert _read_state() == {"scratch": str(path), "phase": "3"}
 
-    def test_phase_7_gate_refuses_when_vault_note_has_rejected(self, tmp_path, monkeypatch):
-        from tools.research_sources import scratch_gate, scratch_init, scratch_self_audit
+    def test_phase_7_gate_refuses_when_vault_note_has_rejected(
+        self, tmp_path, monkeypatch
+    ):
+        from tools.research_sources import (
+            scratch_gate,
+            scratch_init,
+            scratch_self_audit,
+        )
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-rejected-gate")
         # Point the scratch file at a vault note containing a [REJECTED] tag.
@@ -935,6 +994,7 @@ class TestScratchDossier:
 
     def test_thematic_run_auto_skips_2_5_and_3b(self, tmp_path, monkeypatch):
         from tools.research_sources import _read_state, scratch_gate, scratch_init
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
         path = scratch_init("test-thematic", run_class="thematic")
@@ -954,6 +1014,7 @@ class TestScratchDossier:
 
     def test_sutta_anchored_run_still_requires_2_5(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_gate, scratch_init
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-anchored")  # default class
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -964,6 +1025,7 @@ class TestScratchDossier:
 
     def test_state_file_resolves_scratch_without_env(self, tmp_path, monkeypatch):
         from tools.research_sources import _scratch_path, scratch_init
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
         path = scratch_init("test-state")
@@ -972,6 +1034,7 @@ class TestScratchDossier:
 
     def test_state_file_is_keyed_to_run(self, tmp_path, monkeypatch):
         from tools.research_sources import _state_file
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         # The state-pointer filename carries the run key, so it is per-run,
         # not a single global ".active".
@@ -980,10 +1043,13 @@ class TestScratchDossier:
         monkeypatch.setattr("tools.scratch._run_key", lambda: "run-B")
         assert _state_file() == tmp_path / ".active-run-B.json"
 
-    def test_parallel_runs_do_not_hijack_each_others_pointer(self, tmp_path, monkeypatch):
+    def test_parallel_runs_do_not_hijack_each_others_pointer(
+        self, tmp_path, monkeypatch
+    ):
         # Regression for the ".active scratch pointer hijack": a second run's
         # scratch-init must not redirect the first run's auto-log target.
         from tools.research_sources import _scratch_path, scratch_init
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
 
@@ -1005,6 +1071,7 @@ class TestScratchDossier:
         import threading
 
         from tools.research_sources import _append_under_phase, scratch_init
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
         path = scratch_init("concurrent-append")
@@ -1028,6 +1095,7 @@ class TestScratchDossier:
 
     def test_gate_advances_active_phase_in_state(self, tmp_path, monkeypatch):
         from tools.research_sources import _read_state, scratch_gate, scratch_init
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
         scratch_init("test-advance")
@@ -1037,6 +1105,7 @@ class TestScratchDossier:
 
     def test_autolog_uses_env_scratch_over_active_state(self, tmp_path, monkeypatch):
         from tools.research_sources import _maybe_autolog, _write_state, scratch_init
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         stale_path = scratch_init("autolog-stale")
         selected_path = scratch_init("autolog-selected")
@@ -1051,6 +1120,7 @@ class TestScratchDossier:
 
     def test_autolog_uses_active_state_without_env(self, tmp_path, monkeypatch):
         from tools.research_sources import _maybe_autolog, scratch_init
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
         monkeypatch.delenv("VICAYA_PHASE", raising=False)
@@ -1067,6 +1137,7 @@ class TestPhaseAlias:
 
     def test_scratch_log_4a_lands_under_phase_4(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_init, scratch_log
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-alias-log")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -1078,6 +1149,7 @@ class TestPhaseAlias:
 
     def test_scratch_gate_4a_writes_phase_4_gate(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_gate, scratch_init
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-alias-gate")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -1090,6 +1162,7 @@ class TestPhaseAlias:
 
     def test_scratch_verify_accepts_4a(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_init, scratch_verify
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-alias-verify")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -1099,6 +1172,7 @@ class TestPhaseAlias:
 
     def test_autolog_env_phase_4a_lands_under_phase_4(self, tmp_path, monkeypatch):
         from tools.research_sources import _maybe_autolog, scratch_init
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-alias-autolog")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -1113,6 +1187,7 @@ class TestPhaseAlias:
         import pytest
 
         from tools.research_sources import scratch_init, scratch_log
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-alias-unknown")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -1125,6 +1200,7 @@ class TestPhaseAlias:
         import json
 
         import tools.research_sources as rs
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = rs.scratch_init("test-alias-cli")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -1140,11 +1216,13 @@ class TestPhaseAlias:
         import json
 
         import tools.research_sources as rs
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = rs.scratch_init("test-alias-cli-ok")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
         monkeypatch.setattr(
-            sys, "argv",
+            sys,
+            "argv",
             ["research_sources", "scratch-log", "4a", "web", "https://example.org"],
         )
         assert rs._cli() == 0
@@ -1158,6 +1236,7 @@ class TestScratchSetNote:
 
     def test_sets_vault_note_header(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_init, scratch_set_note
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("set-note")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -1173,8 +1252,12 @@ class TestScratchSetNote:
 
     def test_gate_7_scans_note_set_via_helper(self, tmp_path, monkeypatch):
         from tools.research_sources import (
-            scratch_gate, scratch_init, scratch_self_audit, scratch_set_note,
+            scratch_gate,
+            scratch_init,
+            scratch_self_audit,
+            scratch_set_note,
         )
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("set-note-gate")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -1195,6 +1278,7 @@ class TestScratchSetNote:
 
     def test_relative_path_resolves_against_vault(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_init, scratch_set_note
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("set-note-vault")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -1211,6 +1295,7 @@ class TestScratchSetNote:
 
     def test_missing_note_refuses_without_writing(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_init, scratch_set_note
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("set-note-missing")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -1224,6 +1309,7 @@ class TestScratchSetNote:
 
     def test_pdf_line_inserted_then_replaced(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_init, scratch_set_note
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("set-note-pdf")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -1239,6 +1325,7 @@ class TestScratchSetNote:
 
     def test_inserts_header_when_absent(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_init, scratch_set_note
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("set-note-legacy")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -1262,6 +1349,7 @@ class TestScratchSelfAudit:
     def test_no_answers_prints_questions_without_writing(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_init, scratch_self_audit
         from tools.scratch import _SELF_AUDIT_QUESTIONS
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("audit-questions")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -1274,6 +1362,7 @@ class TestScratchSelfAudit:
 
     def test_wrong_answer_count_refuses(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_init, scratch_self_audit
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("audit-count")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -1287,6 +1376,7 @@ class TestScratchSelfAudit:
     def test_blank_answer_refuses(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_init, scratch_self_audit
         from tools.scratch import _SELF_AUDIT_QUESTIONS
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("audit-blank")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -1300,6 +1390,7 @@ class TestScratchSelfAudit:
     def test_records_block_under_phase_7(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_init, scratch_self_audit
         from tools.scratch import _SELF_AUDIT_QUESTIONS
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("audit-record")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -1318,6 +1409,7 @@ class TestScratchSelfAudit:
     def test_second_call_does_not_duplicate(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_init, scratch_self_audit
         from tools.scratch import _SELF_AUDIT_QUESTIONS
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("audit-dup")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -1332,6 +1424,7 @@ class TestScratchSelfAudit:
 
     def test_gate_7_refuses_without_audit(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_gate, scratch_init, scratch_set_note
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("audit-gate-refuse")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -1349,9 +1442,13 @@ class TestScratchSelfAudit:
 
     def test_gate_7_passes_with_audit_and_clean_note(self, tmp_path, monkeypatch):
         from tools.research_sources import (
-            scratch_gate, scratch_init, scratch_self_audit, scratch_set_note,
+            scratch_gate,
+            scratch_init,
+            scratch_self_audit,
+            scratch_set_note,
         )
         from tools.scratch import _SELF_AUDIT_QUESTIONS
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("audit-gate-pass")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
@@ -1368,6 +1465,7 @@ class TestScratchSelfAudit:
 
     def test_uninitialised_scratch_raises(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_self_audit
+
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.setenv("VICAYA_SCRATCH", str(tmp_path / "no-such.md"))
 
@@ -1381,24 +1479,28 @@ class TestVerifyCitation:
 
     def test_real_ref_is_verified(self):
         from tools.research_sources import verify_citation
+
         r = verify_citation("MN60")
         assert r["exists"]
         assert any(m["sc_code"] == "MN60" for m in r["matches"])
 
     def test_real_ref_with_space_normalises(self):
         from tools.research_sources import verify_citation
+
         r = verify_citation("SN 46.42")
         assert r["exists"]
         assert r["normalised"] == ["SN46.42"]
 
     def test_fabricated_ref_is_rejected(self):
         from tools.research_sources import verify_citation
+
         r = verify_citation("MN999")
         assert r["exists"] is False
         assert r["matches"] == []
 
     def test_sn_prefix_yields_two_candidates(self):
         from tools.research_sources import verify_citation
+
         r = verify_citation("Sn 4.8")
         # Both SN4.8 (Saṃyutta) and SNP4.8 (Suttanipāta) are real
         assert set(r["normalised"]) == {"SN4.8", "SNP4.8"}
@@ -1409,6 +1511,7 @@ class TestVerifyCitation:
         # DN1-13 should resolve. So should dpr_code (Digital Pali Reader),
         # which usually matches sc_code in format.
         from tools.research_sources import verify_citation
+
         r = verify_citation("DN1-13")
         assert r["exists"], r
         # And the row carries cross-system codes in the match.
@@ -1426,6 +1529,7 @@ class TestVerifyCitation:
         # via `s.upper()`, missing the ambiguity path. Mixed-case `Sn 4.8` did
         # trigger it. They should behave identically.
         from tools.research_sources import _normalise_citation
+
         assert _normalise_citation("SN 4.8") == ["SN4.8"]
         assert set(_normalise_citation("Sn 4.8")) == {"SN4.8", "SNP4.8"}
         assert set(_normalise_citation("sn 4.8")) == {"SN4.8", "SNP4.8"}
@@ -1437,6 +1541,7 @@ class TestVerifyCitation:
         # Dhp is stored as verse-range rows (DHP116-128 etc.), so single
         # verses must verify by numeric containment, not exact match.
         from tools.research_sources import verify_citation
+
         for ref in ("Dhp 178", "Dhp 128", "Dhp 95"):
             r = verify_citation(ref)
             assert r["verdict"] == "verified", (ref, r)
@@ -1445,6 +1550,7 @@ class TestVerifyCitation:
         # AN ones/twos and the AN8 peyyāla block are stored as ranges
         # (AN2.21-31, AN8.117-626): single suttas inside them must verify.
         from tools.research_sources import verify_citation
+
         for ref in ("AN2.31", "AN8.119", "AN1.600"):
             r = verify_citation(ref)
             assert r["verdict"] == "verified", (ref, r)
@@ -1453,12 +1559,14 @@ class TestVerifyCitation:
         # SN56.27 and SN56.28 both exist but "SN56.27-28" is not a key;
         # the range must verify by resolving both endpoints.
         from tools.research_sources import verify_citation
+
         for ref in ("SN56.27-28", "SN48.9-10", "SN46.14-16"):
             r = verify_citation(ref)
             assert r["verdict"] == "verified", (ref, r)
 
     def test_fabricated_range_still_rejected(self):
         from tools.research_sources import verify_citation
+
         r = verify_citation("SN99.1-2")
         assert r["verdict"] == "rejected"
         assert r["exists"] is False
@@ -1466,6 +1574,7 @@ class TestVerifyCitation:
     def test_thag_poem_resolves_via_th_alias(self):
         # dpd_code uses TH1…TH264, not THAG…; "Thag 5" must still verify.
         from tools.research_sources import verify_citation
+
         r = verify_citation("Thag 5")
         assert r["verdict"] == "verified", r
 
@@ -1473,6 +1582,7 @@ class TestVerifyCitation:
         # Snp/Thag global verse numbers have no per-verse row in sutta_info.
         # They must NOT be branded fabrications.
         from tools.research_sources import verify_citation
+
         for ref in ("Sn 925", "Snp 437", "Thag 591"):
             r = verify_citation(ref)
             assert r["verdict"] == "unverifiable-form", (ref, r)
@@ -1484,6 +1594,7 @@ class TestVerifyCitation:
 class TestAnnotateCitations:
     def test_stamps_each_citation_inline(self):
         from tools.research_sources import annotate_citations
+
         text = "Compare MN60 with SN46.42 and MN999."
         out = annotate_citations(text)
         assert "MN60 [VERIFIED]" in out
@@ -1493,6 +1604,7 @@ class TestAnnotateCitations:
     def test_no_sutta_name_in_verified_label(self):
         # Per review feedback: existence-only label, no content-level implication.
         from tools.research_sources import annotate_citations
+
         out = annotate_citations("See MN60.")
         # The label must not embed the English sutta name "Unfailing"
         assert "Unfailing" not in out
@@ -1500,6 +1612,7 @@ class TestAnnotateCitations:
 
     def test_verse_number_stamped_unverifiable(self):
         from tools.research_sources import annotate_citations
+
         out = annotate_citations("Quoting Sn 925 and Dhp 178 here.")
         assert "Sn 925 [UNVERIFIABLE" in out
         assert "Dhp 178 [VERIFIED]" in out
@@ -1519,8 +1632,11 @@ class TestSearchVaultErrorHandling:
     def test_non_json_stdout_raises(self, monkeypatch):
         """CLI exits 0 but prints plaintext → RuntimeError, not silent []."""
         monkeypatch.setattr(
-            subprocess, "run",
-            lambda *a, **kw: self._mock_run("The CLI is unable to find Obsidian. Please make sure Obsidian is running and try again."),
+            subprocess,
+            "run",
+            lambda *a, **kw: self._mock_run(
+                "The CLI is unable to find Obsidian. Please make sure Obsidian is running and try again."
+            ),
         )
         with pytest.raises(RuntimeError, match="non-JSON"):
             search_vault("dukkha")
@@ -1528,7 +1644,8 @@ class TestSearchVaultErrorHandling:
     def test_non_zero_exit_raises(self, monkeypatch):
         """CLI exits non-zero → RuntimeError with the error message."""
         monkeypatch.setattr(
-            subprocess, "run",
+            subprocess,
+            "run",
             lambda *a, **kw: self._mock_run("fatal error", returncode=1),
         )
         with pytest.raises(RuntimeError, match="exited 1"):
@@ -1537,7 +1654,8 @@ class TestSearchVaultErrorHandling:
     def test_empty_stdout_returns_empty_list(self, monkeypatch):
         """Empty stdout (vault unreachable, no output) → []."""
         monkeypatch.setattr(
-            subprocess, "run",
+            subprocess,
+            "run",
             lambda *a, **kw: self._mock_run(""),
         )
         assert search_vault("dukkha") == []
@@ -1545,7 +1663,8 @@ class TestSearchVaultErrorHandling:
     def test_valid_json_empty_returns_empty_list(self, monkeypatch):
         """Parsed empty JSON list → [] (genuine 0 hits)."""
         monkeypatch.setattr(
-            subprocess, "run",
+            subprocess,
+            "run",
             lambda *a, **kw: self._mock_run("[]"),
         )
         assert search_vault("dukkha") == []
@@ -1554,7 +1673,8 @@ class TestSearchVaultErrorHandling:
         """Well-formed JSON → VaultHit list."""
         payload = '[{"file": "Vicaya/test.md", "matches": [{"text": "dukkha arises", "line": 3}]}]'
         monkeypatch.setattr(
-            subprocess, "run",
+            subprocess,
+            "run",
             lambda *a, **kw: self._mock_run(payload),
         )
         hits = search_vault("dukkha")
@@ -1587,7 +1707,7 @@ class TestEnvSubcommand:
             "VICAYA_TEST_SPACES", "~/MyFiles/2_Resources/Early Buddhist Connections"
         )
         lines = self._run_env(monkeypatch, capsys)
-        line = next(l for l in lines if "VICAYA_TEST_SPACES" in l)
+        line = next(entry for entry in lines if "VICAYA_TEST_SPACES" in entry)
         words = shlex.split(line)
         assert words[0] == "export"
         assert words[1] == (
@@ -1598,11 +1718,11 @@ class TestEnvSubcommand:
     def test_non_vicaya_keys_excluded(self, monkeypatch, capsys):
         monkeypatch.setenv("OPENROUTER_TEST_KEY", "secret")
         lines = self._run_env(monkeypatch, capsys)
-        assert not any("OPENROUTER_TEST_KEY" in l for l in lines)
+        assert not any("OPENROUTER_TEST_KEY" in entry for entry in lines)
 
     def test_output_is_sorted_by_key(self, monkeypatch, capsys):
         lines = self._run_env(monkeypatch, capsys)
-        keys = [l.split("=", 1)[0].removeprefix("export ") for l in lines]
+        keys = [entry.split("=", 1)[0].removeprefix("export ") for entry in lines]
         assert keys == sorted(keys)
 
     def test_eval_in_real_bash_sets_variable(self, monkeypatch, capsys):

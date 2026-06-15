@@ -37,7 +37,9 @@ def _run_key() -> str:
         sid = os.getsid(0)
         out = subprocess.run(
             ["ps", "-o", "ppid=", "-p", str(sid)],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         ).stdout.strip()
         if out:
             return out
@@ -109,66 +111,117 @@ def _write_state(scratch=None, phase=_STATE_PHASE_UNSET) -> None:
 
 # (phase_id, title, expected_evidence)
 _SCRATCH_PHASES: list[tuple[str, str, list[str]]] = [
-    ("0", "Phase 0 — Request understanding", [
-        "question_polished recorded",
-        "scope_assumptions recorded",
-        "ambiguity_status set (clear|minor_uncertainty|unclear)",
-    ]),
-    ("1", "Phase 1 — Vault / EBC", [
-        "Angle triage recorded (applicable + not-applicable with reasons)",
-        "Vault hits list logged",
-        "Perspective map: 2–5 positions named (or 'no interpretive dispute')",
-        "Counter-perspective search targets logged",
-    ]),
-    ("2", "Phase 2 — Canon", [
-        "Mūla searches logged per applicable Nikāya/text class",
-        "Every hit has full pali + english + resolve-citation reference",
-        "0-hit queries logged with stems tried",
-        "Commentary/ṭīkā searched where doctrinal question",
-    ]),
-    ("2.5", "Phase 2.5 — SC Parallels", [
-        "sc-parallels called for each sutta-anchored citation",
-        "text_gaps logged explicitly",
-    ]),
-    ("3", "Phase 3 — Library", [
-        "library-folders-check called at phase start",
-        "Tag-scoped searches per applicable angle",
-        "Author searches for named scholars in perspective map",
-        "0-hit queries logged",
-    ]),
-    ("3b", "Phase 3b — Sanskrit", [
-        "GRETIL searched where comparative-religion angle applies (or 'not applicable')",
-    ]),
-    ("4", "Phase 4 — Web", [
-        "Web sources fetched with date + URL + summary",
-        "Wisdomlib / SuttaCentral / 84000 checked where applicable",
-    ]),
-    ("4b", "Phase 4b — YouTube", [
-        "Trusted-tier channels queried where modern-teacher angle applies",
-        "Transcript segments logged with timestamps",
-        "is_auto flagged per transcript",
-    ]),
-    ("4c", "Phase 4c — WisdomLib", [
-        "Terms looked up with tradition + source labels",
-    ]),
-    ("5", "Phase 5 — Synthesis", [
-        "scratch-verify exit 0 confirmed before drafting",
-        "Draft pasted under '## Phase 5 — Synthesis draft'",
-    ]),
-    ("6", "Phase 6 — Cross-check", [
-        "Cross-check raw output pasted verbatim (citations pre-annotated)",
-        "Every [REJECTED] claim dropped — not integrated",
-        "Integrations logged with source attribution",
-    ]),
-    ("7", "Phase 7 — Note written", [
-        "Vault path recorded via scratch-set-note (sets the path for the [REJECTED] hard gate)",
-        "PDF path or 'skipped' recorded via scratch-set-note --pdf",
-        "Zero [REJECTED] tags anywhere in the vault note (enforced by gate)",
-        "Failure checklist answered via scratch-self-audit (enforced by gate)",
-    ]),
+    (
+        "0",
+        "Phase 0 — Request understanding",
+        [
+            "question_polished recorded",
+            "scope_assumptions recorded",
+            "ambiguity_status set (clear|minor_uncertainty|unclear)",
+        ],
+    ),
+    (
+        "1",
+        "Phase 1 — Vault / EBC",
+        [
+            "Angle triage recorded (applicable + not-applicable with reasons)",
+            "Vault hits list logged",
+            "Perspective map: 2–5 positions named (or 'no interpretive dispute')",
+            "Counter-perspective search targets logged",
+        ],
+    ),
+    (
+        "2",
+        "Phase 2 — Canon",
+        [
+            "Mūla searches logged per applicable Nikāya/text class",
+            "Every hit has full pali + english + resolve-citation reference",
+            "0-hit queries logged with stems tried",
+            "Commentary/ṭīkā searched where doctrinal question",
+        ],
+    ),
+    (
+        "2.5",
+        "Phase 2.5 — SC Parallels",
+        [
+            "sc-parallels called for each sutta-anchored citation",
+            "text_gaps logged explicitly",
+        ],
+    ),
+    (
+        "3",
+        "Phase 3 — Library",
+        [
+            "library-folders-check called at phase start",
+            "Tag-scoped searches per applicable angle",
+            "Author searches for named scholars in perspective map",
+            "0-hit queries logged",
+        ],
+    ),
+    (
+        "3b",
+        "Phase 3b — Sanskrit",
+        [
+            "GRETIL searched where comparative-religion angle applies (or 'not applicable')",
+        ],
+    ),
+    (
+        "4",
+        "Phase 4 — Web",
+        [
+            "Web sources fetched with date + URL + summary",
+            "Wisdomlib / SuttaCentral / 84000 checked where applicable",
+        ],
+    ),
+    (
+        "4b",
+        "Phase 4b — YouTube",
+        [
+            "Trusted-tier channels queried where modern-teacher angle applies",
+            "Transcript segments logged with timestamps",
+            "is_auto flagged per transcript",
+        ],
+    ),
+    (
+        "4c",
+        "Phase 4c — WisdomLib",
+        [
+            "Terms looked up with tradition + source labels",
+        ],
+    ),
+    (
+        "5",
+        "Phase 5 — Synthesis",
+        [
+            "scratch-verify exit 0 confirmed before drafting",
+            "Draft pasted under '## Phase 5 — Synthesis draft'",
+        ],
+    ),
+    (
+        "6",
+        "Phase 6 — Cross-check",
+        [
+            "Cross-check raw output pasted verbatim (citations pre-annotated)",
+            "Every [REJECTED] claim dropped — not integrated",
+            "Integrations logged with source attribution",
+        ],
+    ),
+    (
+        "7",
+        "Phase 7 — Note written",
+        [
+            "Vault path recorded via scratch-set-note (sets the path for the [REJECTED] hard gate)",
+            "PDF path or 'skipped' recorded via scratch-set-note --pdf",
+            "Zero [REJECTED] tags anywhere in the vault note (enforced by gate)",
+            "Failure checklist answered via scratch-self-audit (enforced by gate)",
+        ],
+    ),
 ]
 
-_PHASE_INDEX = {pid: (i, title, evidence) for i, (pid, title, evidence) in enumerate(_SCRATCH_PHASES)}
+_PHASE_INDEX = {
+    pid: (i, title, evidence)
+    for i, (pid, title, evidence) in enumerate(_SCRATCH_PHASES)
+}
 
 # SKILL.md names the web phase "4a" but the phase table stores it as "4".
 _PHASE_ALIASES = {"4a": "4"}
@@ -186,7 +239,9 @@ def _normalize_phase(phase: str) -> str:
 def _next_worked_phase(text: str, idx: int) -> str | None:
     nxt = idx + 1
     if _run_class(text) == "thematic":
-        while nxt < len(_SCRATCH_PHASES) and _SCRATCH_PHASES[nxt][0] in _AUTO_SKIP_PHASES:
+        while (
+            nxt < len(_SCRATCH_PHASES) and _SCRATCH_PHASES[nxt][0] in _AUTO_SKIP_PHASES
+        ):
             nxt += 1
     if nxt < len(_SCRATCH_PHASES):
         return _SCRATCH_PHASES[nxt][0]
@@ -203,7 +258,9 @@ def _scratch_path(slug: str | None = None) -> Path:
     state = _read_state().get("scratch")
     if state:
         return Path(state)
-    raise ValueError("no scratch path: set VICAYA_SCRATCH, run scratch-init, or pass a slug")
+    raise ValueError(
+        "no scratch path: set VICAYA_SCRATCH, run scratch-init, or pass a slug"
+    )
 
 
 def _run_class(text: str) -> str:
@@ -231,7 +288,9 @@ def scratch_init(
     later gate refuses until it is backfilled.
     """
     if ambiguity is not None and ambiguity not in _AMBIGUITY_VALUES:
-        raise ValueError(f"ambiguity must be one of {_AMBIGUITY_VALUES}, got {ambiguity!r}")
+        raise ValueError(
+            f"ambiguity must be one of {_AMBIGUITY_VALUES}, got {ambiguity!r}"
+        )
     _SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
     path = _SCRATCH_DIR / f"{slug}.md"
     if path.exists():
@@ -285,7 +344,9 @@ def _append_under_phase(path: Path, phase: str, block: str) -> None:
                 i += 1
                 # find end of this section
                 section_end = i
-                while section_end < len(lines) and not lines[section_end].startswith("## "):
+                while section_end < len(lines) and not lines[section_end].startswith(
+                    "## "
+                ):
                     section_end += 1
                 # copy section body, then append our block
                 out.extend(lines[i:section_end])
@@ -309,10 +370,13 @@ def scratch_log(
 ) -> Path:
     """Append a single structured entry under the named phase."""
     import datetime as _dt
+
     phase = _normalize_phase(phase)
     path = scratch or _scratch_path()
     if not path.exists():
-        raise FileNotFoundError(f"scratch not initialised: {path}; run scratch-init <slug>")
+        raise FileNotFoundError(
+            f"scratch not initialised: {path}; run scratch-init <slug>"
+        )
     ts = _dt.datetime.now().isoformat(timespec="seconds")
     body = [f"### {ts} · {tool}"]
     if args:
@@ -352,7 +416,9 @@ _SELF_AUDIT_QUESTIONS = [
 ]
 
 
-def scratch_self_audit(answers: list[str] | None = None, scratch: Path | None = None) -> dict:
+def scratch_self_audit(
+    answers: list[str] | None = None, scratch: Path | None = None
+) -> dict:
     """Record the pre-completion failure checklist under Phase 7.
 
     The checklist targets the recurring end-of-run failure modes (easy-source
@@ -364,9 +430,12 @@ def scratch_self_audit(answers: list[str] | None = None, scratch: Path | None = 
     the answer.
     """
     import datetime as _dt
+
     path = scratch or _scratch_path()
     if not path.exists():
-        raise FileNotFoundError(f"scratch not initialised: {path}; run scratch-init <slug>")
+        raise FileNotFoundError(
+            f"scratch not initialised: {path}; run scratch-init <slug>"
+        )
     if _SELF_AUDIT_MARKER in path.read_text(encoding="utf-8"):
         return {"ok": True, "note": "self-audit already recorded; not duplicated"}
     if not answers:
@@ -379,7 +448,9 @@ def scratch_self_audit(answers: list[str] | None = None, scratch: Path | None = 
                 "refuses until the audit is recorded"
             ),
         }
-    if len(answers) != len(_SELF_AUDIT_QUESTIONS) or not all(a.strip() for a in answers):
+    if len(answers) != len(_SELF_AUDIT_QUESTIONS) or not all(
+        a.strip() for a in answers
+    ):
         return {
             "ok": False,
             "error": (
@@ -404,10 +475,13 @@ def scratch_gate(phase: str, scratch: Path | None = None) -> dict:
     without writing.
     """
     import datetime as _dt
+
     phase = _normalize_phase(phase)
     path = scratch or _scratch_path()
     if not path.exists():
-        raise FileNotFoundError(f"scratch not initialised: {path}; run scratch-init <slug>")
+        raise FileNotFoundError(
+            f"scratch not initialised: {path}; run scratch-init <slug>"
+        )
     text = path.read_text(encoding="utf-8")
     idx = _PHASE_INDEX[phase][0]
     # Thematic (non-sutta-anchored) runs auto-skip SC-parallels (2.5) and Sanskrit
@@ -417,7 +491,8 @@ def scratch_gate(phase: str, scratch: Path | None = None) -> dict:
             if _PHASE_INDEX[skip_id][0] < idx and _gate_marker(skip_id) not in text:
                 stitle = _PHASE_INDEX[skip_id][1]
                 _append_under_phase(
-                    path, skip_id,
+                    path,
+                    skip_id,
                     f"{_gate_marker(skip_id)}\n- AUTO-SKIPPED (thematic run): "
                     f"{stitle} not applicable to a non-sutta-anchored question.",
                 )
@@ -438,7 +513,11 @@ def scratch_gate(phase: str, scratch: Path | None = None) -> dict:
             }
     # Already gated?
     if _gate_marker(phase) in text:
-        return {"ok": True, "phase": phase, "note": "gate already present; not duplicated"}
+        return {
+            "ok": True,
+            "phase": phase,
+            "note": "gate already present; not duplicated",
+        }
     # Phase 7 hard gate: failure checklist answered, then scan the vault note
     # for [REJECTED] tags.
     if phase == "7":
@@ -462,7 +541,8 @@ def scratch_gate(phase: str, scratch: Path | None = None) -> dict:
                     note_text = vault_path.read_text(encoding="utf-8")
                     if "[REJECTED" in note_text:
                         offending = [
-                            line.strip() for line in note_text.splitlines()
+                            line.strip()
+                            for line in note_text.splitlines()
                             if "[REJECTED" in line
                         ][:5]
                         return {
@@ -492,7 +572,9 @@ def scratch_gate(phase: str, scratch: Path | None = None) -> dict:
     return {"ok": True, "phase": phase, "title": title}
 
 
-def scratch_set_note(note_path: str, pdf: str | None = None, scratch: Path | None = None) -> dict:
+def scratch_set_note(
+    note_path: str, pdf: str | None = None, scratch: Path | None = None
+) -> dict:
     """Record the saved vault note (and optionally PDF) path in the scratch header.
 
     The Phase 7 hard gate reads the `**Vault note:**` header to scan the saved
@@ -503,7 +585,9 @@ def scratch_set_note(note_path: str, pdf: str | None = None, scratch: Path | Non
     """
     path = scratch or _scratch_path()
     if not path.exists():
-        raise FileNotFoundError(f"scratch not initialised: {path}; run scratch-init <slug>")
+        raise FileNotFoundError(
+            f"scratch not initialised: {path}; run scratch-init <slug>"
+        )
     note = Path(note_path).expanduser()
     if not note.exists() and not note.is_absolute():
         vault = os.environ.get("VICAYA_VAULT_PATH")
@@ -526,7 +610,11 @@ def scratch_set_note(note_path: str, pdf: str | None = None, scratch: Path | Non
     with _file_lock(path):
         text = path.read_text(encoding="utf-8")
         new_text, n = _re.subn(
-            r"^\*\*Vault note:\*\*.*$", lambda _: note_line, text, count=1, flags=_re.M,
+            r"^\*\*Vault note:\*\*.*$",
+            lambda _: note_line,
+            text,
+            count=1,
+            flags=_re.M,
         )
         if n == 0:
             # Header line absent (pre-skeleton scratch): insert after **Run class:**.
@@ -541,7 +629,11 @@ def scratch_set_note(note_path: str, pdf: str | None = None, scratch: Path | Non
         if pdf is not None:
             pdf_line = f"**PDF:** {pdf}"
             new_text, n = _re.subn(
-                r"^\*\*PDF:\*\*.*$", lambda _: pdf_line, new_text, count=1, flags=_re.M,
+                r"^\*\*PDF:\*\*.*$",
+                lambda _: pdf_line,
+                new_text,
+                count=1,
+                flags=_re.M,
             )
             if n == 0:
                 new_text = new_text.replace(note_line, f"{note_line}\n{pdf_line}", 1)
@@ -576,11 +668,13 @@ def scratch_verify(through: str | None = None, scratch: Path | None = None) -> d
     missing = []
     for pid, title, expected in _SCRATCH_PHASES[:upper]:
         if _gate_marker(pid) not in text:
-            missing.append({
-                "phase": pid,
-                "title": title,
-                "expected_evidence": expected,
-            })
+            missing.append(
+                {
+                    "phase": pid,
+                    "title": title,
+                    "expected_evidence": expected,
+                }
+            )
     return {"ok": not missing, "checked_through": upper, "missing": missing}
 
 
@@ -619,14 +713,23 @@ def _maybe_autolog(cmd: str, argv: list[str], result_obj) -> None:
     phase = _PHASE_ALIASES.get(str(phase).strip().lower(), phase)
     if not scratch:
         return
-    if cmd in {"scratch-init", "scratch-log", "scratch-gate", "scratch-set-note",
-               "scratch-self-audit", "scratch-verify", "scratch-resume",
-               "scratch-which", "lookup-book"}:
+    if cmd in {
+        "scratch-init",
+        "scratch-log",
+        "scratch-gate",
+        "scratch-set-note",
+        "scratch-self-audit",
+        "scratch-verify",
+        "scratch-resume",
+        "scratch-which",
+        "lookup-book",
+    }:
         return
     try:
         import datetime as _dt
         import json as _json
         from dataclasses import asdict as _asdict, is_dataclass as _is_dc
+
         path = Path(scratch)
         if not path.exists():
             return
@@ -644,8 +747,11 @@ def _maybe_autolog(cmd: str, argv: list[str], result_obj) -> None:
             if _is_dc(o) and not isinstance(o, type):
                 return _asdict(o)
             return str(o)
+
         try:
-            payload = _json.dumps(result_obj, ensure_ascii=False, indent=2, default=_default)
+            payload = _json.dumps(
+                result_obj, ensure_ascii=False, indent=2, default=_default
+            )
             body.append("- results:")
             body.append("```json")
             body.append(payload)

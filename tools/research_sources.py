@@ -149,19 +149,29 @@ def search_vault(
 
     Returns up to `limit` hits, each with file path and a snippet of matching context.
     """
-    cmd = ["obsidian", f"vault={vault}", "search:context", f"query={query}", "format=json"]
+    cmd = [
+        "obsidian",
+        f"vault={vault}",
+        "search:context",
+        f"query={query}",
+        "format=json",
+    ]
     if folder:
         cmd.append(f"path={folder}")
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
     if result.returncode != 0:
-        raise RuntimeError(f"obsidian CLI exited {result.returncode}: {(result.stderr or result.stdout).strip()}")
+        raise RuntimeError(
+            f"obsidian CLI exited {result.returncode}: {(result.stderr or result.stdout).strip()}"
+        )
     stdout = result.stdout.strip()
     if not stdout:
         return []
     try:
         data = json.loads(stdout)
     except json.JSONDecodeError:
-        raise RuntimeError(f"obsidian CLI returned non-JSON (app may not be running): {stdout[:200]}")
+        raise RuntimeError(
+            f"obsidian CLI returned non-JSON (app may not be running): {stdout[:200]}"
+        )
     hits: list[VaultHit] = []
     # Output shape: list of {file, matches: [{line, text}, ...]}
     if isinstance(data, list):
@@ -174,7 +184,9 @@ def search_vault(
                 ]
                 for m in matches:
                     hits.append(
-                        VaultHit(path=path, snippet=m.get("text", ""), line=m.get("line"))
+                        VaultHit(
+                            path=path, snippet=m.get("text", ""), line=m.get("line")
+                        )
                     )
                     if len(hits) >= limit:
                         return hits
@@ -196,6 +208,7 @@ def _normalise_for_match(text: str) -> str:
     these — "evaṃ me sutaṃ" matches 123 rows raw but 460 normalised.
     """
     import unicodedata
+
     text = unicodedata.normalize("NFC", text)
     text = _TAG_RE.sub("", text)
     text = text.replace("ṁ", "ṃ").replace("ŋ", "ṃ")
@@ -299,9 +312,7 @@ def search_canon(
         return []
     hits: list[CanonHit] = []
     with sqlite3.connect(db_path) as conn:
-        conn.create_function(
-            "vicaya_match", 2, _match_normalised, deterministic=True
-        )
+        conn.create_function("vicaya_match", 2, _match_normalised, deterministic=True)
         for table in tables:
             where = " OR ".join(f"vicaya_match({c}, ?)" for c in cols)
             sql = (
@@ -519,7 +530,7 @@ def _fallback_human(stem: str, text_type: str, paranum: str) -> tuple[str, str]:
                 pitaka_label = "Abhidhamma"
             elif prefix == "e":
                 pitaka_label = "Extra"
-    rest = stem[len(matched_prefix):] if matched_prefix else stem
+    rest = stem[len(matched_prefix) :] if matched_prefix else stem
     digits = ""
     for ch in rest:
         if ch.isdigit():
@@ -528,7 +539,11 @@ def _fallback_human(stem: str, text_type: str, paranum: str) -> tuple[str, str]:
             break
     short_label = nikaya_label or pitaka_label or "?"
     book_num = digits or rest or ""
-    core = f"{short_label} {book_num} §{paranum}" if book_num else f"{short_label} §{paranum}"
+    core = (
+        f"{short_label} {book_num} §{paranum}"
+        if book_num
+        else f"{short_label} §{paranum}"
+    )
     tt_label = _TEXT_TYPE_LABELS.get(text_type, "")
     human = f"{core} ({tt_label})" if tt_label and tt_label != "mūla" else core
     return human, pitaka_label or "Unknown"
@@ -577,8 +592,11 @@ def resolve_citation(
                 dpd_code, sutta_name = result
                 human = f"{dpd_code} {sutta_name} para {para_display}"
                 return Citation(
-                    machine=machine, human=human,
-                    pitaka="Sutta", text_type=tt_label, paranum=paranum,
+                    machine=machine,
+                    human=human,
+                    pitaka="Sutta",
+                    text_type=tt_label,
+                    paranum=paranum,
                 )
 
         elif db_path is not None and text_type in ("att", "tik"):
@@ -589,12 +607,19 @@ def resolve_citation(
                 dpd_code, _ = result
                 suffix = "a" if text_type == "att" else "t"
                 nikaya = _re.match(r"([A-Z]+)", dpd_code)
-                sutta_num = dpd_code[len(nikaya.group(1)):] if nikaya else ""
-                commentary_code = f"{nikaya.group(1)}{suffix}{sutta_num}" if nikaya else f"{dpd_code}{suffix}"
+                sutta_num = dpd_code[len(nikaya.group(1)) :] if nikaya else ""
+                commentary_code = (
+                    f"{nikaya.group(1)}{suffix}{sutta_num}"
+                    if nikaya
+                    else f"{dpd_code}{suffix}"
+                )
                 human = f"{commentary_code} para {para_display}"
                 return Citation(
-                    machine=machine, human=human,
-                    pitaka="Commentary", text_type=tt_label, paranum=paranum,
+                    machine=machine,
+                    human=human,
+                    pitaka="Commentary",
+                    text_type=tt_label,
+                    paranum=paranum,
                 )
 
         canon = _canon_heading_lookup(
@@ -611,8 +636,11 @@ def resolve_citation(
                     f"near: {near}"
                 )
                 return Citation(
-                    machine=machine, human=human,
-                    pitaka=pitaka, text_type=tt_label, paranum=paranum,
+                    machine=machine,
+                    human=human,
+                    pitaka=pitaka,
+                    text_type=tt_label,
+                    paranum=paranum,
                 )
             if text_type == "mul":
                 for heading in reversed(canon["sections"]):
@@ -621,22 +649,31 @@ def resolve_citation(
                         dpd_code, sutta_name = hit
                         human = f"{dpd_code} {sutta_name} para {para_display}"
                         return Citation(
-                            machine=machine, human=human,
-                            pitaka="Sutta", text_type=tt_label, paranum=paranum,
+                            machine=machine,
+                            human=human,
+                            pitaka="Sutta",
+                            text_type=tt_label,
+                            paranum=paranum,
                         )
             parts = ", ".join(p for p in [canon["book"], *canon["sections"]] if p)
             if parts:
                 human = f"{base} — {parts}"
                 return Citation(
-                    machine=machine, human=human,
-                    pitaka=pitaka, text_type=tt_label, paranum=paranum,
+                    machine=machine,
+                    human=human,
+                    pitaka=pitaka,
+                    text_type=tt_label,
+                    paranum=paranum,
                 )
 
     # Fallback
     human, pitaka = _fallback_human(stem, text_type, paranum)
     return Citation(
-        machine=machine, human=human,
-        pitaka=pitaka, text_type=_TEXT_TYPE_LABELS.get(text_type, ""), paranum=paranum,
+        machine=machine,
+        human=human,
+        pitaka=pitaka,
+        text_type=_TEXT_TYPE_LABELS.get(text_type, ""),
+        paranum=paranum,
     )
 
 
@@ -807,14 +844,14 @@ def fetch_youtube_transcript(
             return None
         snippets = chosen.fetch()
         segments = [
-            {"start": s.start, "duration": s.duration, "text": s.text}
-            for s in snippets
+            {"start": s.start, "duration": s.duration, "text": s.text} for s in snippets
         ]
         lang_code = getattr(chosen, "language_code", languages[0])
     except Exception:
         return None
 
     import datetime as _dt
+
     transcript = YouTubeTranscript(
         video_id=video_id,
         lang=lang_code,
@@ -823,6 +860,7 @@ def fetch_youtube_transcript(
         fetched=_dt.date.today().isoformat(),
     )
     from dataclasses import asdict
+
     cache_file.write_text(
         json.dumps(asdict(transcript), ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -836,11 +874,21 @@ def fetch_youtube_transcript(
 # directory `+Suttas/Overviews Suttas/<NIK>/`. Longest prefixes first so
 # `THAG` is matched before `T`.
 _EBC_NIKAYA_PREFIXES: tuple[str, ...] = (
-    "PDHP", "THAG", "THIG",
-    "SNP", "DHP", "ITI",
-    "MN", "DN", "SN", "AN",
+    "PDHP",
+    "THAG",
+    "THIG",
+    "SNP",
+    "DHP",
+    "ITI",
+    "MN",
+    "DN",
+    "SN",
+    "AN",
     "UD",
-    "MA", "DA", "EA", "SA",
+    "MA",
+    "DA",
+    "EA",
+    "SA",
     "T",
 )
 
@@ -851,7 +899,7 @@ _AGAMA_FOLDER_MAP: dict[str, tuple[str, str | None]] = {
     "DA": ("da-patton", "da-bdk"),
     "EA": ("ea-patton", None),
     "SA": ("sa-patton", None),
-    "T":  ("t-patton",  None),
+    "T": ("t-patton", None),
 }
 
 
@@ -982,7 +1030,9 @@ def get_ebc_overview(
         teacher=_as_list(yaml.get("sutta_teacher")),
         parallels_agama=_split_parallel_refs(str(yaml.get("parallels_agama") or "")),
         # EBC frontmatter uses the (sic) key `parallels_partilal`.
-        parallels_partial=_split_parallel_refs(str(yaml.get("parallels_partilal") or "")),
+        parallels_partial=_split_parallel_refs(
+            str(yaml.get("parallels_partilal") or "")
+        ),
     )
 
 
@@ -1001,19 +1051,32 @@ def _find_agama_path(code: str, vault: Path) -> tuple[Path | None, str]:
     patton_stem, bdk_stem = _AGAMA_FOLDER_MAP[nik]
 
     candidates: list[tuple[Path, str]] = [
-        (agama_root / "Agamas Dhamma pearls" / patton_stem / f"{code_lower}-patton.md", "Patton"),
+        (
+            agama_root
+            / "Agamas Dhamma pearls"
+            / patton_stem
+            / f"{code_lower}-patton.md",
+            "Patton",
+        ),
     ]
     if nik == "SA" and "." in code_lower:
         code_underscore = code_lower.replace(".", "_")
-        candidates.append((
-            agama_root / "Agamas Dhamma pearls" / "sa-patton-1" / f"{code_underscore}-unknown.md",
-            "Patton",
-        ))
+        candidates.append(
+            (
+                agama_root
+                / "Agamas Dhamma pearls"
+                / "sa-patton-1"
+                / f"{code_underscore}-unknown.md",
+                "Patton",
+            )
+        )
     if bdk_stem:
-        candidates.append((
-            agama_root / "Agamas BDK" / bdk_stem / f"{code_lower}-bdk.md",
-            "BDK",
-        ))
+        candidates.append(
+            (
+                agama_root / "Agamas BDK" / bdk_stem / f"{code_lower}-bdk.md",
+                "BDK",
+            )
+        )
     for path, translator in candidates:
         if path.exists():
             return path, translator
@@ -1054,12 +1117,14 @@ def get_agama_texts(
         if path is None:
             missing.append(code)
         else:
-            found.append({
-                "code": code,
-                "path": str(path),
-                "translator": translator,
-                "text": path.read_text(encoding="utf-8"),
-            })
+            found.append(
+                {
+                    "code": code,
+                    "path": str(path),
+                    "translator": translator,
+                    "text": path.read_text(encoding="utf-8"),
+                }
+            )
     return {
         "sutta_code": overview.code,
         "parallels_found": found,
@@ -1084,9 +1149,14 @@ def search_ebc(
     if not root.exists():
         return []
     cmd = [
-        "grep", "-rn", "-F", "-a",
+        "grep",
+        "-rn",
+        "-F",
+        "-a",
         "--include=*.md",
-        "--", query, str(root),
+        "--",
+        query,
+        str(root),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
     # grep exits 1 when there are no matches; only treat >1 as an error.
@@ -1135,9 +1205,14 @@ def search_sanskrit(
     if not root.exists():
         return []
     cmd = [
-        "grep", "-rn", "-F", "-a",
+        "grep",
+        "-rn",
+        "-F",
+        "-a",
         "--include=*.htm",
-        "--", query, str(root),
+        "--",
+        query,
+        str(root),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
     if result.returncode > 1:
@@ -1180,15 +1255,15 @@ _SC_REF_RE = _re.compile(r"^([a-z-]+)(\d+(?:\.\d+)?)?")
 
 @dataclass
 class SCParallel:
-    ref: str                              # e.g. "ma115" or "ea40.10"
-    resemblance: bool = False             # True if listed with `~` prefix
-    paragraph_range: str = ""             # e.g. "16.1-18.1" if present, else ""
+    ref: str  # e.g. "ma115" or "ea40.10"
+    resemblance: bool = False  # True if listed with `~` prefix
+    paragraph_range: str = ""  # e.g. "16.1-18.1" if present, else ""
     text_pali: str = ""
     text_lzh: str = ""
     text_san: str = ""
     text_pra: str = ""
     translation_en: str = ""
-    text_gaps: list[str] = None           # type: ignore[assignment]
+    text_gaps: list[str] = None  # type: ignore[assignment]
 
 
 def _sc_parse_ref(raw: str) -> tuple[str, bool, str]:
@@ -1309,8 +1384,12 @@ def sc_parallels(
                 text_gaps=[],
             )
             if include_text:
-                for lang, attr in (("pli", "text_pali"), ("lzh", "text_lzh"),
-                                   ("san", "text_san"), ("pra", "text_pra")):
+                for lang, attr in (
+                    ("pli", "text_pali"),
+                    ("lzh", "text_lzh"),
+                    ("san", "text_san"),
+                    ("pra", "text_pra"),
+                ):
                     if _sc_collection_for_uid(uid) is None:
                         continue
                     p = _sc_find_root_file(uid, lang, sc_root)
@@ -1319,11 +1398,15 @@ def sc_parallels(
                     setattr(parallel, attr, _sc_read_segments(p))
                 t = _sc_find_translation_file(uid, sc_root, "en")
                 parallel.translation_en = _sc_read_segments(t)
-                if not any([parallel.text_pali, parallel.text_lzh,
-                            parallel.text_san, parallel.text_pra]):
-                    parallel.text_gaps.append(
-                        "no root text in offline archive"
-                    )
+                if not any(
+                    [
+                        parallel.text_pali,
+                        parallel.text_lzh,
+                        parallel.text_san,
+                        parallel.text_pra,
+                    ]
+                ):
+                    parallel.text_gaps.append("no root text in offline archive")
                 if not parallel.translation_en:
                     parallel.text_gaps.append("no en translation in offline archive")
             out.append(parallel)
@@ -1395,7 +1478,9 @@ def gemini_cross_check(prompt: str, timeout: int = 120) -> str:
     if result.returncode != 0:
         lines = result.stderr.strip().splitlines()
         # Prefer the human-readable message line if present
-        msg_line = next((ln.strip() for ln in lines if ln.strip().startswith("message:")), None)
+        msg_line = next(
+            (ln.strip() for ln in lines if ln.strip().startswith("message:")), None
+        )
         reason = msg_line or (lines[-1].strip() if lines else "non-zero exit")
         return f"# ERROR: {reason}"
     return result.stdout.strip()
@@ -1473,7 +1558,7 @@ _CITATION_RE = _re.compile(
 # Books whose sutta_info codes carry a different prefix than the scholarly
 # abbreviation (book_code column in parentheses).
 _PREFIX_ALIASES = {
-    "THAG": ["TH"],     # dpd_code uses TH1…TH264 (book_code TH)
+    "THAG": ["TH"],  # dpd_code uses TH1…TH264 (book_code TH)
     "THIG": ["THI"],
     "KP": ["KHP"],
     "KHP": ["KP"],
@@ -1485,9 +1570,21 @@ _VERSE_NUMBERED_BOOKS = {"SNP", "THAG", "THIG"}
 
 # citation prefix → sutta_info.book_code, for the range-containment scan.
 _BOOK_CODE_FOR_PREFIX = {
-    "DHP": "DHP", "AN": "AN", "SN": "SN", "MN": "MN", "DN": "DN",
-    "SNP": "SNP", "THAG": "TH", "THIG": "THI", "ITI": "ITI", "UD": "UD",
-    "JA": "JA", "PV": "PV", "VV": "VV", "KHP": "KHP", "KP": "KHP",
+    "DHP": "DHP",
+    "AN": "AN",
+    "SN": "SN",
+    "MN": "MN",
+    "DN": "DN",
+    "SNP": "SNP",
+    "THAG": "TH",
+    "THIG": "THI",
+    "ITI": "ITI",
+    "UD": "UD",
+    "JA": "JA",
+    "PV": "PV",
+    "VV": "VV",
+    "KHP": "KHP",
+    "KP": "KHP",
 }
 
 _RANGE_CODE_RE = _re.compile(r"^([A-Z]+)(?:(\d+)\.)?(\d+)-(\d+)$")
@@ -1520,7 +1617,7 @@ def _normalise_citation(ref: str) -> list[str]:
     for cand in list(candidates):
         head = _re.match(r"^[A-Z]+", cand)
         if head and head.group(0) in _PREFIX_ALIASES:
-            rest = cand[len(head.group(0)):]
+            rest = cand[len(head.group(0)) :]
             for alias in _PREFIX_ALIASES[head.group(0)]:
                 candidates.append(f"{alias}{rest}")
     return candidates
@@ -1632,8 +1729,14 @@ def verify_citation(ref: str, dpd_db: Path | None = None) -> dict:
     """
     db_path = dpd_db or DEFAULT_DPD_DB
     if db_path is None or not db_path.exists():
-        return {"ref": ref, "normalised": [], "verdict": "rejected",
-                "exists": False, "matches": [], "error": "dpd.db not available"}
+        return {
+            "ref": ref,
+            "normalised": [],
+            "verdict": "rejected",
+            "exists": False,
+            "matches": [],
+            "error": "dpd.db not available",
+        }
     candidates = _normalise_citation(ref)
     matches: list[dict] = []
     seen: set[tuple] = set()
@@ -1663,8 +1766,14 @@ def verify_citation(ref: str, dpd_db: Path | None = None) -> dict:
                             "chapter.sutta (e.g. Snp 4.14, Thag 16.1) to verify"
                         )
     except sqlite3.Error as e:
-        return {"ref": ref, "normalised": candidates, "verdict": "rejected",
-                "exists": False, "matches": [], "error": str(e)}
+        return {
+            "ref": ref,
+            "normalised": candidates,
+            "verdict": "rejected",
+            "exists": False,
+            "matches": [],
+            "error": str(e),
+        }
     if matches:
         verdict = "verified"
     elif unverifiable_note:
@@ -1686,7 +1795,7 @@ def verify_citation(ref: str, dpd_db: Path | None = None) -> dict:
 _VERDICT_LABELS = {
     "verified": "[VERIFIED]",
     "unverifiable-form": "[UNVERIFIABLE — global verse number, no per-verse "
-                         "row in sutta_info; cite by chapter.sutta to verify]",
+    "row in sutta_info; cite by chapter.sutta to verify]",
     "rejected": "[REJECTED — not in sutta_info]",
 }
 
@@ -1731,15 +1840,16 @@ def cross_check(prompt: str, timeout: int = 180) -> str:
     if not key or not models:
         return _SELF_REVIEW_SENTINEL
 
-    body = json.dumps({
-        "models": models,
-        "messages": [{"role": "user", "content": prompt}],
-    }).encode("utf-8")
+    body = json.dumps(
+        {
+            "models": models,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+    ).encode("utf-8")
     req = urllib.request.Request(
         _OPENROUTER_URL,
         data=body,
-        headers={"Authorization": f"Bearer {key}",
-                 "Content-Type": "application/json"},
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
         method="POST",
     )
     try:
@@ -2099,7 +2209,9 @@ def _cli() -> int:
     def _handle_sc_search(args):
         result = sc_search(args.query, lang=args.lang, limit=args.limit)
         _dump(result)
-        return _done([args.query, "--lang", args.lang, "--limit", str(args.limit)], result)
+        return _done(
+            [args.query, "--lang", args.lang, "--limit", str(args.limit)], result
+        )
 
     def _handle_scratch_init(args):
         path = scratch_init(
@@ -2111,18 +2223,24 @@ def _cli() -> int:
             ambiguity=args.ambiguity,
         )
         gate0_written = "### PHASE 0 EXIT GATE" in path.read_text(encoding="utf-8")
-        _dump({
-            "ok": True, "path": str(path), "slug": args.slug, "class": args.run_class,
-            "phase0_gate": (
-                "written — proceed to Phase 1" if gate0_written
-                else "NOT written — pass --question-polished, --scope-assumptions "
-                     "and --ambiguity, or run scratch-gate 0 after recording them"
-            ),
-            "isolation": (
-                "auto-logging is isolated to this run (keyed to the agent "
-                "process); parallel runs never collide — nothing to pin or export"
-            ),
-        })
+        _dump(
+            {
+                "ok": True,
+                "path": str(path),
+                "slug": args.slug,
+                "class": args.run_class,
+                "phase0_gate": (
+                    "written — proceed to Phase 1"
+                    if gate0_written
+                    else "NOT written — pass --question-polished, --scope-assumptions "
+                    "and --ambiguity, or run scratch-gate 0 after recording them"
+                ),
+                "isolation": (
+                    "auto-logging is isolated to this run (keyed to the agent "
+                    "process); parallel runs never collide — nothing to pin or export"
+                ),
+            }
+        )
         return _done()
 
     def _handle_scratch_log(args):
@@ -2200,8 +2318,12 @@ def _cli() -> int:
 
     pc = sub.add_parser("search-canon")
     pc.add_argument("query")
-    pc.add_argument("--books", nargs="*", default=None,
-                    help="Book specifiers, e.g. 's*_mul' '*_att'. Default: sutta mūla.")
+    pc.add_argument(
+        "--books",
+        nargs="*",
+        default=None,
+        help="Book specifiers, e.g. 's*_mul' '*_att'. Default: sutta mūla.",
+    )
     pc.add_argument("--lang", choices=["pali", "english", "any"], default="pali")
     pc.add_argument("--limit", type=int, default=20)
     pc.set_defaults(func=_handle_search_canon)
@@ -2211,23 +2333,30 @@ def _cli() -> int:
     pr.add_argument("paranum")
     pr.set_defaults(func=_handle_resolve_citation)
 
-    pg = sub.add_parser("gemini-cross-check",
-                        help="Reads prompt from stdin to avoid shell quoting issues.")
+    pg = sub.add_parser(
+        "gemini-cross-check",
+        help="Reads prompt from stdin to avoid shell quoting issues.",
+    )
     pg.add_argument("--timeout", type=int, default=120)
     pg.set_defaults(func=_handle_gemini_cross_check)
 
-    pcc = sub.add_parser("cross-check",
-                         help="OpenRouter cross-check; falls back to a "
-                              "# SELF_REVIEW: sentinel if unreachable. "
-                              "Reads prompt from stdin.")
+    pcc = sub.add_parser(
+        "cross-check",
+        help="OpenRouter cross-check; falls back to a "
+        "# SELF_REVIEW: sentinel if unreachable. "
+        "Reads prompt from stdin.",
+    )
     pcc.add_argument("--timeout", type=int, default=180)
     pcc.set_defaults(func=_handle_cross_check)
 
     py = sub.add_parser("search-youtube")
     py.add_argument("query")
     py.add_argument("--limit", type=int, default=20)
-    py.add_argument("--no-filter", action="store_true",
-                    help="Disable channel allowlist filtering (mostly for debug).")
+    py.add_argument(
+        "--no-filter",
+        action="store_true",
+        help="Disable channel allowlist filtering (mostly for debug).",
+    )
     py.set_defaults(func=_handle_search_youtube)
 
     pt = sub.add_parser("fetch-transcript")
@@ -2235,162 +2364,256 @@ def _cli() -> int:
     pt.add_argument("--lang", nargs="*", default=["en"])
     pt.set_defaults(func=_handle_fetch_transcript)
 
-    pb = sub.add_parser("lookup-book",
-                        help="Translate any CST book identifier into the others.")
-    pb.add_argument("value",
-                    help="cst_filename (s0101m.mul), table name (s0101m_mul), "
-                         "Pāḷi title, gui code (dn1), or DPD code (DN/DNa).")
+    pb = sub.add_parser(
+        "lookup-book", help="Translate any CST book identifier into the others."
+    )
+    pb.add_argument(
+        "value",
+        help="cst_filename (s0101m.mul), table name (s0101m_mul), "
+        "Pāḷi title, gui code (dn1), or DPD code (DN/DNa).",
+    )
     pb.set_defaults(func=_handle_lookup_book)
 
-    peo = sub.add_parser("get-ebc-overview",
-                         help="Parse the EBC per-sutta overview card for SUTTA_CODE.")
+    peo = sub.add_parser(
+        "get-ebc-overview", help="Parse the EBC per-sutta overview card for SUTTA_CODE."
+    )
     peo.add_argument("code", help="Sutta code, e.g. MN10, mn-10, mn 10, DN22, MA98.")
     peo.set_defaults(func=_handle_get_ebc_overview)
 
-    pga = sub.add_parser("get-agama",
-                         help="Fetch Āgama parallel translations for a sutta. "
-                              "Reads get-ebc-overview parallels_agama, resolves each "
-                              "to its Patton or BDK file, and returns the full text. "
-                              "Missing codes are listed in parallels_missing.")
+    pga = sub.add_parser(
+        "get-agama",
+        help="Fetch Āgama parallel translations for a sutta. "
+        "Reads get-ebc-overview parallels_agama, resolves each "
+        "to its Patton or BDK file, and returns the full text. "
+        "Missing codes are listed in parallels_missing.",
+    )
     pga.add_argument("code", help="Sutta code, e.g. MN10, DN22.")
-    pga.add_argument("--max", dest="max_parallels", type=int, default=5,
-                     help="Maximum parallels to fetch (default: 5).")
+    pga.add_argument(
+        "--max",
+        dest="max_parallels",
+        type=int,
+        default=5,
+        help="Maximum parallels to fetch (default: 5).",
+    )
     pga.set_defaults(func=_handle_get_agama)
 
-    pes = sub.add_parser("search-ebc",
-                         help="Fixed-string grep across the Early Buddhist Connections vault.")
+    pes = sub.add_parser(
+        "search-ebc",
+        help="Fixed-string grep across the Early Buddhist Connections vault.",
+    )
     pes.add_argument("query")
-    pes.add_argument("--folder", default=None,
-                     help="Restrict to a subfolder of the EBC vault.")
+    pes.add_argument(
+        "--folder", default=None, help="Restrict to a subfolder of the EBC vault."
+    )
     pes.add_argument("--limit", type=int, default=20)
     pes.set_defaults(func=_handle_search_ebc)
 
-    pss = sub.add_parser("search-sanskrit",
-                         help="Fixed-string grep across the local GRETIL Sanskrit corpus (.txt files).")
+    pss = sub.add_parser(
+        "search-sanskrit",
+        help="Fixed-string grep across the local GRETIL Sanskrit corpus (.txt files).",
+    )
     pss.add_argument("query")
-    pss.add_argument("--folder", default=None,
-                     help="Restrict to a subfolder of the GRETIL corpus (e.g. '1_veda').")
+    pss.add_argument(
+        "--folder",
+        default=None,
+        help="Restrict to a subfolder of the GRETIL corpus (e.g. '1_veda').",
+    )
     pss.add_argument("--limit", type=int, default=20)
     pss.set_defaults(func=_handle_search_sanskrit)
 
-    plfc = sub.add_parser("library-folders-check",
-                          help="Probe configured library folders paths and index health.")
+    plfc = sub.add_parser(
+        "library-folders-check",
+        help="Probe configured library folders paths and index health.",
+    )
     plfc.set_defaults(func=_handle_library_folders_check)
 
-    pfr = sub.add_parser("library-folders-refresh",
-                         help="Refresh the configured library folders index.")
+    pfr = sub.add_parser(
+        "library-folders-refresh", help="Refresh the configured library folders index."
+    )
     pfr.add_argument("--limit", type=int, default=None)
-    pfr.add_argument("--retry-failed", action="store_true",
-                     help="Re-extract unchanged files whose previous extraction "
-                          "did not succeed (e.g. after adding extractor support).")
+    pfr.add_argument(
+        "--retry-failed",
+        action="store_true",
+        help="Re-extract unchanged files whose previous extraction "
+        "did not succeed (e.g. after adding extractor support).",
+    )
     pfr.set_defaults(func=_handle_library_folders_refresh)
 
-    psfc = sub.add_parser("search-library-folders",
-                          help="Search the configured library folders index.")
+    psfc = sub.add_parser(
+        "search-library-folders", help="Search the configured library folders index."
+    )
     psfc.add_argument("query")
     psfc.add_argument("--limit", type=int, default=20)
     psfc.add_argument("--include-duplicates", action="store_true")
     psfc.set_defaults(func=_handle_search_library_folders)
 
-    pfd = sub.add_parser("library-folders-duplicates",
-                         help="Summarize duplicate clusters in the library folders index.")
+    pfd = sub.add_parser(
+        "library-folders-duplicates",
+        help="Summarize duplicate clusters in the library folders index.",
+    )
     pfd.add_argument("--samples", type=int, default=5)
     pfd.set_defaults(func=_handle_library_folders_duplicates)
 
-    psp = sub.add_parser("sc-parallels",
-                         help="SuttaCentral offline archive: list parallels for a citation "
-                              "(e.g. 'mn18') and return text + en translation where present.")
+    psp = sub.add_parser(
+        "sc-parallels",
+        help="SuttaCentral offline archive: list parallels for a citation "
+        "(e.g. 'mn18') and return text + en translation where present.",
+    )
     psp.add_argument("citation")
-    psp.add_argument("--no-text", action="store_true",
-                     help="Skip text retrieval; report parallel refs only.")
+    psp.add_argument(
+        "--no-text",
+        action="store_true",
+        help="Skip text retrieval; report parallel refs only.",
+    )
     psp.set_defaults(func=_handle_sc_parallels)
 
-    pscs = sub.add_parser("sc-search",
-                          help="Fixed-string grep across SuttaCentral offline root texts.")
+    pscs = sub.add_parser(
+        "sc-search", help="Fixed-string grep across SuttaCentral offline root texts."
+    )
     pscs.add_argument("query")
-    pscs.add_argument("--lang", default="pli",
-                      help="Root-text language: pli, lzh (Chinese Āgamas), san, pra, en, misc.")
+    pscs.add_argument(
+        "--lang",
+        default="pli",
+        help="Root-text language: pli, lzh (Chinese Āgamas), san, pra, en, misc.",
+    )
     pscs.add_argument("--limit", type=int, default=20)
     pscs.set_defaults(func=_handle_sc_search)
 
-    psi = sub.add_parser("scratch-init",
-                         help="Create the scratch dossier file for a run.")
+    psi = sub.add_parser(
+        "scratch-init", help="Create the scratch dossier file for a run."
+    )
     psi.add_argument("slug")
-    psi.add_argument("--class", dest="run_class", default="sutta-anchored",
-                     choices=["sutta-anchored", "thematic"],
-                     help="thematic = non-sutta-anchored; auto-skips Phase 2.5/3b gates.")
-    psi.add_argument("--question-original", default=None,
-                     help="The user's exact request wording.")
-    psi.add_argument("--question-polished", default=None,
-                     help="The polished research question (Phase 0 evidence).")
-    psi.add_argument("--scope-assumptions", default=None,
-                     help="Inferred textual/interpretive scope, depth, seeds (Phase 0 evidence).")
-    psi.add_argument("--ambiguity", default=None,
-                     choices=["clear", "minor_uncertainty", "unclear"],
-                     help="Ambiguity status (Phase 0 evidence). Providing this plus "
-                          "--question-polished and --scope-assumptions writes the "
-                          "Phase 0 gate automatically.")
+    psi.add_argument(
+        "--class",
+        dest="run_class",
+        default="sutta-anchored",
+        choices=["sutta-anchored", "thematic"],
+        help="thematic = non-sutta-anchored; auto-skips Phase 2.5/3b gates.",
+    )
+    psi.add_argument(
+        "--question-original", default=None, help="The user's exact request wording."
+    )
+    psi.add_argument(
+        "--question-polished",
+        default=None,
+        help="The polished research question (Phase 0 evidence).",
+    )
+    psi.add_argument(
+        "--scope-assumptions",
+        default=None,
+        help="Inferred textual/interpretive scope, depth, seeds (Phase 0 evidence).",
+    )
+    psi.add_argument(
+        "--ambiguity",
+        default=None,
+        choices=["clear", "minor_uncertainty", "unclear"],
+        help="Ambiguity status (Phase 0 evidence). Providing this plus "
+        "--question-polished and --scope-assumptions writes the "
+        "Phase 0 gate automatically.",
+    )
     psi.set_defaults(func=_handle_scratch_init)
 
-    psl = sub.add_parser("scratch-log",
-                         help="Append a manual entry to the scratch dossier under a phase.")
-    psl.add_argument("phase", help="Phase id: 0, 1, 2, 2.5, 3, 3b, 4 (alias: 4a), 4b, 4c, 5, 6, 7")
+    psl = sub.add_parser(
+        "scratch-log",
+        help="Append a manual entry to the scratch dossier under a phase.",
+    )
+    psl.add_argument(
+        "phase", help="Phase id: 0, 1, 2, 2.5, 3, 3b, 4 (alias: 4a), 4b, 4c, 5, 6, 7"
+    )
     psl.add_argument("tool", help="Tool/source name (free text).")
-    psl.add_argument("rest", nargs="*", help="Free-form args / query string (logged verbatim).")
+    psl.add_argument(
+        "rest", nargs="*", help="Free-form args / query string (logged verbatim)."
+    )
     psl.add_argument("--summary", default=None)
-    psl.add_argument("--results", default=None, type=Path,
-                     help="Path to a JSON file whose contents will be embedded verbatim.")
+    psl.add_argument(
+        "--results",
+        default=None,
+        type=Path,
+        help="Path to a JSON file whose contents will be embedded verbatim.",
+    )
     psl.add_argument("--hits", default=None, type=int)
     psl.set_defaults(func=_handle_scratch_log)
 
-    psg = sub.add_parser("scratch-gate",
-                         help="Append the canonical exit-gate checklist for a phase.")
-    psg.add_argument("phase", help="Phase id: 0, 1, 2, 2.5, 3, 3b, 4 (alias: 4a), 4b, 4c, 5, 6, 7")
+    psg = sub.add_parser(
+        "scratch-gate", help="Append the canonical exit-gate checklist for a phase."
+    )
+    psg.add_argument(
+        "phase", help="Phase id: 0, 1, 2, 2.5, 3, 3b, 4 (alias: 4a), 4b, 4c, 5, 6, 7"
+    )
     psg.set_defaults(func=_handle_scratch_gate)
 
-    pssn = sub.add_parser("scratch-set-note",
-                          help="Record the saved vault note (and PDF) path in the scratch "
-                               "header — sets the target of the Phase 7 [REJECTED] hard gate.")
-    pssn.add_argument("note_path",
-                      help="Path to the saved vault note; absolute, or vault-relative "
-                           "(resolved against VICAYA_VAULT_PATH).")
-    pssn.add_argument("--pdf", default=None,
-                      help="PDF path, or 'skipped' if PDF generation was skipped.")
+    pssn = sub.add_parser(
+        "scratch-set-note",
+        help="Record the saved vault note (and PDF) path in the scratch "
+        "header — sets the target of the Phase 7 [REJECTED] hard gate.",
+    )
+    pssn.add_argument(
+        "note_path",
+        help="Path to the saved vault note; absolute, or vault-relative "
+        "(resolved against VICAYA_VAULT_PATH).",
+    )
+    pssn.add_argument(
+        "--pdf",
+        default=None,
+        help="PDF path, or 'skipped' if PDF generation was skipped.",
+    )
     pssn.set_defaults(func=_handle_scratch_set_note)
 
-    psa = sub.add_parser("scratch-self-audit",
-                         help="Record the pre-completion failure checklist — "
-                              "scratch-gate 7 refuses until it is recorded.")
-    psa.add_argument("--answer", action="append", default=None, metavar="TEXT",
-                     help="One answer per checklist question, in order; run with "
-                          "no --answer flags to print the questions.")
+    psa = sub.add_parser(
+        "scratch-self-audit",
+        help="Record the pre-completion failure checklist — "
+        "scratch-gate 7 refuses until it is recorded.",
+    )
+    psa.add_argument(
+        "--answer",
+        action="append",
+        default=None,
+        metavar="TEXT",
+        help="One answer per checklist question, in order; run with "
+        "no --answer flags to print the questions.",
+    )
     psa.set_defaults(func=_handle_scratch_self_audit)
 
-    psv = sub.add_parser("scratch-verify",
-                         help="Verify every prior phase has its exit gate. Exits 1 on failure.")
-    psv.add_argument("--through", default=None,
-                     help="Check gates through this phase id; default = highest gate written.")
+    psv = sub.add_parser(
+        "scratch-verify",
+        help="Verify every prior phase has its exit gate. Exits 1 on failure.",
+    )
+    psv.add_argument(
+        "--through",
+        default=None,
+        help="Check gates through this phase id; default = highest gate written.",
+    )
     psv.set_defaults(func=_handle_scratch_verify)
 
-    psr = sub.add_parser("scratch-resume",
-                         help="Print the last gate written and the suggested next phase.")
-    psr.add_argument("slug", nargs="?", default=None,
-                     help="Slug for the scratch file; omit if VICAYA_SCRATCH is set.")
+    psr = sub.add_parser(
+        "scratch-resume",
+        help="Print the last gate written and the suggested next phase.",
+    )
+    psr.add_argument(
+        "slug",
+        nargs="?",
+        default=None,
+        help="Slug for the scratch file; omit if VICAYA_SCRATCH is set.",
+    )
     psr.set_defaults(func=_handle_scratch_resume)
 
-    psw = sub.add_parser("scratch-which",
-                         help="Print this run's active scratch path (resolved from run state).")
+    psw = sub.add_parser(
+        "scratch-which",
+        help="Print this run's active scratch path (resolved from run state).",
+    )
     psw.set_defaults(func=_handle_scratch_which)
 
-    pvc = sub.add_parser("verify-citation",
-                         help="Confirm a human sutta reference exists in dpd.db sutta_info.")
+    pvc = sub.add_parser(
+        "verify-citation",
+        help="Confirm a human sutta reference exists in dpd.db sutta_info.",
+    )
     pvc.add_argument("ref", help='Reference, e.g. "SN 46.42", "MN60", "Sn 4.8".')
     pvc.set_defaults(func=_handle_verify_citation)
 
     pe = sub.add_parser(
         "env",
         help="Print VICAYA_* config as shell export lines (~ expanded, "
-             'shell-quoted). Usage: eval "$(uv run tools/research_sources.py env)"',
+        'shell-quoted). Usage: eval "$(uv run tools/research_sources.py env)"',
     )
     pe.set_defaults(func=_handle_env)
 

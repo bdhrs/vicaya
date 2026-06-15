@@ -117,7 +117,9 @@ def test_unbounded_refresh_removes_newly_excluded_rows(tmp_path):
     with sqlite3.connect(index) as conn:
         before = {row[0] for row in conn.execute("SELECT rel_path FROM documents")}
 
-    report = refresh(LibraryFoldersConfig(roots=[root], index=index, exclude=(root / "skip",)))
+    report = refresh(
+        LibraryFoldersConfig(roots=[root], index=index, exclude=(root / "skip",))
+    )
     with sqlite3.connect(index) as conn:
         after = [row[0] for row in conn.execute("SELECT rel_path FROM documents")]
 
@@ -317,7 +319,9 @@ def test_refresh_continues_when_extraction_raises(tmp_path, monkeypatch):
 
     def fail_extract(path: Path):
         if path == bad:
-            raise UnicodeDecodeError("utf-8", b"\xed", 0, 1, "invalid continuation byte")
+            raise UnicodeDecodeError(
+                "utf-8", b"\xed", 0, 1, "invalid continuation byte"
+            )
         return original_extract(path)
 
     monkeypatch.setattr(library_folders, "extract_text", fail_extract)
@@ -444,7 +448,9 @@ def test_search_is_diacritic_insensitive_both_directions(tmp_path):
     config = LibraryFoldersConfig(roots=[root], index=index)
     refresh(config)
 
-    ascii_query_paths = {hit["relative_path"] for hit in search("paticcasamuppada", config)}
+    ascii_query_paths = {
+        hit["relative_path"] for hit in search("paticcasamuppada", config)
+    }
     diacritic_query_paths = {
         hit["relative_path"] for hit in search("paṭiccasamuppāda", config)
     }
@@ -473,7 +479,9 @@ def test_search_collapses_exact_content_and_text_duplicates(tmp_path):
     root.mkdir()
     (root / "a-identical.txt").write_text("identical duplicate text", encoding="utf-8")
     (root / "b-identical.txt").write_text("identical duplicate text", encoding="utf-8")
-    (root / "c-normalized.txt").write_text("normalized duplicate text", encoding="utf-8")
+    (root / "c-normalized.txt").write_text(
+        "normalized duplicate text", encoding="utf-8"
+    )
     (root / "d-normalized.txt").write_text(
         "normalized duplicate text\n\n",
         encoding="utf-8",
@@ -597,7 +605,9 @@ def test_duplicates_diagnostic_reports_clusters_and_missing_index(tmp_path):
     assert report["groups"]["content_hash"]["cluster_count"] >= 2
     assert report["groups"]["text_hash"]["cluster_count"] >= 1
     assert report["groups"]["normalized_filename"]["cluster_count"] >= 1
-    assert report["non_text_extracted_duplicate_candidates"]["by_extension"][".pdf"] == 2
+    assert (
+        report["non_text_extracted_duplicate_candidates"]["by_extension"][".pdf"] == 2
+    )
     assert missing["status"] == "unavailable"
 
 
@@ -758,7 +768,9 @@ def test_ebook_extraction_uses_ebook_convert_when_available(tmp_path):
 
     refresh(config)
 
-    assert [hit["relative_path"] for hit in search("rtf target", config)] == ["book.rtf"]
+    assert [hit["relative_path"] for hit in search("rtf target", config)] == [
+        "book.rtf"
+    ]
 
 
 def test_ebook_extraction_reports_missing_tool(monkeypatch, tmp_path):
@@ -799,9 +811,12 @@ def test_library_folders_cli_commands_return_expected_json(tmp_path):
     assert check_report["source_roots"][0]["available"] is True
     assert refresh_report["indexed"] == 2
     assert {hit["relative_path"] for hit in hits} == {"plain.txt", "plain copy.txt"}
-    assert {"document_id", "snippet", "duplicate_count", "possible_duplicate_of"} <= set(
-        hits[0]
-    )
+    assert {
+        "document_id",
+        "snippet",
+        "duplicate_count",
+        "possible_duplicate_of",
+    } <= set(hits[0])
     assert duplicate_report["status"] == "ok"
     assert "normalized_filename" in duplicate_report["groups"]
 
@@ -837,7 +852,9 @@ def test_zip_extractor_filters_noise_members(tmp_path):
 
     refresh(config)
 
-    assert [hit["relative_path"] for hit in search("htmldriven", config)] == ["bundle.zip"]
+    assert [hit["relative_path"] for hit in search("htmldriven", config)] == [
+        "bundle.zip"
+    ]
     assert search("mp3onlyword", config) == []
 
 
@@ -904,7 +921,9 @@ def test_zip_extractor_routes_pdf_member(tmp_path, monkeypatch):
     monkeypatch.setattr(
         library_folders,
         "_extract_pdf",
-        lambda _path: library_folders.ExtractedText(text="pdfmember target", status="ok"),
+        lambda _path: library_folders.ExtractedText(
+            text="pdfmember target", status="ok"
+        ),
     )
     path = tmp_path / "withpdf.zip"
     _write_zip(path, {"doc.pdf": b"%PDF-1.4 fake bytes"})

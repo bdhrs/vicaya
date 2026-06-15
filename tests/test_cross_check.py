@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import email.message
 import io
 import json
 import sys
@@ -69,7 +70,7 @@ def test_models_truncates_to_api_cap(monkeypatch, tmp_path):
     monkeypatch.setattr(rs, "_OPENROUTER_MODELS_PATH", f)
     out = rs._load_openrouter_models()
     assert len(out) == rs._OPENROUTER_MAX_MODELS
-    assert out == overlong[:rs._OPENROUTER_MAX_MODELS]
+    assert out == overlong[: rs._OPENROUTER_MAX_MODELS]
 
 
 def test_models_returns_empty_when_missing(monkeypatch, tmp_path):
@@ -123,7 +124,7 @@ def test_cross_check_self_review_on_http_error(monkeypatch):
 
     def boom(req, timeout):
         raise urllib.error.HTTPError(
-            "http://x", 429, "rate limit", {}, io.BytesIO(b"")
+            "http://x", 429, "rate limit", email.message.Message(), io.BytesIO(b"")
         )
 
     monkeypatch.setattr("urllib.request.urlopen", boom)
@@ -144,6 +145,11 @@ def test_cross_check_self_review_on_empty_content(monkeypatch):
 def test_self_review_lists_all_checklist_items(monkeypatch):
     monkeypatch.setattr(rs, "_load_openrouter_key", lambda: None)
     out = rs.cross_check("hi")
-    for label in ("Perspective coverage", "Tier integrity",
-                  "Citation quality", "Internal consistency", "Overreach"):
+    for label in (
+        "Perspective coverage",
+        "Tier integrity",
+        "Citation quality",
+        "Internal consistency",
+        "Overreach",
+    ):
         assert label in out

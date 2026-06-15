@@ -99,7 +99,9 @@ def test_scope_resolves_ambiguity(sc_root: Path, ebc_vault: Path) -> None:
 
 
 def test_scope_not_containing_phrase(sc_root: Path, ebc_vault: Path) -> None:
-    result = align("sabbe dhammā anattā", scope="SN22.59", sc_root=sc_root, ebc_vault=ebc_vault)
+    result = align(
+        "sabbe dhammā anattā", scope="SN22.59", sc_root=sc_root, ebc_vault=ebc_vault
+    )
     assert result.status == "not_in_scope"
     assert "mn1" in result.candidate_uids
 
@@ -155,8 +157,12 @@ def test_range_file_verse_aligns(tmp_path: Path) -> None:
         {"dhp278:1": "sabbe saṅkhārā aniccā ", "dhp279:1": "sabbe dhammā anattā "},
     )
     _write_json(
-        base / "translation/en/sujato/sutta/kn/dhp/dhp273-289_translation-en-sujato.json",
-        {"dhp278:1": "all conditions are impermanent ", "dhp279:1": "all things are not-self "},
+        base
+        / "translation/en/sujato/sutta/kn/dhp/dhp273-289_translation-en-sujato.json",
+        {
+            "dhp278:1": "all conditions are impermanent ",
+            "dhp279:1": "all things are not-self ",
+        },
     )
     result = align("sabbe dhammā anattā", sc_root=root, ebc_vault=None)
     assert result.status == "ok"

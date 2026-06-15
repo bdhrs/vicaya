@@ -55,7 +55,9 @@ class AlignResult:
     uid: str = ""
     seg_keys: list[str] = field(default_factory=list)
     rows: list[tuple[str, str]] = field(default_factory=list)  # (label, text)
-    ebc_files: list[tuple[str, Path]] = field(default_factory=list)  # (translator, path)
+    ebc_files: list[tuple[str, Path]] = field(
+        default_factory=list
+    )  # (translator, path)
     candidate_uids: list[str] = field(default_factory=list)
 
 
@@ -68,6 +70,7 @@ class _Located:
     (`dhp279:1` lives in `dhp273-289_root-pli-ms.json`). Carrying the real path
     is what lets verse texts align instead of silently producing empty rows.
     """
+
     uid: str
     file_stem: str
     root_path: Path
@@ -124,7 +127,9 @@ def locate_segments(
         loc = found.get(uid)
         if loc is None:
             path = Path(parts[0])
-            loc = _Located(uid=uid, file_stem=path.name.split("_root", 1)[0], root_path=path)
+            loc = _Located(
+                uid=uid, file_stem=path.name.split("_root", 1)[0], root_path=path
+            )
             found[uid] = loc
         if key not in loc.seg_keys:
             loc.seg_keys.append(key)
@@ -201,13 +206,17 @@ def align(
         target = _normalise_sutta_code(scope).lower()
         if target not in found:
             return AlignResult(
-                status="not_in_scope", phrase=phrase, uid=target,
+                status="not_in_scope",
+                phrase=phrase,
+                uid=target,
                 candidate_uids=sorted(found),
             )
         found = {target: found[target]}
     elif len(found) > 1:
         return AlignResult(
-            status="ambiguous", phrase=phrase, candidate_uids=sorted(found),
+            status="ambiguous",
+            phrase=phrase,
+            candidate_uids=sorted(found),
         )
     elif not found:
         return AlignResult(status="not_found", phrase=phrase)
@@ -224,8 +233,12 @@ def align(
     ebc_files = _ebc_translator_files(loc.uid, ebc_vault) if ebc_vault else []
 
     return AlignResult(
-        status="ok", phrase=phrase, uid=loc.uid, seg_keys=seg_keys,
-        rows=rows, ebc_files=ebc_files,
+        status="ok",
+        phrase=phrase,
+        uid=loc.uid,
+        seg_keys=seg_keys,
+        rows=rows,
+        ebc_files=ebc_files,
     )
 
 
@@ -238,10 +251,7 @@ def render(result: AlignResult) -> str:
         )
     if result.status == "not_in_scope":
         seen = ", ".join(result.candidate_uids) or "no suttas"
-        return (
-            f"'{result.phrase}' was not found in {result.uid}. "
-            f"It occurs in: {seen}."
-        )
+        return f"'{result.phrase}' was not found in {result.uid}. It occurs in: {seen}."
     if result.status == "ambiguous":
         shown = result.candidate_uids[:15]
         more = len(result.candidate_uids) - len(shown)
@@ -273,8 +283,12 @@ def _cli(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Compare translator renderings of a Pāḷi word or phrase.",
     )
-    parser.add_argument("--phrase", required=True, help="Pāḷi word or phrase (exact, with diacritics)")
-    parser.add_argument("--in", dest="scope", default=None, help="Sutta to scope to, e.g. MN1")
+    parser.add_argument(
+        "--phrase", required=True, help="Pāḷi word or phrase (exact, with diacritics)"
+    )
+    parser.add_argument(
+        "--in", dest="scope", default=None, help="Sutta to scope to, e.g. MN1"
+    )
     args = parser.parse_args(argv)
     result = align(args.phrase, scope=args.scope)
     print(render(result))

@@ -183,9 +183,7 @@ def _validate_frontmatter(frontmatter: str, issues: list[ValidationIssue]) -> No
             )
 
 
-def _validate_body(
-    body: str, issues: list[ValidationIssue], frontmatter: str
-) -> None:
+def _validate_body(body: str, issues: list[ValidationIssue], frontmatter: str) -> None:
     lines = body.splitlines()
     line_offset = len(frontmatter.splitlines()) + 2 if frontmatter else 0
 
