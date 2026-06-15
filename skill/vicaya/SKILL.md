@@ -615,6 +615,8 @@ Record the triage in the scratchpad before moving to Phase 2:
 - ...
 ```
 
+**Two evidence classes thematic searches miss** (from real runs): (1) For a question about the *meaning, scope, or authority* of a term, also search the **definitional loci** — the Vinaya *padabhājaniya* word-definitions (e.g. Pācittiya 4 defines *dhamma* as *buddha/sāvaka/isi/devatā-bhāsita*) and the Abhidhamma definitions — not only thematic stems. (2) For any *authenticity / canonicity / authority* question, treat each corpus's **origin-story (*nidāna*)** as its own evidence class: the legitimation narrative (the Atthasālinī's deva-realm Abhidhamma, the *Prajñāpāramitā* nāga legend, *terma*) is itself the data.
+
 ### Textual layers
 
 **1. Early Pāḷi — dhamma and vinaya.**
@@ -1557,7 +1559,7 @@ Draft the answer in your working notes. Cite as you go — never make a claim wi
 
 1. **Citation balance.** For each position in the perspective map — do I have sources that *support* it AND sources that *challenge or complicate* it? If one position is supported by 6 canon hits and another by 1, is that imbalance accurate scholarship or search bias?
 2. **Suppressed evidence.** Are there canon hits or library sources in the scratchpad that I was not planning to cite? For each: why not? If the honest answer is "it complicates my framing," the source goes in, not out.
-3. **Alternative readings.** For the most important sutta passage I plan to quote — what does the commentarial tradition say about it, and what does at least one modern scholar who disagrees with that reading say? Am I collapsing a live interpretive dispute into a single reading?
+3. **Alternative readings.** For the most important sutta passage I plan to quote — what does the commentarial tradition say about it, and what does at least one modern scholar who disagrees with that reading say? Am I collapsing a live interpretive dispute into a single reading? Where the tradition relies on a legitimation narrative (a *nidāna* / origin-story), is it internally consistent, or are there competing versions whose seams are themselves evidence?
 4. **Strongest opposing voice.** What would the most credible scholar who holds the *opposing* view say is wrong with my synthesis? If I cannot name that argument, I have not understood the debate well enough to write about it.
 5. **Evidence tier of load-bearing claims.** Is the central claim of the Findings section supported by T1 (canon mūla) or T2 (commentary) evidence, or does it ultimately rest on a modern teacher's talk or a secondary source? If the latter, the Findings prose must reflect that epistemic status.
 
