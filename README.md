@@ -375,3 +375,12 @@ vicaya/
 ├── skill/vicaya-*/              # staged skill routers
 └── kamma/                       # design history
 ```
+
+## Development
+
+If you are contributing to this project, please install the pre-commit hooks to ensure code quality:
+
+```bash
+uv pip install pre-commit
+uv run pre-commit install
+```
