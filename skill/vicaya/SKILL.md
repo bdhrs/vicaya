@@ -1565,7 +1565,7 @@ Draft the answer in your working notes. Cite as you go — never make a claim wi
 
 Append answers to the scratchpad under `## Devil's Advocate`. Then draft.
 
-**Use all relevant evidence.** If you collected 15 canon hits and 6 library sources, all of them go in the note — not a representative sample. Drop a hit only if it is a verbatim duplicate of one already quoted. Paraphrase only when the full text is unavailable. Prefer blockquotes (Rule P1) over inline summaries everywhere.
+**Use all relevant evidence.** If you collected 15 canon hits and 6 library sources, all of them go in the note — not a representative sample. Drop a hit only if it is a verbatim duplicate of one already quoted. Paraphrase only when the full text is unavailable. Prefer blockquotes (Rule P1) over inline summaries everywhere. **Evidence Fidelity Rule:** Every footnoted source must also appear as a full blockquote in its Evidence section; a footnote without its accompanying blockquote is a defect.
 
 **Track every rejection.** Each time you decide not to use a source — whether a canon paragraph, a library book, a web page, or a YouTube video — note it immediately with a one-line reason. These go into `## Sources Investigated, Not Used` in the final note. Common reasons: duplicate, metadata-only (no content to quote), URL blocked, auto-captions too degraded to paraphrase, out of scope, wrong sutta. Do not discard sources silently.
 
@@ -1657,6 +1657,8 @@ If the review surfaces nothing substantive, move on without any acknowledgement 
 → **Phase 6 exit:** `scratch-gate 6` once the cross-check raw output and any integrations are recorded.
 
 ### Phase 7 — Write the note
+
+**⚠️ MANDATORY RULE: EVERY footnote must have an accompanying blockquote.** Every footnoted source must also appear as a full blockquote in its Evidence section; a footnote without its accompanying blockquote is a defect.
 
 **The vault only receives complete notes.** The scratch dossier in `data/scratch/`
 holds the in-progress work. Phase 7 is the *finalization and transfer* step: take
@@ -1969,6 +1971,15 @@ the final note shape and generate a PDF copy.
 
 ```bash
 uv run scripts/validate_note.py "Vicaya/${TODAY} - ${SLUG}.md"
+```
+
+**Read the validator's output, including warnings.** A `warning`-severity line
+(e.g. `under-quoted-evidence`) does not fail the command, but it still names a
+real defect in the note you just wrote. Before continuing: edit the note to
+fix every warning it reports, then re-run `validate_note.py` to confirm the
+output is clean. Only once it prints no warnings or errors, proceed:
+
+```bash
 uv run scripts/generate_note_pdf.py "Vicaya/${TODAY} - ${SLUG}.md"
 ```
 
