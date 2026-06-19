@@ -436,7 +436,7 @@ mechanical, not interpretive.
 - **Gates are written only by the helper.** Never write a `### PHASE N EXIT
   GATE` header by hand — a bare header has no timestamp or checklist body and
   later gate/verify calls will not honour it, forcing a full backfill. This
-  applies to every stage of a staged run, not just the final one.
+  applies to every gate, not just the final one.
 - **Backfill ascending.** If any gate call reports an earlier gate missing,
   backfill with `scratch-gate <missing>` in ascending order (0, 1, 2, …) in one
   uninterrupted pass, then continue. Do not interleave gating with re-running
@@ -1707,7 +1707,7 @@ Render the final markdown. Use this template as a structural guide — expand ev
 date: YYYY-MM-DD
 topic: <question_polished or concise neutral topic derived from it>
 tool: "https://github.com/bdhrs/vicaya"
-agent: "<Model family + version (host app), e.g. Claude Opus 4.7 (Claude Code)>"
+agent: "<Model family + version> (<host app>)"  # replace with your runtime identity — see Rule F5
 tags:
   - research
   - pali
@@ -1822,7 +1822,7 @@ Ajahn Brahm. "Understanding Nibbāna." *Buddhist Society of Western Australia* (
 [[Related Note Title]] — Vicaya research note, YYYY-MM-DD.
 
 ---
-*Researched by [Vicaya](https://github.com/bdhrs/vicaya) using <Model family + version> on YYYY-MM-DD HH:MM.*
+*Researched by [Vicaya](https://github.com/bdhrs/vicaya) using <Model family + version> (<host app>) on YYYY-MM-DD HH:MM.*
 
 [^s0201m-70]: MN9 Sammādiṭṭhisuttaṃ para 70 — db: s0201m_mul, para 70
 [^calibre-223]: [[On Meditation]] — Ajahn Chah (Calibre #223)
@@ -1901,7 +1901,7 @@ The `book_id` must come from the `document_id` in a library folders hit — neve
 The note records which model produced it, in two places:
 
 1. The `agent` frontmatter field — quoted string, format `"<Family Version> (<host app>)"`.
-2. A single italic footer line at the very end of the note: `*Researched by [Vicaya](https://github.com/bdhrs/vicaya) using <Family Version> on YYYY-MM-DD HH:MM.*`
+2. A single italic footer line at the very end of the note: `*Researched by [Vicaya](https://github.com/bdhrs/vicaya) using <Family Version> (<host app>) on YYYY-MM-DD HH:MM.*`
 
 The parenthetical names the **host app/harness you are running inside** (e.g. Claude Code,
 Antigravity, Codex CLI, Gemini CLI) — never the raw model slug. A model slug like
@@ -1909,11 +1909,16 @@ Antigravity, Codex CLI, Gemini CLI) — never the raw model slug. A model slug l
 ("Gemini 3.5 Flash"); the host app is the information actually worth recording, since the
 same model family can run under different orchestrating apps.
 
-Read your own model identity and host app from your runtime context — do **not** guess
-from training data, and do **not** invent a version number or app name. If you genuinely
+Read your own model identity and host app from your **system prompt** or **environment
+context** — do **not** guess from training data, do **not** invent a version number or app
+name, and **never copy the agent string from the template example above or from a prior
+vault note**. Template examples are illustrations, not your identity. If you genuinely
 cannot determine your identity, write `unknown agent` in both places rather than fabricating.
 
-Examples by agent:
+To find your identity: read your system prompt for statements like "You are powered by the model
+named X" or "You are Claude, an AI assistant made by Anthropic." Use exactly what it reports.
+
+Examples (do not copy — look up your own):
 
 - Claude Code: `"Claude Opus 4.7 (Claude Code)"`, `"Claude Sonnet 4.6 (Claude Code)"`.
 - Gemini running in Antigravity: `"Gemini 3.5 Flash (Antigravity)"` — not `(gemini-3.5-flash)`.
@@ -1936,7 +1941,7 @@ This field is fixed — never vary the URL, never omit it.
 date: 2026-05-12
 topic: "Ānāpānasati: Breath Meditation in the Nikāyas"
 tool: "https://github.com/bdhrs/vicaya"
-agent: "Claude Opus 4.7 (Claude Code)"
+agent: "<Model family + version> (<host app>)"  # replace with your runtime identity — see Rule F5
 tags:
   - research
   - pali
