@@ -47,25 +47,25 @@ Each source is optional — if the tool or path isn't configured it is silently 
    **OpenCode:**
    ```bash
    # Symlink skills
-   for skill in vicaya vicaya-improve; do
+   for skill in vicaya vicaya-improve vicaya-pre; do
      ln -sf "$(pwd)/skill/$skill" ~/.agents/skills/$skill
    done
    # Symlink slash commands (for autocomplete)
-   for cmd in vicaya vicaya-improve; do
+   for cmd in vicaya vicaya-improve vicaya-pre; do
      ln -sf "$(pwd)/config/opencode/commands/$cmd.md" ~/.config/opencode/commands/$cmd.md
    done
    ```
 
    **Antigravity CLI (`agy`):**
    ```bash
-   for skill in vicaya vicaya-improve; do
+   for skill in vicaya vicaya-improve vicaya-pre; do
      ln -sf "$(pwd)/skill/$skill" ~/.gemini/skills/$skill
    done
    ```
 
    **Claude Code:**
    ```bash
-   for skill in vicaya vicaya-improve; do
+   for skill in vicaya vicaya-improve vicaya-pre; do
      ln -sf "$(pwd)/skill/$skill" ~/.claude/skills/$skill
    done
    ```
@@ -310,6 +310,7 @@ loop available as an agent skill.
 mkdir -p ~/.agents/skills
 ln -sf "$(pwd)/skill/vicaya" ~/.agents/skills/vicaya
 ln -sf "$(pwd)/skill/vicaya-improve" ~/.agents/skills/vicaya-improve
+ln -sf "$(pwd)/skill/vicaya-pre" ~/.agents/skills/vicaya-pre
 ```
 
 **For Claude Code:**
@@ -318,6 +319,7 @@ ln -sf "$(pwd)/skill/vicaya-improve" ~/.agents/skills/vicaya-improve
 mkdir -p ~/.claude/skills
 ln -sf "$(pwd)/skill/vicaya" ~/.claude/skills/vicaya
 ln -sf "$(pwd)/skill/vicaya-improve" ~/.claude/skills/vicaya-improve
+ln -sf "$(pwd)/skill/vicaya-pre" ~/.claude/skills/vicaya-pre
 ```
 
 **Verification:**
@@ -326,10 +328,12 @@ ln -sf "$(pwd)/skill/vicaya-improve" ~/.claude/skills/vicaya-improve
 # Check Gemini/OpenCode
 ls ~/.agents/skills/vicaya/SKILL.md
 ls ~/.agents/skills/vicaya-improve/SKILL.md
+ls ~/.agents/skills/vicaya-pre/SKILL.md
 
 # Check Claude
 ls ~/.claude/skills/vicaya/SKILL.md
 ls ~/.claude/skills/vicaya-improve/SKILL.md
+ls ~/.claude/skills/vicaya-pre/SKILL.md
 ```
 
 If you ever move or rename this repository, you will need to re-run these
