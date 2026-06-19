@@ -98,7 +98,7 @@ PR #29 — "Vicaya pre skill" (branch `vicaya-pre-skill` → `main`).
   Load the skill at `~/.agents/skills/vicaya-improve/SKILL.md` and execute it.
   ```
 
-- [ ] Create new file `config/opencode/commands/vicaya-pre.md` with this exact content — use the `vicaya-pre` skill's own `description:` front-matter value from `skill/vicaya-pre/SKILL.md` (currently: "Search existing Obsidian vault notes to check if any already partially answer the research question before starting a full /vicaya run."):
+- [x] Create new file `config/opencode/commands/vicaya-pre.md` with this exact content — use the `vicaya-pre` skill's own `description:` front-matter value from `skill/vicaya-pre/SKILL.md` (currently: "Search existing Obsidian vault notes to check if any already partially answer the research question before starting a full /vicaya run."):
   ```
   ---
   description: Search existing Obsidian vault notes to check if any already partially answer the research question before starting a full /vicaya run
