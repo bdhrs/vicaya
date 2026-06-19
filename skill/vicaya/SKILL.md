@@ -1705,7 +1705,7 @@ Render the final markdown. Use this template as a structural guide — expand ev
 date: YYYY-MM-DD
 topic: <question_polished or concise neutral topic derived from it>
 tool: "https://github.com/bdhrs/vicaya"
-agent: "<Model family + version, e.g. Claude Opus 4.7 (claude-opus-4-7)>"
+agent: "<app name> (<model id>)"  # replace with your runtime identity — see Rule F5
 tags:
   - research
   - pali
@@ -1820,7 +1820,7 @@ Ajahn Brahm. "Understanding Nibbāna." *Buddhist Society of Western Australia* (
 [[Related Note Title]] — Vicaya research note, YYYY-MM-DD.
 
 ---
-*Researched by [Vicaya](https://github.com/bdhrs/vicaya) using <Model family + version> on YYYY-MM-DD HH:MM.*
+*Researched by [Vicaya](https://github.com/bdhrs/vicaya) using <app name> (<model id>) on YYYY-MM-DD HH:MM.*
 
 [^s0201m-70]: MN9 Sammādiṭṭhisuttaṃ para 70 — db: s0201m_mul, para 70
 [^calibre-223]: [[On Meditation]] — Ajahn Chah (Calibre #223)
@@ -1898,19 +1898,23 @@ The `book_id` must come from the `document_id` in a library folders hit — neve
 
 The note records which model produced it, in two places:
 
-1. The `agent` frontmatter field — quoted string, format `"<Family Version> (<exact model id>)"`.
-2. A single italic footer line at the very end of the note: `*Researched by [Vicaya](https://github.com/bdhrs/vicaya) using <Family Version> on YYYY-MM-DD HH:MM.*`
+1. The `agent` frontmatter field — quoted string, format `"<app name> (<model id>)"`.
+2. A single italic footer line at the very end of the note: `*Researched by [Vicaya](https://github.com/bdhrs/vicaya) using <app name> (<model id>) on YYYY-MM-DD HH:MM.*`
 
-Read your own model identity from your runtime context — do **not** guess from training
-data, and do **not** invent a version number. If you genuinely cannot determine your
-identity, write `unknown agent` in both places rather than fabricating.
+Read your own model identity from your **system prompt** or **environment context** — do
+**not** guess from training data, do **not** invent a version number, and **never copy
+the agent string from the template example above or from a prior vault note**.
+Template examples are illustrations, not your identity. If you genuinely cannot determine
+your identity, write `unknown agent` in both places rather than fabricating.
 
-Examples by agent:
+To find your identity: read your system prompt for statements like "You are powered by the model
+named X" or "You are Claude, an AI assistant made by Anthropic." Use exactly what it reports.
 
-- Claude Code: `"Claude Opus 4.7 (claude-opus-4-7)"`, `"Claude Sonnet 4.6 (claude-sonnet-4-6)"` — the exact ID is exposed in your environment context.
-- Gemini CLI: `"Gemini 2.5 Pro"` or whatever the CLI reports.
-- Codex / GPT-based: `"GPT-5.4 (codex)"` or equivalent.
-- Other: `"<Model name as the runtime reports it>"`.
+Examples (do not copy — look up your own):
+
+- opencode: `"opencode (deepseek/deepseek-v4-pro)"` — the model ID is in the system prompt.
+- Claude Code: `"Claude Code (claude-opus-4-7)"` — the exact model ID is in your system prompt.
+- Codex: `"codex (gpt-5.5)"` or whatever the runtime reports.
 
 This is metadata, not attribution-in-scholarship — Hard Rule 1 still forbids weaving
 model identity into the findings, evidence, or analysis.
@@ -1927,7 +1931,7 @@ This field is fixed — never vary the URL, never omit it.
 date: 2026-05-12
 topic: "Ānāpānasati: Breath Meditation in the Nikāyas"
 tool: "https://github.com/bdhrs/vicaya"
-agent: "Claude Opus 4.7 (claude-opus-4-7)"
+agent: "<app name> (<model id>)"  # replace with your runtime identity — see Rule F5
 tags:
   - research
   - pali
