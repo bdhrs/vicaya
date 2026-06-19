@@ -228,15 +228,31 @@ def _validate_body(body: str, issues: list[ValidationIssue], frontmatter: str) -
         )
 
     footer_index = _final_footer_index(lines)
+    footnote_defs = 0
+    blockquote_lines = 0
     for index, line in enumerate(lines):
-        if re.match(r"^\[\^[^\]]+\]:", line) and index < footer_index:
-            issues.append(
-                ValidationIssue(
-                    "invalid-footnote-placement",
-                    "footnote definitions must appear after the final footer area",
-                    index + 1 + line_offset,
+        if re.match(r"^\[\^[^\]]+\]:", line):
+            footnote_defs += 1
+            if index < footer_index:
+                issues.append(
+                    ValidationIssue(
+                        "invalid-footnote-placement",
+                        "footnote definitions must appear after the final footer area",
+                        index + 1 + line_offset,
+                    )
                 )
+        elif line.lstrip().startswith(">"):
+            blockquote_lines += 1
+
+    if footnote_defs >= 3 and blockquote_lines < footnote_defs:
+        issues.append(
+            ValidationIssue(
+                "under-quoted-evidence",
+                f"note has {footnote_defs} footnote definitions but only {blockquote_lines} blockquote lines (under-quoted evidence)",
+                1 + line_offset,
+                "error",
             )
+        )
 
 
 def _parse_frontmatter(frontmatter: str) -> FrontmatterFields:

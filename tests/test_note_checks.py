@@ -240,3 +240,33 @@ def test_early_footnote_definition_is_invalid() -> None:
     )
 
     assert "invalid-footnote-placement" in issue_codes(text)
+
+
+def test_under_quoted_evidence_error() -> None:
+    # 3 footnote definitions, 0 blockquotes -> error
+    text = valid_note_text() + "\n[^2]: Def 2.\n[^3]: Def 3.\n"
+    issues = note_checks.validate_note_text(text)
+    assert any(
+        i.code == "under-quoted-evidence" and i.severity == "error" for i in issues
+    )
+
+    # 3 footnote definitions, 3 blockquotes -> no error
+    text_with_quotes = text + "\n> Quote 1\n> Quote 2\n> Quote 3\n"
+    issues_clean = note_checks.validate_note_text(text_with_quotes)
+    assert not any(i.code == "under-quoted-evidence" for i in issues_clean)
+
+    # 2 footnote definitions, 0 blockquotes -> no error (below threshold floor of 3)
+    text_below_floor = valid_note_text() + "\n[^2]: Def 2.\n"
+    issues_below = note_checks.validate_note_text(text_below_floor)
+    assert not any(i.code == "under-quoted-evidence" for i in issues_below)
+
+
+def test_under_quoted_evidence_counts_indented_blockquotes() -> None:
+    # 3 footnote definitions, 3 indented blockquotes (e.g. nested in a list) -> no error
+    text = (
+        valid_note_text()
+        + "\n[^2]: Def 2.\n[^3]: Def 3.\n"
+        + "\n  > Quote 1\n  > Quote 2\n  > Quote 3\n"
+    )
+    issues = note_checks.validate_note_text(text)
+    assert not any(i.code == "under-quoted-evidence" for i in issues)
