@@ -436,7 +436,7 @@ mechanical, not interpretive.
 - **Gates are written only by the helper.** Never write a `### PHASE N EXIT
   GATE` header by hand — a bare header has no timestamp or checklist body and
   later gate/verify calls will not honour it, forcing a full backfill. This
-  applies to every stage of a staged run, not just the final one.
+  applies to every gate, not just the final one.
 - **Backfill ascending.** If any gate call reports an earlier gate missing,
   backfill with `scratch-gate <missing>` in ascending order (0, 1, 2, …) in one
   uninterrupted pass, then continue. Do not interleave gating with re-running
