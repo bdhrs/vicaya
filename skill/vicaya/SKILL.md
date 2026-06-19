@@ -1707,7 +1707,7 @@ Render the final markdown. Use this template as a structural guide — expand ev
 date: YYYY-MM-DD
 topic: <question_polished or concise neutral topic derived from it>
 tool: "https://github.com/bdhrs/vicaya"
-agent: "<Model family + version, e.g. Claude Opus 4.7 (claude-opus-4-7)>"
+agent: "<Model family + version (host app), e.g. Claude Opus 4.7 (Claude Code)>"
 tags:
   - research
   - pali
@@ -1900,19 +1900,26 @@ The `book_id` must come from the `document_id` in a library folders hit — neve
 
 The note records which model produced it, in two places:
 
-1. The `agent` frontmatter field — quoted string, format `"<Family Version> (<exact model id>)"`.
+1. The `agent` frontmatter field — quoted string, format `"<Family Version> (<host app>)"`.
 2. A single italic footer line at the very end of the note: `*Researched by [Vicaya](https://github.com/bdhrs/vicaya) using <Family Version> on YYYY-MM-DD HH:MM.*`
 
-Read your own model identity from your runtime context — do **not** guess from training
-data, and do **not** invent a version number. If you genuinely cannot determine your
-identity, write `unknown agent` in both places rather than fabricating.
+The parenthetical names the **host app/harness you are running inside** (e.g. Claude Code,
+Antigravity, Codex CLI, Gemini CLI) — never the raw model slug. A model slug like
+`gemini-3.5-flash` is pure duplication when the family+version is already spelled out
+("Gemini 3.5 Flash"); the host app is the information actually worth recording, since the
+same model family can run under different orchestrating apps.
+
+Read your own model identity and host app from your runtime context — do **not** guess
+from training data, and do **not** invent a version number or app name. If you genuinely
+cannot determine your identity, write `unknown agent` in both places rather than fabricating.
 
 Examples by agent:
 
-- Claude Code: `"Claude Opus 4.7 (claude-opus-4-7)"`, `"Claude Sonnet 4.6 (claude-sonnet-4-6)"` — the exact ID is exposed in your environment context.
-- Gemini CLI: `"Gemini 2.5 Pro"` or whatever the CLI reports.
-- Codex / GPT-based: `"GPT-5.4 (codex)"` or equivalent.
-- Other: `"<Model name as the runtime reports it>"`.
+- Claude Code: `"Claude Opus 4.7 (Claude Code)"`, `"Claude Sonnet 4.6 (Claude Code)"`.
+- Gemini running in Antigravity: `"Gemini 3.5 Flash (Antigravity)"` — not `(gemini-3.5-flash)`.
+- Gemini CLI: `"Gemini 2.5 Pro (Gemini CLI)"` or whatever the CLI reports as its own host name.
+- Codex / GPT-based: `"GPT-5.4 (Codex CLI)"` or equivalent.
+- Other: `"<Model name as the runtime reports it> (<host app as the runtime reports it>)"`.
 
 This is metadata, not attribution-in-scholarship — Hard Rule 1 still forbids weaving
 model identity into the findings, evidence, or analysis.
@@ -1929,7 +1936,7 @@ This field is fixed — never vary the URL, never omit it.
 date: 2026-05-12
 topic: "Ānāpānasati: Breath Meditation in the Nikāyas"
 tool: "https://github.com/bdhrs/vicaya"
-agent: "Claude Opus 4.7 (claude-opus-4-7)"
+agent: "Claude Opus 4.7 (Claude Code)"
 tags:
   - research
   - pali
@@ -1973,11 +1980,11 @@ the final note shape and generate a PDF copy.
 uv run scripts/validate_note.py "Vicaya/${TODAY} - ${SLUG}.md"
 ```
 
-**Read the validator's output, including warnings.** A `warning`-severity line
-(e.g. `under-quoted-evidence`) does not fail the command, but it still names a
-real defect in the note you just wrote. Before continuing: edit the note to
-fix every warning it reports, then re-run `validate_note.py` to confirm the
-output is clean. Only once it prints no warnings or errors, proceed:
+**Read the validator's output, including warnings and errors.** An `error`-severity line
+(e.g. `under-quoted-evidence` or `missing-canon-ref`) fails the command. A `warning` still
+names a real defect in the note you just wrote. Before continuing: edit the note to fix
+every issue the validator reports, then re-run `validate_note.py` to confirm the output is
+clean. Only once it prints no warnings or errors, proceed:
 
 ```bash
 uv run scripts/generate_note_pdf.py "Vicaya/${TODAY} - ${SLUG}.md"

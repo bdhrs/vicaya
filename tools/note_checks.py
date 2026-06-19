@@ -241,7 +241,7 @@ def _validate_body(body: str, issues: list[ValidationIssue], frontmatter: str) -
                         index + 1 + line_offset,
                     )
                 )
-        elif line.startswith(">"):
+        elif line.lstrip().startswith(">"):
             blockquote_lines += 1
 
     if footnote_defs >= 3 and blockquote_lines < footnote_defs:
@@ -250,7 +250,7 @@ def _validate_body(body: str, issues: list[ValidationIssue], frontmatter: str) -
                 "under-quoted-evidence",
                 f"note has {footnote_defs} footnote definitions but only {blockquote_lines} blockquote lines (under-quoted evidence)",
                 1 + line_offset,
-                "warning",
+                "error",
             )
         )
 
