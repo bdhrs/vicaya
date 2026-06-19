@@ -1705,7 +1705,7 @@ Render the final markdown. Use this template as a structural guide — expand ev
 date: YYYY-MM-DD
 topic: <question_polished or concise neutral topic derived from it>
 tool: "https://github.com/bdhrs/vicaya"
-agent: "<Model family + version, e.g. Claude Opus 4.7 (claude-opus-4-7)>"
+agent: "<app name> (<model id>)"  # replace with your runtime identity — see Rule F5
 tags:
   - research
   - pali
