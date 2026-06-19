@@ -15,11 +15,10 @@ The research question, topic, or audience/constraint description — passed as t
 
 All commands run from the vicaya repo root.
 
-**0. Ensure Obsidian is running** — before any `search-vault` call, if Obsidian is not running the CLI will fail with "unable to find Obsidian". Open it first and wait for it to be ready:
-
-```bash
-open -a Obsidian && sleep 5
-```
+**0. Ensure Obsidian is running** — before any `search-vault` call, if Obsidian is not running the CLI will fail with "unable to find Obsidian". Launch it and wait ~5 seconds before proceeding. Use the OS-appropriate command — **never bare `obsidian`** (that resolves to the CLI, not the app, on Linux):
+- **Linux:** `setsid xdg-open "obsidian://" >/dev/null 2>&1 & sleep 5`
+- **macOS:** `open -a Obsidian && sleep 5`
+- **Windows:** `start "" "obsidian://" && timeout /t 5`
 
 Run this once at the start of the skill, before step 1.
 
