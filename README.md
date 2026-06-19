@@ -41,33 +41,31 @@ Each source is optional — if the tool or path isn't configured it is silently 
 3. `uv sync` to install Python dependencies.
 4. Symlink the main skill folder into your agents' skills directories. Using
    symlinks ensures that changes made in this repository are immediately
-   reflected in all agents. If you use staged runs, symlink the staged sibling
-   folders too: `vicaya-0-scope`, `vicaya-1-gather`,
-   `vicaya-2-synthesize-review`, and `vicaya-3-complete`. If you use the
-   retrospective improvement loop, symlink `vicaya-improve` too.
+   reflected in all agents. If you use the retrospective improvement loop,
+   symlink `vicaya-improve` too.
 
    **OpenCode:**
    ```bash
    # Symlink skills
-   for skill in vicaya vicaya-improve vicaya-pre vicaya-0-scope vicaya-1-gather vicaya-2-synthesize-review vicaya-3-complete; do
+   for skill in vicaya vicaya-improve vicaya-pre; do
      ln -sf "$(pwd)/skill/$skill" ~/.agents/skills/$skill
    done
    # Symlink slash commands (for autocomplete)
-   for cmd in vicaya vicaya-improve vicaya-0-scope vicaya-1-gather vicaya-2-synthesize-review vicaya-3-complete; do
+   for cmd in vicaya vicaya-improve vicaya-pre; do
      ln -sf "$(pwd)/config/opencode/commands/$cmd.md" ~/.config/opencode/commands/$cmd.md
    done
    ```
 
    **Antigravity CLI (`agy`):**
    ```bash
-   for skill in vicaya vicaya-improve vicaya-pre vicaya-0-scope vicaya-1-gather vicaya-2-synthesize-review vicaya-3-complete; do
+   for skill in vicaya vicaya-improve vicaya-pre; do
      ln -sf "$(pwd)/skill/$skill" ~/.gemini/skills/$skill
    done
    ```
 
    **Claude Code:**
    ```bash
-   for skill in vicaya vicaya-improve vicaya-pre vicaya-0-scope vicaya-1-gather vicaya-2-synthesize-review vicaya-3-complete; do
+   for skill in vicaya vicaya-improve vicaya-pre; do
      ln -sf "$(pwd)/skill/$skill" ~/.claude/skills/$skill
    done
    ```
@@ -302,11 +300,9 @@ but you did find a `dpd.db` in step 2, go back and fill in that path.
 ### 5 — Symlink the skill
 
 To make the main skill available across all your agents while keeping it in
-sync with this repository, create symlinks in the following locations. If you
-use staged runs, create matching symlinks for `skill/vicaya-0-scope`,
-`skill/vicaya-1-gather`, `skill/vicaya-2-synthesize-review`, and
-`skill/vicaya-3-complete`. Also symlink `skill/vicaya-improve` if you want
-the retrospective improvement loop available as an agent skill.
+sync with this repository, create symlinks in the following locations. Also
+symlink `skill/vicaya-improve` if you want the retrospective improvement
+loop available as an agent skill.
 
 **For Gemini CLI, OpenCode, and Codex where `~/.agents/skills` is shared:**
 

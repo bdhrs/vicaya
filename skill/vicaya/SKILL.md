@@ -436,7 +436,7 @@ mechanical, not interpretive.
 - **Gates are written only by the helper.** Never write a `### PHASE N EXIT
   GATE` header by hand — a bare header has no timestamp or checklist body and
   later gate/verify calls will not honour it, forcing a full backfill. This
-  applies to every stage of a staged run, not just the final one.
+  applies to every gate, not just the final one.
 - **Backfill ascending.** If any gate call reports an earlier gate missing,
   backfill with `scratch-gate <missing>` in ascending order (0, 1, 2, …) in one
   uninterrupted pass, then continue. Do not interleave gating with re-running
@@ -1565,7 +1565,7 @@ Draft the answer in your working notes. Cite as you go — never make a claim wi
 
 Append answers to the scratchpad under `## Devil's Advocate`. Then draft.
 
-**Use all relevant evidence.** If you collected 15 canon hits and 6 library sources, all of them go in the note — not a representative sample. Drop a hit only if it is a verbatim duplicate of one already quoted. Paraphrase only when the full text is unavailable. Prefer blockquotes (Rule P1) over inline summaries everywhere.
+**Use all relevant evidence.** If you collected 15 canon hits and 6 library sources, all of them go in the note — not a representative sample. Drop a hit only if it is a verbatim duplicate of one already quoted. Paraphrase only when the full text is unavailable. Prefer blockquotes (Rule P1) over inline summaries everywhere. **Evidence Fidelity Rule:** Every footnoted source must also appear as a full blockquote in its Evidence section; a footnote without its accompanying blockquote is a defect.
 
 **Track every rejection.** Each time you decide not to use a source — whether a canon paragraph, a library book, a web page, or a YouTube video — note it immediately with a one-line reason. These go into `## Sources Investigated, Not Used` in the final note. Common reasons: duplicate, metadata-only (no content to quote), URL blocked, auto-captions too degraded to paraphrase, out of scope, wrong sutta. Do not discard sources silently.
 
@@ -1658,6 +1658,8 @@ If the review surfaces nothing substantive, move on without any acknowledgement 
 
 ### Phase 7 — Write the note
 
+**⚠️ MANDATORY RULE: EVERY footnote must have an accompanying blockquote.** Every footnoted source must also appear as a full blockquote in its Evidence section; a footnote without its accompanying blockquote is a defect.
+
 **The vault only receives complete notes.** The scratch dossier in `data/scratch/`
 holds the in-progress work. Phase 7 is the *finalization and transfer* step: take
 the comprehensive dossier, curate the strongest evidence into the structured note
@@ -1705,7 +1707,7 @@ Render the final markdown. Use this template as a structural guide — expand ev
 date: YYYY-MM-DD
 topic: <question_polished or concise neutral topic derived from it>
 tool: "https://github.com/bdhrs/vicaya"
-agent: "<Model family + version, e.g. Claude Opus 4.7 (claude-opus-4-7)>"
+agent: "<Model family + version> (<host app>)"  # replace with your runtime identity — see Rule F5
 tags:
   - research
   - pali
@@ -1820,7 +1822,7 @@ Ajahn Brahm. "Understanding Nibbāna." *Buddhist Society of Western Australia* (
 [[Related Note Title]] — Vicaya research note, YYYY-MM-DD.
 
 ---
-*Researched by [Vicaya](https://github.com/bdhrs/vicaya) using <Model family + version> on YYYY-MM-DD HH:MM.*
+*Researched by [Vicaya](https://github.com/bdhrs/vicaya) using <Model family + version> (<host app>) on YYYY-MM-DD HH:MM.*
 
 [^s0201m-70]: MN9 Sammādiṭṭhisuttaṃ para 70 — db: s0201m_mul, para 70
 [^calibre-223]: [[On Meditation]] — Ajahn Chah (Calibre #223)
@@ -1898,19 +1900,31 @@ The `book_id` must come from the `document_id` in a library folders hit — neve
 
 The note records which model produced it, in two places:
 
-1. The `agent` frontmatter field — quoted string, format `"<Family Version> (<exact model id>)"`.
-2. A single italic footer line at the very end of the note: `*Researched by [Vicaya](https://github.com/bdhrs/vicaya) using <Family Version> on YYYY-MM-DD HH:MM.*`
+1. The `agent` frontmatter field — quoted string, format `"<Family Version> (<host app>)"`.
+2. A single italic footer line at the very end of the note: `*Researched by [Vicaya](https://github.com/bdhrs/vicaya) using <Family Version> (<host app>) on YYYY-MM-DD HH:MM.*`
 
-Read your own model identity from your runtime context — do **not** guess from training
-data, and do **not** invent a version number. If you genuinely cannot determine your
-identity, write `unknown agent` in both places rather than fabricating.
+The parenthetical names the **host app/harness you are running inside** (e.g. Claude Code,
+Antigravity, Codex CLI, Gemini CLI) — never the raw model slug. A model slug like
+`gemini-3.5-flash` is pure duplication when the family+version is already spelled out
+("Gemini 3.5 Flash"); the host app is the information actually worth recording, since the
+same model family can run under different orchestrating apps.
 
-Examples by agent:
+Read your own model identity and host app from your **system prompt** or **environment
+context** — do **not** guess from training data, do **not** invent a version number or app
+name, and **never copy the agent string from the template example above or from a prior
+vault note**. Template examples are illustrations, not your identity. If you genuinely
+cannot determine your identity, write `unknown agent` in both places rather than fabricating.
 
-- Claude Code: `"Claude Opus 4.7 (claude-opus-4-7)"`, `"Claude Sonnet 4.6 (claude-sonnet-4-6)"` — the exact ID is exposed in your environment context.
-- Gemini CLI: `"Gemini 2.5 Pro"` or whatever the CLI reports.
-- Codex / GPT-based: `"GPT-5.4 (codex)"` or equivalent.
-- Other: `"<Model name as the runtime reports it>"`.
+To find your identity: read your system prompt for statements like "You are powered by the model
+named X" or "You are Claude, an AI assistant made by Anthropic." Use exactly what it reports.
+
+Examples (do not copy — look up your own):
+
+- Claude Code: `"Claude Opus 4.7 (Claude Code)"`, `"Claude Sonnet 4.6 (Claude Code)"`.
+- Gemini running in Antigravity: `"Gemini 3.5 Flash (Antigravity)"` — not `(gemini-3.5-flash)`.
+- Gemini CLI: `"Gemini 2.5 Pro (Gemini CLI)"` or whatever the CLI reports as its own host name.
+- Codex / GPT-based: `"GPT-5.4 (Codex CLI)"` or equivalent.
+- Other: `"<Model name as the runtime reports it> (<host app as the runtime reports it>)"`.
 
 This is metadata, not attribution-in-scholarship — Hard Rule 1 still forbids weaving
 model identity into the findings, evidence, or analysis.
@@ -1927,7 +1941,7 @@ This field is fixed — never vary the URL, never omit it.
 date: 2026-05-12
 topic: "Ānāpānasati: Breath Meditation in the Nikāyas"
 tool: "https://github.com/bdhrs/vicaya"
-agent: "Claude Opus 4.7 (claude-opus-4-7)"
+agent: "<Model family + version> (<host app>)"  # replace with your runtime identity — see Rule F5
 tags:
   - research
   - pali
@@ -1969,6 +1983,15 @@ the final note shape and generate a PDF copy.
 
 ```bash
 uv run scripts/validate_note.py "Vicaya/${TODAY} - ${SLUG}.md"
+```
+
+**Read the validator's output, including warnings and errors.** An `error`-severity line
+(e.g. `under-quoted-evidence` or `missing-canon-ref`) fails the command. A `warning` still
+names a real defect in the note you just wrote. Before continuing: edit the note to fix
+every issue the validator reports, then re-run `validate_note.py` to confirm the output is
+clean. Only once it prints no warnings or errors, proceed:
+
+```bash
 uv run scripts/generate_note_pdf.py "Vicaya/${TODAY} - ${SLUG}.md"
 ```
 
