@@ -1893,16 +1893,22 @@ def _load_cst_translator():
         if not target.exists():
             continue
 
-        # The translator imports `from tools.paths import ProjectPaths`, used
-        # only in the `cst_xml_path` property which lookup_book never calls.
-        # Inject a stub so the import works regardless of which `tools` package
-        # is currently on sys.path (vicaya's, dpd-db's, or none).
+        # The translator imports `from tools.paths import ProjectPaths` and reads
+        # `ProjectPaths().cst_book_translator_tsv_path` at import time (plus
+        # `.cst_xml_dir` in the cst_xml_path property, which lookup_book never
+        # calls). Inject a stub pointing at the TSV that ships next to the module
+        # so the import works regardless of which `tools` package is on sys.path
+        # (vicaya's, dpd-db's, or none).
         original_tools = sys.modules.get("tools")
         original_tools_paths = sys.modules.get("tools.paths")
         shim_tools = types.ModuleType("tools")
         shim_tools.__path__ = []
         shim_paths = types.ModuleType("tools.paths")
-        setattr(shim_paths, "ProjectPaths", lambda *a, **kw: None)  # never called
+        _stub_paths = types.SimpleNamespace(
+            cst_book_translator_tsv_path=target.parent / "cst_book_translator.tsv",
+            cst_xml_dir=target.parent,
+        )
+        setattr(shim_paths, "ProjectPaths", lambda *a, **kw: _stub_paths)
         sys.modules["tools"] = shim_tools
         sys.modules["tools.paths"] = shim_paths
         try:
