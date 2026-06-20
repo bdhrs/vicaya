@@ -7,11 +7,12 @@ description: Run a structured Pāḷi/Buddhist research session across the user'
 
 Run a multi-phase research session across the user's local + web sources and write a single structured note into their Obsidian vault.
 
-This skill runs as a single orchestrating session. After Phase 1, all gather
-phases (2, 2.5, 3, 3b, 4a, 4b, 4c) are delegated to a gather sub-agent that
-writes findings to the shared scratch file; the orchestrating session handles
-Phase 0, Phase 1, Phase 5, Phase 6, and Phase 7. This file is the canonical
-one-goal `/vicaya` workflow and the only behavioral source of truth.
+This skill runs as a single orchestrating session. After Phase 1, each gather
+phase (2, 2.5, 3, 3b, 4a, 4b, 4c) is delegated to its own single-phase
+sub-agent that writes findings to the shared scratch file; the orchestrating
+session handles Phase 0, Phase 1, Phase 5, Phase 6, and Phase 7 and spot-checks
+each phase between agents. This file is the canonical one-goal `/vicaya`
+workflow and the only behavioral source of truth.
 
 ## Critical execution rules
 
@@ -945,79 +946,80 @@ For thematic (non-sutta-anchored) questions, `eval "$(uv run tools/research_sour
 
 → **Phase 1 exit:** `uv run tools/research_sources.py scratch-gate 1`. Auto-log has already captured the helper calls; the gate writes the canonical checklist (angle triage, vault hits, perspective map, counter-perspective targets) — tick the boxes once each is true.
 
-### Sub-agent dispatch (after Phase 1 gate)
+### Sub-agent dispatch (after Phase 1 gate) — one sub-agent per phase
 
-After the Phase 1 gate passes, spawn a gather sub-agent that runs all gather phases (2, 2.5, 3, 3b, 4a, 4b, 4c) sequentially in one session. This keeps the main context clear for synthesis. The sub-agent attaches to the current run via `scratch-resume`, reads its own briefing from the scratch file (Phase 0 and Phase 1 already wrote the question, angle triage, perspective map, and sutta seeds there), runs each phase, gates each one, and returns a completion report. The orchestrating session waits for it to return, then runs `scratch-verify` before Phase 5.
+After the Phase 1 gate passes, run the gather phases as a **sequence of single-phase sub-agents** — one per applicable phase, in order (2, 2.5, 3, 3b, 4a, 4b, 4c), skipping any phase the angle triage marked non-applicable (and the thematic auto-skips for 2.5/3b). Spawn the next agent only after the previous one returns and you have spot-checked it. This keeps the main context clear for synthesis while bounding each sub-agent to one phase.
 
-The only datum the prompt must carry is the **scratch slug** — `uv run tools/research_sources.py scratch-which` resolves the active scratch path (the slug is its filename stem). Everything else the sub-agent needs is already in the scratch file; do **not** re-transcribe the angle triage, perspective map, or seeds into the prompt.
+**Why per-phase, not one agent for all of 2–4c.** A sub-agent that runs every phase accumulates full SKILL sections + the growing scratch + verbose search dumps + full transcripts and crashes with "Prompt is too long" mid-run. There is **no warning before it dies** — an overflowing agent just returns the error — so you cannot react to it, only prevent it. One agent per phase bounds each agent's context to a single phase's work, so an overflow or crash costs at most one phase, and the orchestrator never holds the verbose tool output.
 
-**Spawn** a gather sub-agent:
+The only datum each prompt must carry is the **scratch slug** — `uv run tools/research_sources.py scratch-which` resolves the active scratch path. Everything else is already in the scratch file; do **not** re-transcribe the angle triage, perspective map, or seeds into the prompt.
+
+**Spawn** each phase agent:
 
 - **Claude Code:** Use the Agent tool with `model: "sonnet"` (only environment where a cheaper model can be selected). Every other environment inherits the parent model — context isolation is the benefit, not cost savings.
 - **Any other environment:** Use that environment's sub-agent mechanism.
 
-Replace `<repo-root>` with the repository's absolute path and `<slug>` with the active slug:
+**Three rules keep each agent light — state all three in every dispatch prompt:**
+
+1. **Read only the briefing, never the dossier.** Read the Phase 0/1 briefing block at the TOP of the scratch (question, angle triage, perspective map, seeds) — never the accumulating evidence blocks below it. Auto-log already persists every hit; re-reading them is what fills the context.
+2. **Pass `--quiet` on every search helper call** (`search-canon`, `search-library-folders`, `search-ebc`, `search-sanskrit`, `sc-parallels`, `sc-search`, `get-agama`). The full result still goes to the scratch dossier; only the agent's stdout is compacted to a snippet — that compaction is what keeps the agent's context from filling. (The dossier and the synthesised note are unaffected: full text always lands in the scratch.)
+3. **Read only the SKILL sections for its one phase** (table below), plus the shared preamble.
+
+**Phase 4b transcript rule.** The YouTube agent collects video **details** (titles, channels, URLs, tiers) for the candidate set and pulls a transcript **only** for a video clearly relevant to the question — never bulk-fetch transcripts. A full transcript is ~4,000 lines and is the single largest context killer; one is plenty, zero is fine when the titles already settle relevance.
+
+**Shared preamble** (every phase agent reads these): `## Critical execution rules`, `## Hard rules`, `## Setup — paths and tools`, `## Calling the helpers`, `## Helper return shapes`, `## Research scratchpad`, `## Evidence tiers`, `## When something fails`.
+
+**Per-phase sections** (the agent reads only its own row in addition to the preamble):
+
+| Phase | Also read |
+|---|---|
+| 2 | `### Phase 2 — Canon search` (incl. the EBC parallel-evidence pull subsection), `## Book-identifier lookups`, the book-code map |
+| 2.5 | `### Phase 2.5 — SuttaCentral offline parallel search` |
+| 3 | `### Phase 3 — Library search` |
+| 3b | `### Phase 3b — Sanskrit source search` |
+| 4a | `### Phase 4a — Web search`, `## EBC vault` |
+| 4b | `### Phase 4b — YouTube search` |
+| 4c | `### Phase 4c — WisdomLib` |
+
+**Dispatch prompt** (one per phase — fill `<PHASE>` and `<PHASE-SECTIONS>`):
 
 ```text
-You are a Vicaya gather sub-agent. Run all assigned gather phases for an
-in-progress research run and write your findings to the shared dossier.
-Do NOT run Phase 0, 1, 5, 6, or 7. Do NOT write to the vault.
+You are a Vicaya gather sub-agent for ONE phase of an in-progress run.
+Do NOT run any other phase. Do NOT run Phase 0, 1, 5, 6, or 7. Do NOT write to the vault.
 
 Repo root: <repo-root>
 Scratch slug: <slug>
-
-Phases assigned: 2, 2.5, 3, 3b, 4a, 4b, 4c
-(Thematic-class runs auto-skip 2.5 and 3b — the gate helper confirms.)
+Phase assigned: <PHASE>
 
 Steps:
-1. cd <repo-root>
-   uv run tools/research_sources.py scratch-resume <slug>
-   (Attaches to the run; prints the scratch path, last gate, and next phase.
-   Auto-logging then writes to this run's scratch file automatically.)
-2. Read your briefing from the scratch file whose path step 1 printed. Phase 0
-   and Phase 1 already recorded everything you need:
-   - the research question
-   - the full angle triage — which angles apply, including angle 7
-     (Sanskrit/Indic), which decides whether Phase 3b runs
-   - the perspective map — the named competing positions to cover
-   - any sutta UID seeds from the Phase 1 EBC lookup — feed these to
-     sc-parallels in Phase 2.5
-   - the principal technical terms — derive the ASCII, no-diacritics forms
-     for WisdomLib in Phase 4c
-3. Read these sections from skill/vicaya/SKILL.md (read the actual file —
-   do not rely on training data for any instruction detail):
-   - ## Critical execution rules
-   - ## Hard rules (read first — these are not preferences)
-   - ## Setup — paths and tools
-   - ## Calling the helpers
-   - ## Helper return shapes (read before calling)
-   - ## Book-identifier lookups (`lookup-book`)
-   - ## EBC vault (Early Buddhist Connections)
-   - ## Research scratchpad
-   - ## Evidence tiers
-   - ## Investigation angles (all subsections through Phase 1)
-   - ### Phase 2 — Canon search (including the EBC parallel-evidence pull subsection)
-   - ### Phase 2.5 — SuttaCentral offline parallel search
-   - ### Phase 3 — Library search
-   - ### Phase 3b — Sanskrit source search
-   - ### Phase 4a — Web search
-   - ### Phase 4b — YouTube search
-   - ### Phase 4c — WisdomLib
-   - ## When something fails
-4. Execute each phase in order per the canonical instructions. After each
-   phase, gate it: uv run tools/research_sources.py scratch-gate <phase>
-5. Return a completion report: phases completed, source counts per phase,
-   gate status of each phase (passed / skipped / failed).
+1. cd <repo-root> && uv run tools/research_sources.py scratch-resume <slug>
+   (Attaches to the run; auto-logging then writes to this run's scratch.)
+2. Read ONLY the Phase 0/1 briefing block at the TOP of the printed scratch path —
+   the question, angle triage, perspective map, and seeds. Do NOT read the
+   accumulating evidence blocks lower in the file (auto-log already has them).
+3. Read from skill/vicaya/SKILL.md (the actual file — not training data): the
+   shared preamble (Critical execution rules, Hard rules, Setup, Calling the
+   helpers, Helper return shapes, Research scratchpad, Evidence tiers, When
+   something fails) plus your phase's sections: <PHASE-SECTIONS>.
+4. Execute Phase <PHASE> per those instructions. Pass --quiet on EVERY search
+   helper call (full results still go to the scratch; only your stdout shrinks).
+   (Phase 4b only: collect video details; fetch a transcript ONLY if a video is
+   clearly relevant — never bulk-fetch transcripts.)
+5. Gate it: uv run tools/research_sources.py scratch-gate <PHASE>
+6. Return a 2–3 line report: source counts, gate status, and anything you could
+   NOT do (0-hit bodies you expected to find, missing files) so the orchestrator
+   can backfill.
 ```
 
-**After the sub-agent returns**, run:
+**After each agent returns — spot-check before spawning the next.** This is the structural defence: `scratch-verify` checks gate **presence** only, not content, so a crashed/limited/stubbed agent can leave a gated-but-empty phase that passes verify silently.
 
-```bash
-uv run tools/research_sources.py scratch-verify
-```
+- Confirm the phase's section has real logged hits, not just a header: `grep -n '^## Phase' <scratch>` for the section bounds, then check it is not empty. Scan 4a/4b/4c logs for "would search"/placeholder language. An empty-but-gated phase is a silent gap — re-run that phase before continuing.
+- If a spawn fails (shared-account session limit, or the Agent tool blocked by a hook), run that one phase inline in the orchestrator yourself, then gate it.
+
+After the last phase, run `uv run tools/research_sources.py scratch-verify`:
 
 - Exit 0 → proceed to Phase 5.
-- Exit 1 → the output names the missing gate and its expected evidence. Either run that phase yourself or re-spawn the sub-agent for just that phase. Never proceed to Phase 5 with a missing gate.
+- Exit 1 → the output names the missing gate and its expected evidence. Run that phase (inline or a fresh single-phase agent), then re-verify. Never proceed to Phase 5 with a missing gate.
 
 ### Phase 2 — Canon search
 

@@ -1734,3 +1734,68 @@ class TestEnvSubcommand:
             ["bash", "-c", script], capture_output=True, text=True, check=True
         )
         assert result.stdout.strip() == f"{Path.home()}/some dir/with spaces"
+
+
+# ---------- --quiet compact stdout (full data still goes to scratch) ----------
+
+
+class TestCompactQuietOutput:
+    """`_compact` shapes the --quiet stdout view only; it must preserve every
+    reference field and truncate only long text, so the scratch dossier (built
+    from the untruncated result) is never degraded."""
+
+    def test_short_strings_pass_through_unchanged(self):
+        from tools.research_sources import _compact
+
+        assert _compact("short pali line") == "short pali line"
+
+    def test_long_strings_are_truncated_with_marker(self):
+        from tools.research_sources import _QUIET_MAXLEN, _compact
+
+        long = "x" * (_QUIET_MAXLEN + 50)
+        out = _compact(long)
+        assert out.startswith("x" * _QUIET_MAXLEN)
+        assert "full text in scratch" in out
+        assert len(out) < len(long) + 60
+
+    def test_canon_hit_refs_preserved_text_truncated(self):
+        from tools.research_sources import _QUIET_MAXLEN, CanonHit, _compact
+
+        hit = CanonHit(
+            book_code="s0505m_mul",
+            paranum="261",
+            pali="P" * (_QUIET_MAXLEN + 100),
+            english="E" * (_QUIET_MAXLEN + 100),
+        )
+        out = _compact([hit])
+        assert isinstance(out, list) and len(out) == 1
+        item = out[0]
+        # references survive intact for resolve-citation / id-range follow-ups
+        assert item["book_code"] == "s0505m_mul"
+        assert item["paranum"] == "261"
+        # bulky text fields are clipped
+        assert "full text in scratch" in item["pali"]
+        assert "full text in scratch" in item["english"]
+
+    def test_recurses_nested_dicts_and_lists(self):
+        from tools.research_sources import _QUIET_MAXLEN, _compact
+
+        payload = {
+            "count": 2,
+            "parallels_found": [{"ref": "MA98", "text": "T" * (_QUIET_MAXLEN + 10)}],
+            "parallels_missing": ["EA12.1"],
+        }
+        out = _compact(payload)
+        assert out["count"] == 2
+        assert out["parallels_missing"] == ["EA12.1"]
+        assert out["parallels_found"][0]["ref"] == "MA98"
+        assert "full text in scratch" in out["parallels_found"][0]["text"]
+
+    def test_non_string_scalars_unchanged(self):
+        from tools.research_sources import _compact
+
+        assert _compact({"line": 5, "resemblance": True, "n": None}) == {
+            "line": 5,
+            "resemblance": True,
+            "n": None,
+        }

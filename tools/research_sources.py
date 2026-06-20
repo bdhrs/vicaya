@@ -21,7 +21,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 # Ensure repo root is on sys.path so `tools._common` resolves when this file
 # is executed directly as a script (not imported as part of the package).
@@ -2013,7 +2013,36 @@ from tools.scratch import (  # noqa: E402, F401
 #     echo "review this synthesis: ..." | uv run tools/research_sources.py gemini-cross-check
 
 
-def _dump(obj) -> None:
+_QUIET_MAXLEN = 200
+
+
+def _compact(obj, maxlen: int = _QUIET_MAXLEN) -> Any:
+    """Recursively truncate long string fields for the ``--quiet`` stdout view.
+
+    Every key is preserved (so references like ``book_code``/``paranum``/
+    ``document_id``/``ref``/``path`` survive intact for follow-up calls);
+    only bulky text fields are clipped to a snippet. This shapes ONLY what the
+    helper prints to stdout — the full, untruncated result is what gets written
+    to the scratch dossier via ``result_for_autolog``, so the dossier and the
+    synthesised note are unaffected. Used by gather sub-agents to keep their
+    context small.
+    """
+    from dataclasses import asdict, is_dataclass
+
+    if isinstance(obj, str):
+        if len(obj) <= maxlen:
+            return obj
+        return obj[:maxlen] + f"… (+{len(obj) - maxlen} chars; full text in scratch)"
+    if is_dataclass(obj) and not isinstance(obj, type):
+        return _compact(asdict(obj), maxlen)
+    if isinstance(obj, dict):
+        return {k: _compact(v, maxlen) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_compact(v, maxlen) for v in obj]
+    return obj
+
+
+def _dump(obj, quiet: bool = False) -> None:
     import sys
     from dataclasses import asdict, is_dataclass
 
@@ -2021,6 +2050,9 @@ def _dump(obj) -> None:
         if is_dataclass(o) and not isinstance(o, type):
             return asdict(o)
         raise TypeError(f"not serialisable: {type(o)}")
+
+    if quiet:
+        obj = _compact(obj)
 
     json.dump(obj, sys.stdout, ensure_ascii=False, indent=2, default=_default)
     sys.stdout.write("\n")
@@ -2063,7 +2095,7 @@ def _cli() -> int:
             + (["--folder", args.folder] if args.folder else [])
             + ["--limit", str(args.limit)]
         )
-        _dump(result)
+        _dump(result, quiet=getattr(args, "quiet", False))
         return _done(argv, result)
 
     def _handle_search_canon(args):
@@ -2078,7 +2110,7 @@ def _cli() -> int:
             + (["--books"] + list(args.books) if args.books else [])
             + ["--lang", args.lang, "--limit", str(args.limit)]
         )
-        _dump(result)
+        _dump(result, quiet=getattr(args, "quiet", False))
         return _done(argv, result)
 
     def _handle_resolve_citation(args):
@@ -2140,7 +2172,7 @@ def _cli() -> int:
 
     def _handle_get_agama(args):
         result = get_agama_texts(args.code, max_parallels=args.max_parallels)
-        _dump(result)
+        _dump(result, quiet=getattr(args, "quiet", False))
         return _done([args.code, "--max", str(args.max_parallels)], result)
 
     def _handle_search_ebc(args):
@@ -2150,7 +2182,7 @@ def _cli() -> int:
             + (["--folder", args.folder] if args.folder else [])
             + ["--limit", str(args.limit)]
         )
-        _dump(result)
+        _dump(result, quiet=getattr(args, "quiet", False))
         return _done(argv, result)
 
     def _handle_search_sanskrit(args):
@@ -2160,7 +2192,7 @@ def _cli() -> int:
             + (["--folder", args.folder] if args.folder else [])
             + ["--limit", str(args.limit)]
         )
-        _dump(result)
+        _dump(result, quiet=getattr(args, "quiet", False))
         return _done(argv, result)
 
     def _handle_library_folders_check(_args):
@@ -2191,7 +2223,7 @@ def _cli() -> int:
         argv = [args.query, "--limit", str(args.limit)]
         if args.include_duplicates:
             argv.append("--include-duplicates")
-        _dump(result)
+        _dump(result, quiet=getattr(args, "quiet", False))
         return _done(argv, result)
 
     def _handle_library_folders_duplicates(args):
@@ -2203,12 +2235,12 @@ def _cli() -> int:
     def _handle_sc_parallels(args):
         result = sc_parallels(args.citation, include_text=not args.no_text)
         argv = [args.citation] + (["--no-text"] if args.no_text else [])
-        _dump(result)
+        _dump(result, quiet=getattr(args, "quiet", False))
         return _done(argv, result)
 
     def _handle_sc_search(args):
         result = sc_search(args.query, lang=args.lang, limit=args.limit)
-        _dump(result)
+        _dump(result, quiet=getattr(args, "quiet", False))
         return _done(
             [args.query, "--lang", args.lang, "--limit", str(args.limit)], result
         )
@@ -2310,10 +2342,17 @@ def _cli() -> int:
             code = 1
         return _done(exit_code=code, autolog=False)
 
+    _QUIET_HELP = (
+        "Compact stdout: truncate long text fields to a snippet. The FULL result "
+        "is still written to the scratch dossier — use in gather sub-agents to "
+        "keep context small."
+    )
+
     pv = sub.add_parser("search-vault")
     pv.add_argument("query")
     pv.add_argument("--folder", default=None)
     pv.add_argument("--limit", type=int, default=20)
+    pv.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
     pv.set_defaults(func=_handle_search_vault)
 
     pc = sub.add_parser("search-canon")
@@ -2326,6 +2365,7 @@ def _cli() -> int:
     )
     pc.add_argument("--lang", choices=["pali", "english", "any"], default="pali")
     pc.add_argument("--limit", type=int, default=20)
+    pc.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
     pc.set_defaults(func=_handle_search_canon)
 
     pr = sub.add_parser("resolve-citation")
@@ -2395,6 +2435,7 @@ def _cli() -> int:
         default=5,
         help="Maximum parallels to fetch (default: 5).",
     )
+    pga.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
     pga.set_defaults(func=_handle_get_agama)
 
     pes = sub.add_parser(
@@ -2406,6 +2447,7 @@ def _cli() -> int:
         "--folder", default=None, help="Restrict to a subfolder of the EBC vault."
     )
     pes.add_argument("--limit", type=int, default=20)
+    pes.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
     pes.set_defaults(func=_handle_search_ebc)
 
     pss = sub.add_parser(
@@ -2419,6 +2461,7 @@ def _cli() -> int:
         help="Restrict to a subfolder of the GRETIL corpus (e.g. '1_veda').",
     )
     pss.add_argument("--limit", type=int, default=20)
+    pss.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
     pss.set_defaults(func=_handle_search_sanskrit)
 
     plfc = sub.add_parser(
@@ -2445,6 +2488,7 @@ def _cli() -> int:
     psfc.add_argument("query")
     psfc.add_argument("--limit", type=int, default=20)
     psfc.add_argument("--include-duplicates", action="store_true")
+    psfc.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
     psfc.set_defaults(func=_handle_search_library_folders)
 
     pfd = sub.add_parser(
@@ -2465,6 +2509,7 @@ def _cli() -> int:
         action="store_true",
         help="Skip text retrieval; report parallel refs only.",
     )
+    psp.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
     psp.set_defaults(func=_handle_sc_parallels)
 
     pscs = sub.add_parser(
@@ -2477,6 +2522,7 @@ def _cli() -> int:
         help="Root-text language: pli, lzh (Chinese Āgamas), san, pra, en, misc.",
     )
     pscs.add_argument("--limit", type=int, default=20)
+    pscs.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
     pscs.set_defaults(func=_handle_sc_search)
 
     psi = sub.add_parser(
