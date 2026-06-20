@@ -41,3 +41,4 @@ temp/
 .claude/settings.local.json
 vault
 runs/processed/
+/CLAUDE.md
