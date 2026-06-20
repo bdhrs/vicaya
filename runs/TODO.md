@@ -1,16 +1,16 @@
 # Vicaya skill improvements — work in progress
 
 This file replaces the run-by-run reflection backlog. Processed reflections
-live in `runs/processed/`. Last triage: 2026-06-10, covering 81 runs from
-2026-05-28 to 2026-06-10. Three structural refactors landed during that
-window and resolved whole families of findings: per-run scratch isolation
-(`ee5917a`, 06-07), Calibre removal in favour of the library-folders index
-(`888be14`, 06-09), and the scratch/helper simplification (`9a77539`, 06-10).
+live in `runs/processed/`. Last triage: 2026-06-20, covering 26 runs from
+2026-06-11 to 2026-06-19 (prior triage 2026-06-10/11, 81 runs).
 
-Verification sweep 2026-06-11: every Remaining item was tested live on the
-Linux machine (real searches, real fetches, real helper calls — log in
-`temp/issue-verify-20260611.md`). Eight items closed, one regression found
-(#43), the rest annotated with verified evidence below.
+Triage 2026-06-20: the dominant new signal is **sub-agent context exhaustion**
+— the single all-phases gather sub-agent overflows ("Prompt is too long") and
+its crashes leave silent empty-but-gated phases that `scratch-verify` passes.
+New issues #46–#49 capture this family and the `sync_notes.py` stranded-commit
+regression. Staged-router subskills were removed (`2304ecd`), retiring the
+premise behind dropped #5; the sub-agent dispatch section (SKILL.md ~948) is
+unchanged and is the root cause of #46.
 
 ## Done
 
@@ -60,7 +60,45 @@ Linux machine (real searches, real fetches, real helper calls — log in
 
 ### High severity
 
-_None._
+**#46 Sub-agent context overflow on the single all-phases gather dispatch.**
+SKILL.md (~948) spawns ONE gather sub-agent for every gather phase (2, 2.5, 3,
+3b, 4a, 4b, 4c). That one agent accumulates the full SKILL.md phase sections +
+the growing scratch dossier + verbose auto-logged canon dumps (full pali+english
+of every hit) + full YouTube transcripts, and crashes with "Prompt is too long"
+mid-run — completing only the early phases. Fix (proposed, converged across
+runs): split the gather dispatch into **two tightly-scoped sub-agents** — Agent
+1 = canon-heavy (2, 2.5, 3, 3b), Agent 2 = web-heavy (4a, 4b, 4c) — and instruct
+each to (a) read ONLY the small Phase 0/1 briefing block, not the accumulating
+evidence; (b) read only the minimal SKILL.md sections for its phases; (c) cap
+YouTube transcript fetches (≤1, prefer titles/summaries); (d) gate each phase
+immediately so an overflow loses at most one phase. (seen in 3 runs:
+20260619-070000, 20260615-101237, 20260619-155720)
+
+**#47 Empty/stubbed-but-gated phases pass `scratch-verify` silently.** When a
+sub-agent crashes, hits the shared-account session limit, or stubs the web
+phases with "would be searched…" placeholders, it leaves phases *gated* with no
+real evidence. `scratch-verify` exits 0 because it checks gate **presence**, not
+**content**, so the silent gap reaches synthesis (WisdomLib/YouTube empty;
+Sanskrit keystones missing; arousal-lists never captured). Separately,
+`scratch-verify` and `scratch-gate 5` disagree on whether 4b is required for
+thematic runs (verify reports clear; gate 5 refuses). Fix: (a) doc — after a
+sub-agent returns, the orchestrator spot-checks phase section content (`grep
+'^## Phase'` line counts; scan 4a–4c logs for placeholder language) before
+synthesis; (b) structural — `scratch-verify` (or a new check) should flag
+gated-but-empty phases and placeholder text, and the verify/gate-5 thematic-4b
+disagreement should be reconciled in tools/research_sources.py. (seen in 4 runs:
+20260615-134607, 20260614-230548, 20260619-070000, 20260619-155720)
+
+**#48 `sync_notes.py` strands commits — no pull before push.** It commits
+locally then pushes without pulling first, so when the remote has advanced (it
+does on multi-run days) the push fails non-fast-forward / "must fully qualify
+the ref (src HEAD)" and the commit is stranded locally. This is the inverse cost
+of Done #21 (`ece9f98`, "commit by pathspec without pulling first"), which fixed
+the dirty-tree pull failure but reintroduced stranded commits. Fix: `git pull
+--rebase` (or fetch+merge) before push, and push `HEAD:refs/heads/main`
+explicitly. (seen in 2 runs: 20260619-021131, 20260619-155720; reproduced live
+in the 2026-06-20 session — a manual `git pull` + `git push origin main` fixed
+it)
 
 ### Medium severity
 
