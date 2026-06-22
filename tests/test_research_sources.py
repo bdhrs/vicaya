@@ -734,6 +734,9 @@ class TestScratchDossier:
         assert _read_state()["phase"] == "1"
         # Phase 1 gate must now succeed without any backfilling.
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        from tools.research_sources import scratch_log
+
+        scratch_log("1", "search-vault", summary="test hit")
         assert scratch_gate("1")["ok"]
 
     def test_init_without_fields_keeps_placeholders_and_no_gate(
@@ -792,6 +795,9 @@ class TestScratchDossier:
         assert "### PHASE 0 EXIT GATE" in text
         assert _read_state()["phase"] == "1"
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        from tools.research_sources import scratch_log
+
+        scratch_log("1", "search-vault", summary="test hit")
         assert scratch_gate("1")["ok"]
 
     def test_init_on_existing_file_ignores_fields(self, tmp_path, monkeypatch):
@@ -865,12 +871,15 @@ class TestScratchDossier:
             _PHASE_INDEX,
             scratch_gate,
             scratch_init,
+            scratch_log,
         )
 
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-gate-ok")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
         for phase in ("0", "1", "2"):
+            if phase in ("1", "2"):
+                scratch_log(phase, "search-canon", summary=f"hit in {phase}")
             r = scratch_gate(phase)
             assert r["ok"], r
         text = path.read_text(encoding="utf-8")
@@ -898,19 +907,42 @@ class TestScratchDossier:
             assert m["expected_evidence"]
 
     def test_verify_flags_gated_but_empty_phase(self, tmp_path, monkeypatch):
+        import datetime
+
         from tools.research_sources import scratch_gate, scratch_init, scratch_verify
+        from tools.scratch import _PHASE_INDEX, _append_under_phase, _gate_marker
 
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-empty")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
         scratch_gate("0")
-        # Phase 1 is gated but nothing was ever logged under it — a crashed agent.
-        scratch_gate("1")
+        # Simulate a gate written directly (bypassing scratch_gate's content check)
+        # — the scenario a crashed sub-agent could produce via direct file access.
+        ts = datetime.datetime.now().isoformat(timespec="seconds")
+        _, title, evidence = _PHASE_INDEX["1"]
+        block = "\n".join(
+            [_gate_marker("1"), f"- timestamp: {ts}", f"- title: {title}"]
+            + [f"- [ ] {item}" for item in evidence]
+        )
+        _append_under_phase(path, "1", block)
         result = scratch_verify(through="1")
         assert result["ok"] is False
         assert result["missing"] == []
         issues = {c["phase"]: c["issue"] for c in result["content_issues"]}
         assert issues.get("1") == "empty"
+
+    def test_gate_refuses_when_no_content_logged(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_gate, scratch_init
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("test-gate-refuses")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        scratch_gate("0")
+        result = scratch_gate("1")
+        assert result["ok"] is False
+        assert result["reason"] == "no logged evidence"
+        assert "run the searches first" in result["message"]
+        assert "### PHASE 1 EXIT GATE" not in path.read_text(encoding="utf-8")
 
     def test_verify_passes_when_phase_has_logged_content(self, tmp_path, monkeypatch):
         from tools.research_sources import (
@@ -1001,12 +1033,19 @@ class TestScratchDossier:
         assert "3" in missing_phases
 
     def test_resume_reports_last_gate_and_next_phase(self, tmp_path, monkeypatch):
-        from tools.research_sources import scratch_gate, scratch_init, scratch_resume
+        from tools.research_sources import (
+            scratch_gate,
+            scratch_init,
+            scratch_log,
+            scratch_resume,
+        )
 
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-resume")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
         for phase in ("0", "1", "2"):
+            if phase in ("1", "2"):
+                scratch_log(phase, "search-canon", summary=f"hit in {phase}")
             scratch_gate(phase)
         result = scratch_resume("test-resume")
         assert result["ok"]
@@ -1066,7 +1105,12 @@ class TestScratchDossier:
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
         path = scratch_init("thematic-resume", run_class="thematic")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        from tools.research_sources import scratch_log
+
         for phase in ("0", "1", "2"):
+            if phase in ("1", "2"):
+                scratch_log(phase, "search-canon", summary=f"hit in {phase}")
             assert scratch_gate(phase)["ok"]
 
         result = scratch_resume("thematic-resume")
@@ -1098,7 +1142,12 @@ class TestScratchDossier:
         )
         path.write_text(text, encoding="utf-8")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        from tools.research_sources import scratch_log
+
+        _cp = ("1", "2", "2.5", "3", "3b", "4", "4b", "4c")
         for phase in ("0", "1", "2", "2.5", "3", "3b", "4", "4b", "4c", "5", "6"):
+            if phase in _cp:
+                scratch_log(phase, "search-canon", summary=f"hit in {phase}")
             r = scratch_gate(phase)
             assert r["ok"], (phase, r)
         assert scratch_self_audit(answers=["none"] * 6)["ok"]
@@ -1108,15 +1157,24 @@ class TestScratchDossier:
         assert result["offending_lines"]
 
     def test_thematic_run_auto_skips_2_5_and_3b(self, tmp_path, monkeypatch):
-        from tools.research_sources import _read_state, scratch_gate, scratch_init
+        from tools.research_sources import (
+            _read_state,
+            scratch_gate,
+            scratch_init,
+            scratch_log,
+        )
 
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
         path = scratch_init("test-thematic", run_class="thematic")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
         for phase in ("0", "1", "2"):
+            if phase in ("1", "2"):
+                scratch_log(phase, "search-canon", summary=f"hit in {phase}")
             assert scratch_gate(phase)["ok"]
         # Gating phase 3 must succeed without the agent ever touching 2.5,
         # which would otherwise be a missing-prior-gate refusal.
+        scratch_log("3", "search-library-folders", summary="library hit")
         assert scratch_gate("3")["ok"]
         text = path.read_text(encoding="utf-8")
         assert "PHASE 2.5 EXIT GATE" in text
@@ -1124,6 +1182,7 @@ class TestScratchDossier:
         # Advance skips over the auto-skipped 3b → next worked phase is 4.
         assert _read_state()["phase"] == "4"
         # Gating 4 auto-skips 3b too.
+        scratch_log("4", "search-web", summary="web hit")
         assert scratch_gate("4")["ok"]
         assert "PHASE 3b EXIT GATE" in path.read_text(encoding="utf-8")
 
@@ -1263,13 +1322,17 @@ class TestPhaseAlias:
         assert web_idx < text.index("https://example.org") < next_idx
 
     def test_scratch_gate_4a_writes_phase_4_gate(self, tmp_path, monkeypatch):
-        from tools.research_sources import scratch_gate, scratch_init
+        from tools.research_sources import scratch_gate, scratch_init, scratch_log
 
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-alias-gate")
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        _cp = ("1", "2", "2.5", "3", "3b")
         for phase in ("0", "1", "2", "2.5", "3", "3b"):
+            if phase in _cp:
+                scratch_log(phase, "search-canon", summary=f"hit in {phase}")
             assert scratch_gate(phase)["ok"]
+        scratch_log("4", "search-web", summary="web hit")
         result = scratch_gate("4a")
         assert result["ok"]
         assert result["phase"] == "4"
@@ -1382,7 +1445,12 @@ class TestScratchSetNote:
             encoding="utf-8",
         )
         assert scratch_set_note(str(note))["ok"]
+        from tools.research_sources import scratch_log
+
+        _cp = ("1", "2", "2.5", "3", "3b", "4", "4b", "4c")
         for phase in ("0", "1", "2", "2.5", "3", "3b", "4", "4b", "4c", "5", "6"):
+            if phase in _cp:
+                scratch_log(phase, "search-canon", summary=f"hit in {phase}")
             assert scratch_gate(phase)["ok"]
         assert scratch_self_audit(answers=["none"] * 6)["ok"]
 
@@ -1546,7 +1614,12 @@ class TestScratchSelfAudit:
         note = tmp_path / "note.md"
         note.write_text("# Note\n\nClean.\n", encoding="utf-8")
         assert scratch_set_note(str(note))["ok"]
+        from tools.research_sources import scratch_log
+
+        _cp = ("1", "2", "2.5", "3", "3b", "4", "4b", "4c")
         for phase in ("0", "1", "2", "2.5", "3", "3b", "4", "4b", "4c", "5", "6"):
+            if phase in _cp:
+                scratch_log(phase, "search-canon", summary=f"hit in {phase}")
             assert scratch_gate(phase)["ok"]
 
         result = scratch_gate("7")
@@ -1570,7 +1643,12 @@ class TestScratchSelfAudit:
         note = tmp_path / "note.md"
         note.write_text("# Note\n\nClean.\n", encoding="utf-8")
         assert scratch_set_note(str(note))["ok"]
+        from tools.research_sources import scratch_log
+
+        _cp = ("1", "2", "2.5", "3", "3b", "4", "4b", "4c")
         for phase in ("0", "1", "2", "2.5", "3", "3b", "4", "4b", "4c", "5", "6"):
+            if phase in _cp:
+                scratch_log(phase, "search-canon", summary=f"hit in {phase}")
             assert scratch_gate(phase)["ok"]
         assert scratch_self_audit(answers=["none"] * len(_SELF_AUDIT_QUESTIONS))["ok"]
 

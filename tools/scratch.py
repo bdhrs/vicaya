@@ -615,6 +615,22 @@ def scratch_gate(phase: str, scratch: Path | None = None) -> dict:
                                 "the inline tags before gating."
                             ),
                         }
+    # For gather phases, require at least one real logged entry before gating.
+    # Phase 0 uses header fields (no tool logs); phases 5–7 hold draft/synthesis
+    # content — both are exempt. AUTO-SKIPPED thematic phases are also exempt.
+    if phase in _CONTENT_PHASES:
+        body = _phase_body(text, phase)
+        if "AUTO-SKIPPED" not in body and _phase_content_issue(body) == "empty":
+            return {
+                "ok": False,
+                "phase": phase,
+                "reason": "no logged evidence",
+                "message": (
+                    f"Phase {phase} gate refused: the phase section has no logged "
+                    f"tool calls — run the searches first, then gate. "
+                    f"Expected evidence: {_PHASE_INDEX[phase][2]}"
+                ),
+            }
     ts = _dt.datetime.now().isoformat(timespec="seconds")
     _, title, evidence = _PHASE_INDEX[phase]
     block_lines = [_gate_marker(phase), f"- timestamp: {ts}", f"- title: {title}"]

@@ -57,6 +57,7 @@ the premise behind dropped #5.
 | #25 wisdomlib.org failures | closed | not reproducible 2026-06-11: real term → 200, bogus term → clean 404, no redirect-to-homepage |
 | #16 tool-failure operational rules | done | already consolidated in SKILL.md "## When something fails" (line 1943, landed with the #36 doc commit); the two missing fallback lines (Google 403 → WebFetch, lookup-book → resolve-citation) folded into #14 |
 | #39 search-canon JSON-parsing notes | done | jq-absent caveat documented at SKILL.md:93 (minor residue: SKILL.md:124 still says "Parse the JSON with `jq`" — one-line cleanup) |
+| #7 Phase gate checklists don't verify evidence | done (2026-06-20) | `fix: scratch-gate refuses to write when no tool calls are logged for the phase` — before writing any gather-phase gate (phases in `_CONTENT_PHASES`: 1, 2, 2.5, 3, 3b, 4, 4b, 4c), `scratch_gate` now calls `_phase_content_issue(_phase_body(text, phase))`; if it returns `"empty"` (no `### <ts> · tool` log block found), the gate is refused with `ok: False, reason: "no logged evidence"` and the expected evidence list — exactly like `scratch_verify` catches the same gap post-hoc; Phase 0 (header-field evidence) and Phases 5–7 (draft/synthesis content) are exempt, as are AUTO-SKIPPED thematic phases; 12 existing tests updated to log before gating content phases; `test_gate_refuses_when_no_content_logged` added as regression test; `test_verify_flags_gated_but_empty_phase` updated to inject the gate directly (simulating a bypassed/crashed write) since that scenario now requires direct file manipulation. |
 | resolve-citation in shell loops | done (2026-06-20) | `docs: warn against passing book_code and paranum as a single space-joined variable` — added a "Shell-loop pitfall" paragraph immediately after the `resolve-citation <table> <paranum>` example in Phase 2: always pass two separate literal args; a loop variable like `ref="s0202m_mul 97"` passed as `$ref` sends one arg and fails; use two distinct variables instead. (20260614-111501) |
 | #52 comparative-religion scripture section undocumented | done (2026-06-20) | `docs: document comparative-religion T1 evidence section for non-Buddhist traditions` — added a paragraph in Phase 7 after the series-format block: for questions centred on a tradition with no canon-DB text, replace `## Canon Evidence (T1)` with a tradition-appropriate heading (`## Biblical Evidence (T1)`, `## Quranic Evidence (T1)`, etc.); validator already accepts any `## * Evidence (T1)` heading; same blockquote + citation discipline applies; Buddhist canon evidence (if relevant) goes in a separate section alongside. (20260619-155720) |
 | #51 thematic auto-skip is about gates, not work | done (2026-06-20) | `docs: clarify thematic auto-skip applies to gates only, not to the research work` — two SKILL.md additions: (1) dispatch paragraph at line 953 now explicitly separates gate-skip from work-skip, names angles 16/7 as still requiring execution when applicable, and ends with "skipping the gate is not permission to skip the research"; (2) Phase 3b header gets a matching one-paragraph callout ("on a thematic run, the gate auto-skips but the work does not"). The dispatch prose previously said "skipping … the thematic auto-skips for 2.5/3b" with no caveat, which agents read as blanket permission to omit GRETIL searches. (seen in 2 runs: 20260619-021131, 20260615-134607) |
@@ -86,13 +87,7 @@ _None open._
 
 ### Medium severity
 
-**#7 Phase exit criteria missing for non-scratch dimensions.** Unchanged —
-gate checklists are still tick-by-agent. Verified 2026-06-11: `scratch-gate
-1` returns `ok: true` while writing unchecked `- [ ]` boxes; nothing checks
-the evidence. Related fresh evidence: scratch-gate
-7 leaves checklist boxes unchecked even after passing (20260603-225147);
-Phase 7 audit checks headings but not footer/bibliography style
-(20260603-225147).
+_(#7 moved to Done — gate content check added 2026-06-20)_
 
 **#8 Scope lock for user-named seeds.** Unchanged; no new violations this
 cycle (seed-note handoff worked well in 20260606-110638).
