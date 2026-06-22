@@ -1247,6 +1247,8 @@ sqlite3 -readonly "$VICAYA_CANON_DB" \
 uv run tools/research_sources.py resolve-citation <table> <paranum>
 ```
 
+**Shell-loop pitfall.** Always pass `book_code` and `paranum` as two separate literal arguments — never as a single space-joined variable. A loop variable like `ref="s0202m_mul 97"` passed as `resolve-citation $ref` sends one argument and the parser fails. Use `resolve-citation $book_code $paranum` with two distinct variables, or quote/split explicitly.
+
 If the hit is a `subhead` rend (the row introduces the next sutta), prefer looking forward — the following non-empty `paranum` is the sutta it names. If it is a continuation `bodytext` or `gatha`, look backward — the preceding non-empty `paranum` owns it.
 
 **Quote fully, not representatively.** Pull up to 20 of the most pertinent paragraphs and plan to use all of them in the Canon Evidence section — not just a curated sample. "Genuinely relevant" means relevant to at least one position in the perspective map; it does not mean "I'll pick the 2–3 best." If you retrieved 15 hits and your final note cites 3, you have discarded evidence without cause.
