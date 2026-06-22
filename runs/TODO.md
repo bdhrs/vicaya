@@ -57,6 +57,7 @@ the premise behind dropped #5.
 | #25 wisdomlib.org failures | closed | not reproducible 2026-06-11: real term → 200, bogus term → clean 404, no redirect-to-homepage |
 | #16 tool-failure operational rules | done | already consolidated in SKILL.md "## When something fails" (line 1943, landed with the #36 doc commit); the two missing fallback lines (Google 403 → WebFetch, lookup-book → resolve-citation) folded into #14 |
 | #39 search-canon JSON-parsing notes | done | jq-absent caveat documented at SKILL.md:93 (minor residue: SKILL.md:124 still says "Parse the JSON with `jq`" — one-line cleanup) |
+| #51 thematic auto-skip is about gates, not work | done (2026-06-20) | `docs: clarify thematic auto-skip applies to gates only, not to the research work` — two SKILL.md additions: (1) dispatch paragraph at line 953 now explicitly separates gate-skip from work-skip, names angles 16/7 as still requiring execution when applicable, and ends with "skipping the gate is not permission to skip the research"; (2) Phase 3b header gets a matching one-paragraph callout ("on a thematic run, the gate auto-skips but the work does not"). The dispatch prose previously said "skipping … the thematic auto-skips for 2.5/3b" with no caveat, which agents read as blanket permission to omit GRETIL searches. (seen in 2 runs: 20260619-021131, 20260615-134607) |
 | #38 WisdomLib mandatory-on-every-run wrong for non-Indological topics | done (2026-06-20) | `docs: skip WisdomLib phase when no Sanskrit/Pāḷi terms in the question` — changed "mandatory on every run — it cannot be skipped" to "mandatory for Indological runs — skip only when the question has no Sanskrit, Pāḷi, or Indian-tradition terms"; added three concrete skip examples (Christian mysticism, grief psychology, Western philosophy). The arXiv sub-item (#38 residue: "IDs cannot be guessed — use the search endpoint") was already present at SKILL.md failure-fallback section. |
 | #41 scratch-gate missing-gate visibility (half) | done | verified 2026-06-11: refusal JSON carries `missing_phase`, `missing_title`, expected evidence, and "run scratch-gate 1 first"; the validate_note silent-pass half stays open as #41 |
 | #10 Obsidian CLI bypass (doc halves) | done | "When Obsidian isn't running" section documents the disk fallback and the final-report declaration; optional `vault-write` wrapper demoted to Low residue |
@@ -127,10 +128,7 @@ _(#38 moved to Done — WisdomLib skip clause added 2026-06-20)_
   `.doc`; `libreoffice --headless --convert-to txt` succeeds. Add it as the
   documented first `.doc` fallback in the Phase 3 extraction table
   (20260615-101237).
-- **#51 thematic auto-skip is about gates, not work** — when angle 7 (Sanskrit)
-  or 16 (Āgama) is applicable on a thematic run, the work must still be done even
-  though the 2.5/3b gates auto-skip. State this in the dispatch + Phase 3b notes
-  (20260619-021131, 20260615-134607).
+_(#51 moved to Done — thematic gate-vs-work clarification added 2026-06-20)_
 - **#52 comparative-religion scripture section** — for a non-Buddhist tradition
   with no canon-DB primary text, a parallel `## Biblical Evidence (T1)` (or
   equivalent) section validates cleanly; document as the Phase 7 pattern (relates

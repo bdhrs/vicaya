@@ -950,7 +950,9 @@ For thematic (non-sutta-anchored) questions, `eval "$(uv run tools/research_sour
 
 ### Sub-agent dispatch (after Phase 1 gate) — one sub-agent per phase
 
-After the Phase 1 gate passes, run the gather phases as a **sequence of single-phase sub-agents** — one per applicable phase, in order (2, 2.5, 3, 3b, 4a, 4b, 4c), skipping any phase the angle triage marked non-applicable (and the thematic auto-skips for 2.5/3b). Spawn the next agent only after the previous one returns and you have spot-checked it. This keeps the main context clear for synthesis while bounding each sub-agent to one phase.
+After the Phase 1 gate passes, run the gather phases as a **sequence of single-phase sub-agents** — one per applicable phase, in order (2, 2.5, 3, 3b, 4a, 4b, 4c), skipping any phase the angle triage marked non-applicable. Spawn the next agent only after the previous one returns and you have spot-checked it. This keeps the main context clear for synthesis while bounding each sub-agent to one phase.
+
+**Thematic auto-skip applies to gates only, not to work.** On a thematic (non-sutta-anchored) run, `scratch-gate` auto-writes the 2.5 and 3b gates without requiring the usual evidence — but if angle 16 (Āgama comparison) or angle 7 (Sanskrit/comparative) was marked *applicable* in Phase 1, the work for that phase must still be done. Run the SC-parallels or Sanskrit searches; the gate just won't block on them. Skipping the gate is not permission to skip the research.
 
 **Why per-phase, not one agent for all of 2–4c.** A sub-agent that runs every phase accumulates full SKILL sections + the growing scratch + verbose search dumps + full transcripts and crashes with "Prompt is too long" mid-run. There is **no warning before it dies** — an overflowing agent just returns the error — so you cannot react to it, only prevent it. One agent per phase bounds each agent's context to a single phase's work, so an overflow or crash costs at most one phase, and the orchestrator never holds the verbose tool output.
 
@@ -1450,6 +1452,8 @@ but the original source tree is unavailable.
 ### Phase 3b — Sanskrit source search
 
 **Skip this phase** unless angle 7 was marked applicable in Phase 1, or unless `VICAYA_GRETIL_PATH` is configured (check with `grep '^VICAYA_GRETIL_PATH=' .env` — the variable is not set in your shell).
+
+**On a thematic run, the gate auto-skips but the work does not.** `scratch-gate 3b` is written automatically for thematic runs — this only means the gate won't block Phase 4; it does not mean the Sanskrit search can be omitted. If angle 7 is applicable, run `search-sanskrit` and log the hits before moving on.
 
 Search the local GRETIL corpus for IAST terms or transliterated Sanskrit relevant to the question:
 
