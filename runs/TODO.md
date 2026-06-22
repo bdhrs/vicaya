@@ -1,8 +1,10 @@
 # Vicaya skill improvements — work in progress
 
 This file replaces the run-by-run reflection backlog. Processed reflections
-live in `runs/processed/`. Last triage: 2026-06-20, covering 26 runs from
-2026-06-11 to 2026-06-19 (prior triage 2026-06-10/11, 81 runs).
+live in `runs/processed/`. Last triage: 2026-06-20 (incremental, 1 run:
+20260620-133500 — no new global issues; one POSITIVE confirming #46). Prior
+triage 2026-06-20, covering 26 runs from 2026-06-11 to 2026-06-19 (and
+2026-06-10/11, 81 runs).
 
 Triage 2026-06-20: the dominant new signal was **sub-agent context exhaustion**
 — the single all-phases gather sub-agent overflowed ("Prompt is too long") and
@@ -10,8 +12,9 @@ its crashes left silent empty-but-gated phases that `scratch-verify` passed.
 **Fixed this session:** #46 (per-phase gather sub-agents + `--quiet` helper
 output, including the Option-3 quiet-helper), #47 doc half (orchestrator
 spot-checks content), and #35 (lookup-book / cst_book_translator stub). Still
-open: #47 residue (structural verify-content), #48 (`sync_notes.py`
-stranded-commit), #49 (sub-agent claim verification). Staged-router subskills
+open: #47 residue (structural verify-content), #49 (sub-agent claim
+verification). #48 (`sync_notes.py` stranded-commit) was closed 2026-06-20 by
+rebasing onto the remote before an explicitly-qualified push. Staged-router subskills
 were removed (`2304ecd`), retiring the premise behind dropped #5.
 
 ## Done
@@ -59,6 +62,7 @@ were removed (`2304ecd`), retiring the premise behind dropped #5.
 | #43 REGRESSION: sequential-scratch rule lost in doc restructure | done (re-scoped 2026-06-11) | `docs: re-add scratch sequencing rule scoped to hand-edits + guard test` — premise was partially stale: helper appends have been flock-serialized inside `_append_under_phase` since `ee5917a` (06-07), which postdates the last corruption sighting (20260606-110638) and survived `9a77539`, so parallel helper calls are structurally safe and the old blanket prose rule would be wrong; the only unprotected path is direct hand-edits to the scratch file (Edit/Write racing a helper append), so the restored rule targets exactly that, placed in `## Research scratchpad` (routed by all four staged routers); new guard test in `tests/test_skill_routes.py` fails if the rule ever leaves that section again |
 | #46 Sub-agent context overflow (single all-phases gather agent) | done (2026-06-20) | `feat: per-phase gather sub-agents + --quiet helper output` — SKILL.md dispatch rewritten to spawn ONE single-phase sub-agent per phase (read only the Phase 0/1 briefing, not the growing dossier; read only that phase's SKILL sections; gate each phase; orchestrator spot-checks content between agents). Phase 4b now collects video details and pulls a transcript only if clearly relevant (no bulk fetch — transcripts were the biggest context killer). `--quiet` flag added to 8 search helpers (search-canon/vault/library-folders/ebc/sanskrit, sc-parallels, sc-search, get-agama): full results still written to the scratch dossier, only stdout compacted, so the dossier + note are byte-identical. 5 regression tests (`TestCompactQuietOutput`) confirm refs preserved, long text truncated, full text still in scratch. Implements the Option-3 quiet-helper too. (seen in 3 runs: 20260619-070000, 20260615-101237, 20260619-155720) |
 | #47 (doc half) orchestrator spot-checks phase content after each agent | done (2026-06-20) | same commit — dispatch documents the post-agent content spot-check (`grep '^## Phase'`, scan 4a–4c for placeholder language) + inline-fallback on spawn failure. Structural verify-content half remains open as #47 residue (High). |
+| #48 sync_notes.py strands commits — no pull before push | done (2026-06-20) | `fix: rebase notes onto remote before push so commits aren't stranded` — after committing the note by pathspec, `sync_notes.py` now runs `git pull --rebase --autostash origin <branch>` (branch detected via `rev-parse`, falls back to `main`) then pushes `HEAD:refs/heads/<branch>` explicitly, fixing both the non-fast-forward stranding (inverse of Done #21) and the "must fully qualify the ref (src HEAD)" error; `--autostash` keeps other in-flight vault edits from blocking the rebase; a rebase failure aborts cleanly (`git rebase --abort`) and falls back to commit-saved-locally, preserving the best-effort push contract; `main()` now takes `argv` for testability; 2 real-git regression tests (remote-advanced, dirty-tree) |
 | #35 lookup-book broken — cst_book_translator import fails | done (2026-06-20) | `fix: stub ProjectPaths with TSV path for dpd-db cst_book_translator` — dpd-db's translator was changed (06-15) to read `ProjectPaths().cst_book_translator_tsv_path` at import time; the loader's `lambda: None` stub turned that into `None.attr` and broke every lookup-book call. Stub now returns a SimpleNamespace pointing at the TSV beside the module (+ `cst_xml_dir` placeholder). 6 `TestLookupBook` tests green again. The original "add a path candidate" proposal was a misdiagnosis — the path matched; the stub was the gap. |
 
 ## Remaining — prioritized
@@ -74,17 +78,6 @@ placeholder text itself, and the `scratch-verify` vs `scratch-gate 5`
 disagreement over whether 4b is required for thematic runs should be reconciled
 in tools/research_sources.py. (seen in 4 runs: 20260615-134607, 20260614-230548,
 20260619-070000, 20260619-155720)
-
-**#48 `sync_notes.py` strands commits — no pull before push.** It commits
-locally then pushes without pulling first, so when the remote has advanced (it
-does on multi-run days) the push fails non-fast-forward / "must fully qualify
-the ref (src HEAD)" and the commit is stranded locally. This is the inverse cost
-of Done #21 (`ece9f98`, "commit by pathspec without pulling first"), which fixed
-the dirty-tree pull failure but reintroduced stranded commits. Fix: `git pull
---rebase` (or fetch+merge) before push, and push `HEAD:refs/heads/main`
-explicitly. (seen in 2 runs: 20260619-021131, 20260619-155720; reproduced live
-in the 2026-06-20 session — a manual `git pull` + `git push origin main` fixed
-it)
 
 ### Medium severity
 
@@ -196,6 +189,9 @@ concluding absence. Overlaps #19. (seen in 5 runs: 20260613-231817,
 
 ## Working well — preserve
 
+- **Per-phase gather sub-agent + parent-synthesis split (#46)**: confirmed
+  live 2026-06-20 (20260620-133500) — the gatherer/parent division of labour
+  kept the main context clean and focused. Keep delegating all gather phases.
 - **Per-run scratch isolation + RESUME protocol**: clean cold resumes across
   compaction and multi-day sessions (many runs); staged context-break system
   completed a ~16.5k-line dossier across 5+ passes with no loss

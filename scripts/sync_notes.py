@@ -30,14 +30,14 @@ def run_git(
     return subprocess.run(cmd, check=check, capture_output=True, text=True)
 
 
-def main():
+def main(argv: list[str] | None = None):
     parser = argparse.ArgumentParser(description="Pull, commit, and push Vicaya notes.")
     parser.add_argument(
         "filename",
         nargs="?",
         help="Note filename to commit and push (relative to Vicaya/ folder).",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     load_dotenv(project_root / ".env")
 
@@ -90,9 +90,35 @@ def main():
             print(e.stderr)
         sys.exit(e.returncode)
 
+    branch = run_git(
+        ["rev-parse", "--abbrev-ref", "HEAD"], notes_repo, check=False
+    ).stdout.strip()
+    if not branch or branch == "HEAD":
+        branch = "main"
+
+    # Rebase the local commit onto the latest remote before pushing, so a
+    # remote that advanced on a multi-run day does not strand the commit.
+    # --autostash keeps other in-flight vault edits from blocking the rebase.
+    rprint("[cyan]Git pull --rebase...[/cyan]", end=" ")
+    pull = run_git(
+        ["pull", "--rebase", "--autostash", "origin", branch], notes_repo, check=False
+    )
+    if pull.returncode == 0:
+        rprint("[green]ok[/green]")
+    else:
+        rprint("[yellow]rebase failed (commit saved locally)[/yellow]")
+        if pull.stderr:
+            print(pull.stderr)
+        # Restore a clean state so the next run is not stuck mid-rebase.
+        run_git(["rebase", "--abort"], notes_repo, check=False)
+        rprint(f"[green]Committed {filename} locally[/green]")
+        return
+
     # Push is best-effort: a remote failure must not undo the local commit.
     rprint("[cyan]Git push...[/cyan]", end=" ")
-    push = run_git(["push", "origin", "HEAD"], notes_repo, check=False)
+    push = run_git(
+        ["push", "origin", f"HEAD:refs/heads/{branch}"], notes_repo, check=False
+    )
     if push.returncode == 0:
         rprint("[green]ok[/green]")
         rprint(f"[green]Successfully synced {filename}[/green]")
