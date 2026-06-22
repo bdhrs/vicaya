@@ -885,6 +885,109 @@ class TestScratchDossier:
         for m in result["missing"]:
             assert m["expected_evidence"]
 
+    def test_verify_flags_gated_but_empty_phase(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_gate, scratch_init, scratch_verify
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("test-empty")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        scratch_gate("0")
+        # Phase 1 is gated but nothing was ever logged under it — a crashed agent.
+        scratch_gate("1")
+        result = scratch_verify(through="1")
+        assert result["ok"] is False
+        assert result["missing"] == []
+        issues = {c["phase"]: c["issue"] for c in result["content_issues"]}
+        assert issues.get("1") == "empty"
+
+    def test_verify_passes_when_phase_has_logged_content(self, tmp_path, monkeypatch):
+        from tools.research_sources import (
+            scratch_gate,
+            scratch_init,
+            scratch_log,
+            scratch_verify,
+        )
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("test-content")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        scratch_gate("0")
+        scratch_log("1", "search-vault", summary="3 vault hits on the term")
+        scratch_gate("1")
+        result = scratch_verify(through="1")
+        assert result["ok"] is True
+        assert result["content_issues"] == []
+
+    def test_verify_flags_placeholder_text(self, tmp_path, monkeypatch):
+        from tools.research_sources import (
+            scratch_gate,
+            scratch_init,
+            scratch_log,
+            scratch_verify,
+        )
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("test-placeholder")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        scratch_gate("0")
+        scratch_log("1", "note", summary="would search for the term here")
+        scratch_gate("1")
+        result = scratch_verify(through="1")
+        assert result["ok"] is False
+        issues = {c["phase"]: c["issue"] for c in result["content_issues"]}
+        assert issues.get("1") == "placeholder"
+
+    def test_verify_default_checks_through_4c_not_high_water_mark(
+        self, tmp_path, monkeypatch
+    ):
+        from tools.research_sources import (
+            scratch_gate,
+            scratch_init,
+            scratch_log,
+            scratch_verify,
+        )
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("test-4b-gap")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        scratch_gate("0")
+        for phase in ("1", "2", "2.5", "3", "3b", "4"):
+            scratch_log(phase, "search", summary=f"real hit in {phase}")
+            scratch_gate(phase)
+        # Gates exist through phase 4; 4b/4c were never gated. The old verify
+        # stopped at the high-water mark and passed — it must now flag the gap,
+        # agreeing with scratch-gate 5 which requires 4b/4c.
+        result = scratch_verify()
+        assert result["ok"] is False
+        missing_phases = {m["phase"] for m in result["missing"]}
+        assert "4b" in missing_phases
+        assert "4c" in missing_phases
+
+    def test_verify_thematic_does_not_flag_autoskip_phases_missing(
+        self, tmp_path, monkeypatch
+    ):
+        from tools.research_sources import (
+            scratch_gate,
+            scratch_init,
+            scratch_log,
+            scratch_verify,
+        )
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("test-thematic-skip", run_class="thematic")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        scratch_gate("0")
+        for phase in ("1", "2"):
+            scratch_log(phase, "search", summary=f"real hit in {phase}")
+            scratch_gate(phase)
+        # 2.5/3b are not gated yet, but a thematic run auto-skips them — verify
+        # must not report them missing, only the genuinely-skipped phase 3.
+        result = scratch_verify(through="3b")
+        missing_phases = {m["phase"] for m in result["missing"]}
+        assert "2.5" not in missing_phases
+        assert "3b" not in missing_phases
+        assert "3" in missing_phases
+
     def test_resume_reports_last_gate_and_next_phase(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_gate, scratch_init, scratch_resume
 

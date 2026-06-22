@@ -429,7 +429,8 @@ continue.
 
 **Iron rule:** a phase cannot be left without calling `scratch-gate <phase>`.
 `scratch-verify` is the enforcement mechanism at Phase 5 start — it exits 1 and
-prints the missing gate plus its expected evidence list, so backfilling is
+prints the missing gate plus its expected evidence list (or a `content_issue`
+for a gate written over an empty/placeholder phase), so backfilling is
 mechanical, not interpretive.
 
 **Gate discipline** (each of these has caused a real run failure):
@@ -1011,7 +1012,7 @@ Steps:
    can backfill.
 ```
 
-**After each agent returns — spot-check before spawning the next.** This is the structural defence: `scratch-verify` checks gate **presence** only, not content, so a crashed/limited/stubbed agent can leave a gated-but-empty phase that passes verify silently.
+**After each agent returns — spot-check before spawning the next.** `scratch-verify` now also flags gated-but-empty and placeholder-only phases (`content_issues`), so it backstops a crashed/limited/stubbed agent structurally — but still spot-check immediately after each agent so a silent gap is caught before the next agent builds on it, not only at the Phase 5 verify.
 
 - Confirm the phase's section has real logged hits, not just a header: `grep -n '^## Phase' <scratch>` for the section bounds, then check it is not empty. Scan 4a/4b/4c logs for "would search"/placeholder language. An empty-but-gated phase is a silent gap — re-run that phase before continuing.
 - If a spawn fails (shared-account session limit, or the Agent tool blocked by a hook), run that one phase inline in the orchestrator yourself, then gate it.
@@ -1019,7 +1020,9 @@ Steps:
 After the last phase, run `uv run tools/research_sources.py scratch-verify`:
 
 - Exit 0 → proceed to Phase 5.
-- Exit 1 → the output names the missing gate and its expected evidence. Run that phase (inline or a fresh single-phase agent), then re-verify. Never proceed to Phase 5 with a missing gate.
+- Exit 1 → the output names either a **missing** gate (with its expected evidence) or a **content_issue** (`empty` / `placeholder` — the phase is gated but was never really worked). Either way, run that phase (inline or a fresh single-phase agent) so it has real logged hits, then re-verify. Never proceed to Phase 5 with a missing gate or an empty phase.
+
+Note: with no `--through`, `scratch-verify` checks every pre-synthesis phase (0 through 4c) — the same set `scratch-gate 5` requires — so it no longer stops at the highest gate written and miss an ungated 4b/4c in the middle. Thematic runs skip the 2.5/3b gates.
 
 ### Phase 2 — Canon search
 
@@ -1545,7 +1548,7 @@ When a term has both a Pāḷi form and a Sanskrit IAST form, fetch **both** —
 
 ### Phase 5 — Synthesis
 
-**Phase 5 entry gate:** run `uv run tools/research_sources.py scratch-verify`. If it exits non-zero, the output names the missing phase gate and its expected evidence — backfill that work first, then re-run verify. Do not draft until verify exits 0.
+**Phase 5 entry gate:** run `uv run tools/research_sources.py scratch-verify`. If it exits non-zero, the output names the missing phase gate and its expected evidence — or a `content_issue` for a phase that was gated but left empty or stubbed with placeholder text. Backfill that work first, then re-run verify. Do not draft until verify exits 0.
 
 **Read the scratch file before drafting.** Run `cat "$SCRATCH"` to recover the full list of findings from all prior phases. This is the compaction rescue step — if your context was compressed, everything you found is still in that file.
 

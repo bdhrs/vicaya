@@ -398,6 +398,64 @@ def _gate_marker(phase: str) -> str:
     return f"### PHASE {phase} EXIT GATE"
 
 
+# Phrases a crashed or lazy sub-agent leaves instead of doing the search.
+_PLACEHOLDER_PATTERNS = (
+    "would be searched",
+    "would search",
+    "would query",
+    "would fetch",
+    "would look up",
+    "to be searched",
+    "<fill in>",
+)
+
+# Gather/search phases whose section body must carry real evidence once gated.
+# Phase 0 is header-driven; 5/6/7 hold the draft/cross-check/note, not searches.
+_CONTENT_PHASES = ("1", "2", "2.5", "3", "3b", "4", "4b", "4c")
+
+
+def _phase_body(text: str, pid: str) -> str:
+    """Return the lines under a phase's `## ` heading, up to the next `## ` heading."""
+    header = f"## {_PHASE_INDEX[pid][1]}"
+    out: list[str] = []
+    collecting = False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            if collecting:
+                break
+            collecting = line.strip() == header
+            continue
+        if collecting:
+            out.append(line)
+    return "\n".join(out)
+
+
+def _phase_content_issue(body: str) -> str | None:
+    """Classify a gated phase's body: 'placeholder', 'empty', or None (has evidence).
+
+    Auto-skipped phases (gate marked AUTO-SKIPPED) are legitimately empty. Real
+    evidence is any logged block (`### <ts> · tool`) or hand-written note under
+    the heading — the exit-gate block alone does not count, so a crashed agent
+    that gated a phase without searching is caught instead of passing verify.
+    """
+    if "AUTO-SKIPPED" in body:
+        return None
+    low = body.lower()
+    for pat in _PLACEHOLDER_PATTERNS:
+        if pat in low:
+            return "placeholder"
+    seen_heading = False
+    for line in body.splitlines():
+        if line.startswith("### "):
+            seen_heading = True
+            if "EXIT GATE" not in line:
+                return None
+            continue
+        if not seen_heading and line.strip():
+            return None
+    return "empty"
+
+
 _SELF_AUDIT_MARKER = "### SELF-AUDIT"
 
 _SELF_AUDIT_QUESTIONS = [
@@ -645,15 +703,23 @@ def scratch_set_note(
 
 
 def scratch_verify(through: str | None = None, scratch: Path | None = None) -> dict:
-    """Verify that every phase up to `through` (or the highest gate written) has its gate.
+    """Verify gather phases are gated AND carry real content.
 
-    Returns {ok, missing: [{phase, title, expected_evidence}]}.
+    Without `through`, checks every pre-synthesis phase (0 through 4c) — the same
+    set Phase 5's gate requires — so verify and `scratch-gate 5` never disagree
+    over whether 4b/4c are needed. Thematic runs skip the 2.5/3b gates. With an
+    explicit `through`, checks phases 0..through.
+
+    A gated phase whose body is empty or only placeholder text ("would search
+    …") makes ok False: gate presence alone does not prove the phase was worked.
+
+    Returns {ok, checked_through, missing: [...], content_issues: [...]}.
     """
     path = scratch or _scratch_path()
     if not path.exists():
         return {"ok": False, "error": f"scratch not initialised: {path}"}
     text = path.read_text(encoding="utf-8")
-    # Determine the boundary.
+    thematic = _run_class(text) == "thematic"
     if through is not None:
         try:
             through = _normalize_phase(through)
@@ -661,12 +727,13 @@ def scratch_verify(through: str | None = None, scratch: Path | None = None) -> d
             return {"ok": False, "error": str(e)}
         upper = _PHASE_INDEX[through][0] + 1
     else:
-        upper = 0
-        for i, (pid, _, _) in enumerate(_SCRATCH_PHASES):
-            if _gate_marker(pid) in text:
-                upper = i + 1
+        # Default: every pre-synthesis phase (the set scratch-gate 5 requires).
+        upper = _PHASE_INDEX["5"][0]
     missing = []
+    content_issues = []
     for pid, title, expected in _SCRATCH_PHASES[:upper]:
+        if thematic and pid in _AUTO_SKIP_PHASES and _gate_marker(pid) not in text:
+            continue
         if _gate_marker(pid) not in text:
             missing.append(
                 {
@@ -675,7 +742,17 @@ def scratch_verify(through: str | None = None, scratch: Path | None = None) -> d
                     "expected_evidence": expected,
                 }
             )
-    return {"ok": not missing, "checked_through": upper, "missing": missing}
+            continue
+        if pid in _CONTENT_PHASES:
+            issue = _phase_content_issue(_phase_body(text, pid))
+            if issue:
+                content_issues.append({"phase": pid, "title": title, "issue": issue})
+    return {
+        "ok": not missing and not content_issues,
+        "checked_through": upper,
+        "missing": missing,
+        "content_issues": content_issues,
+    }
 
 
 def scratch_resume(slug: str | None = None, scratch: Path | None = None) -> dict:
