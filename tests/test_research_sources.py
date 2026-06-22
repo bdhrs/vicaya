@@ -111,6 +111,18 @@ class TestResolveCitation:
         c = resolve_citation("xyz999_mul", "1")
         assert "1" in c.human
 
+    def test_dpd_code_raises_with_lookup_book_hint(self):
+        import pytest
+
+        with pytest.raises(ValueError, match="lookup-book"):
+            resolve_citation("VISM", "166")
+
+    def test_gui_code_raises_with_lookup_book_hint(self):
+        import pytest
+
+        with pytest.raises(ValueError, match="lookup-book"):
+            resolve_citation("DN", "1")
+
 
 @dpd_available
 class TestResolveCitationWithDPD:

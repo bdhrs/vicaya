@@ -572,6 +572,12 @@ def resolve_citation(
     """
     machine = f"{book_code}:{paranum}"
     stem, text_type = _book_code_parts(book_code)
+    if not text_type:
+        raise ValueError(
+            f"resolve-citation expects a CST table name (e.g. 's0202m_mul'), "
+            f"not a DPD/GUI code like {book_code!r}. "
+            f"Run: uv run tools/research_sources.py lookup-book {book_code!r}"
+        )
     db_path = dpd_db or DEFAULT_DPD_DB
 
     # Parse paranum: may be "97", "97-99", or "_subhead" etc.

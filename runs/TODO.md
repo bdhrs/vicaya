@@ -67,6 +67,8 @@ the premise behind dropped #5.
 | #43 REGRESSION: sequential-scratch rule lost in doc restructure | done (re-scoped 2026-06-11) | `docs: re-add scratch sequencing rule scoped to hand-edits + guard test` — premise was partially stale: helper appends have been flock-serialized inside `_append_under_phase` since `ee5917a` (06-07), which postdates the last corruption sighting (20260606-110638) and survived `9a77539`, so parallel helper calls are structurally safe and the old blanket prose rule would be wrong; the only unprotected path is direct hand-edits to the scratch file (Edit/Write racing a helper append), so the restored rule targets exactly that, placed in `## Research scratchpad` (routed by all four staged routers); new guard test in `tests/test_skill_routes.py` fails if the rule ever leaves that section again |
 | #46 Sub-agent context overflow (single all-phases gather agent) | done (2026-06-20) | `feat: per-phase gather sub-agents + --quiet helper output` — SKILL.md dispatch rewritten to spawn ONE single-phase sub-agent per phase (read only the Phase 0/1 briefing, not the growing dossier; read only that phase's SKILL sections; gate each phase; orchestrator spot-checks content between agents). Phase 4b now collects video details and pulls a transcript only if clearly relevant (no bulk fetch — transcripts were the biggest context killer). `--quiet` flag added to 8 search helpers (search-canon/vault/library-folders/ebc/sanskrit, sc-parallels, sc-search, get-agama): full results still written to the scratch dossier, only stdout compacted, so the dossier + note are byte-identical. 5 regression tests (`TestCompactQuietOutput`) confirm refs preserved, long text truncated, full text still in scratch. Implements the Option-3 quiet-helper too. (seen in 3 runs: 20260619-070000, 20260615-101237, 20260619-155720) |
 | #47 (doc half) orchestrator spot-checks phase content after each agent | done (2026-06-20) | same commit — dispatch documents the post-agent content spot-check (`grep '^## Phase'`, scan 4a–4c for placeholder language) + inline-fallback on spawn failure. Structural verify-content half remains open as #47 residue (High). |
+| #41 validate_note.py silent on success | done (2026-06-20) | `fix: print PASS on clean validate_note run` — a passing note now prints `<path>: PASS` (exit 0 + output, vs. exit 0 + silence); updated the existing silent-output test to assert PASS instead. |
+| #45 resolve-citation silently mislabels DPD-code input | done (2026-06-20) | `fix: raise ValueError with lookup-book hint for non-table input to resolve-citation` — `resolve_citation` now raises `ValueError` immediately when `book_code` has no recognized `_<text_type>` suffix (e.g. `"VISM"`, `"DN"`), with a message naming the expected form and the exact `lookup-book` command to run; 2 regression tests (VISM and DN both raise with "lookup-book" in the message). |
 | #49 sub-agent claims unverified before synthesis | done (2026-06-20) | `docs: add citation re-verify rule and 0-hit book-code recheck protocol` — two rules in SKILL.md. (1) Hard Rule 12: a 0-hit in a book the question predicts should contain the term must trigger `lookup-book` to confirm the code before logging absence; AN nipāta off-by-one (s0404m3 = AN10, s0404m4 = AN11) named as the canonical example. (2) Orchestrator spot-check block: re-verify the 2–3 highest-priority cited suttas from each sub-agent's report via `verify-citation` before spawning the next agent; covers the three real failure modes (hallucinated evidence, citation without resolve-citation, wrong-book 0-hit logged as absent); log the result in working notes. (seen in 5 runs: 20260613-231817, 20260614-123500, 20260614-143529, 20260614-230548, 20260615-215012) |
 | #47 (residue) scratch-verify checks gate presence, not content | done (2026-06-20) | `feat: scratch-verify checks phase content and full gather set` — both halves closed. **Content half:** `scratch-verify` now classifies each gated gather phase's body (1, 2, 2.5, 3, 3b, 4, 4b, 4c) as `empty` (only the exit-gate block, no logged hits — a crashed/limited agent) or `placeholder` ("would search …", "<fill in>") and returns them under `content_issues`, making `ok` False so the orchestrator can't draft over a silent gap; auto-skipped (thematic 2.5/3b) and hand-explained N/A phases are exempt. **4b-disagreement half:** verify-without-`through` no longer stops at the highest gate written (which let an ungated 4b in the middle report `missing: []`) — it now checks every pre-synthesis phase (0 through 4c), the exact set `scratch-gate 5` requires, applying the thematic 2.5/3b auto-skip, so verify and gate 5 can never disagree. SKILL.md updated (dispatch spot-check note, Phase 5 entry-gate, Iron-rule). 5 regression tests. (seen in 4 runs: 20260615-134607, 20260614-230548, 20260619-070000, 20260619-155720) |
 | #48 sync_notes.py strands commits — no pull before push | done (2026-06-20) | `fix: rebase notes onto remote before push so commits aren't stranded` — after committing the note by pathspec, `sync_notes.py` now runs `git pull --rebase --autostash origin <branch>` (branch detected via `rev-parse`, falls back to `main`) then pushes `HEAD:refs/heads/<branch>` explicitly, fixing both the non-fast-forward stranding (inverse of Done #21) and the "must fully qualify the ref (src HEAD)" error; `--autostash` keeps other in-flight vault edits from blocking the rebase; a rebase failure aborts cleanly (`git rebase --abort`) and falls back to commit-saved-locally, preserving the best-effort push contract; `main()` now takes `argv` for testability; 2 real-git regression tests (remote-advanced, dirty-tree) |
@@ -119,20 +121,11 @@ _(#49 moved to Done — see Done table above)_
   relabelling note in Phase 7 template (20260610-025816); nrf-table texts
   (Milindapañha) need tier-classification guidance (20260605-025640).
   Verified 2026-06-11: neither guidance exists in SKILL.md.
-- **#41 validate_note.py silent on success** — verified 2026-06-11: a real
-  passing vault note gives exit 0 and zero output; print an explicit PASS
-  line. (The scratch-gate missing-gate half is done — see Done table.)
 - **#42 EBC overview code mismatch for Suttanipāta** — verified live
   2026-06-11: `get-ebc-overview "Sn 2.2"` → SN2.2 Dutiyakassapasutta
   (Saṃyutta, wrong text) while "Snp 2.2" is correct; ambiguous "Sn"
   collapses into "SN" (20260604-034355). Also: dhammatalks.org AN URL
   pattern 404s (20260605-082000).
-- **#45 resolve-citation silently mislabels DPD-code input** — found in the
-  2026-06-11 sweep: `resolve-citation VISM 166` → "? VISM §166", pitaka
-  Unknown (it expects a cst_table like `e0101n_mul`, which works). No hint
-  that the input form is wrong — a weak-model footgun (#19 instance).
-  Fix: detect non-table input and hint "run lookup-book first".
-
 - **#50 `.doc` extraction fallback** — `ebook-convert` fails silently on legacy
   `.doc`; `libreoffice --headless --convert-to txt` succeeds. Add it as the
   documented first `.doc` fallback in the Phase 3 extraction table
@@ -249,9 +242,10 @@ _(#49 moved to Done — see Done table above)_
    (0-hit in expected book → run `lookup-book` before "absent") + orchestrator
    re-verify step (run `verify-citation` on the 2–3 top cited suttas from each
    sub-agent's report before spawning the next). The remaining backlog is all
-   Low severity — quick wins (#45 resolve-citation DPD-code hint, #41
-   validate_note PASS line) and longer-term structural items (#7 gate-content
-   evidence, #19 weak-model control points). Channel note: "Ego (buddhism
+   Low severity — longer-term structural items (#7 gate-content evidence,
+   #19 weak-model control points) and isolated issues (#42 EBC Snp code
+   mismatch, #50 .doc extraction, etc.). Quick wins #41 and #45 closed
+   2026-06-20. Channel note: "Ego (buddhism
    podcast)" hit 3 sightings this cycle — evaluate for promotion. AGENTS.md
    added at repo root (CLAUDE.md symlinks to it): tests go green *after* the
    main issue is done.

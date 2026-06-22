@@ -44,6 +44,8 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"{note_path}:{issue.line}: {issue.severity}: {issue.code}: {issue.message}"
         )
+    if not errors:
+        print(f"{note_path}: PASS")
     return 1 if errors else 0
 
 

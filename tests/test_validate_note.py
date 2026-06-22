@@ -19,8 +19,9 @@ def test_validate_note_exits_zero_for_valid_absolute_note(
 
     exit_code = validate_note.main([str(note_path)])
 
+    output = capsys.readouterr().out
     assert exit_code == 0
-    assert capsys.readouterr().out == ""
+    assert "PASS" in output
 
 
 def test_validate_note_exits_nonzero_for_invalid_note(
