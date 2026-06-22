@@ -1523,7 +1523,7 @@ To locate the relevant moment in a long talk, scan `segments` for keywords (Engl
 
 ### Phase 4c — WisdomLib
 
-**This phase is mandatory on every run — it cannot be skipped.** WisdomLib is a comprehensive encyclopaedia of Indian religion, philosophy, and culture, covering Buddhist (Theravāda, Mahāyāna, Tibetan), Hindu (Nyāya, Vaiśeṣika, Yoga, Vedānta, Ayurveda, and others), and Jain traditions. It is the most reliable single-site source for precise definitions of technical Sanskrit and Pāḷi terms.
+**This phase is mandatory for Indological runs — skip it only when the question has no Sanskrit, Pāḷi, or Indian-tradition terms.** (Examples of legitimate skips: a question on Christian mysticism, grief psychology, or Western philosophy.) WisdomLib is a comprehensive encyclopaedia of Indian religion, philosophy, and culture, covering Buddhist (Theravāda, Mahāyāna, Tibetan), Hindu (Nyāya, Vaiśeṣika, Yoga, Vedānta, Ayurveda, and others), and Jain traditions. It is the most reliable single-site source for precise definitions of technical Sanskrit and Pāḷi terms.
 
 **For every principal technical term in the research question** — up to ~8 terms per run — fetch:
 

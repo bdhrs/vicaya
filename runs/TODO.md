@@ -57,6 +57,7 @@ the premise behind dropped #5.
 | #25 wisdomlib.org failures | closed | not reproducible 2026-06-11: real term → 200, bogus term → clean 404, no redirect-to-homepage |
 | #16 tool-failure operational rules | done | already consolidated in SKILL.md "## When something fails" (line 1943, landed with the #36 doc commit); the two missing fallback lines (Google 403 → WebFetch, lookup-book → resolve-citation) folded into #14 |
 | #39 search-canon JSON-parsing notes | done | jq-absent caveat documented at SKILL.md:93 (minor residue: SKILL.md:124 still says "Parse the JSON with `jq`" — one-line cleanup) |
+| #38 WisdomLib mandatory-on-every-run wrong for non-Indological topics | done (2026-06-20) | `docs: skip WisdomLib phase when no Sanskrit/Pāḷi terms in the question` — changed "mandatory on every run — it cannot be skipped" to "mandatory for Indological runs — skip only when the question has no Sanskrit, Pāḷi, or Indian-tradition terms"; added three concrete skip examples (Christian mysticism, grief psychology, Western philosophy). The arXiv sub-item (#38 residue: "IDs cannot be guessed — use the search endpoint") was already present at SKILL.md failure-fallback section. |
 | #41 scratch-gate missing-gate visibility (half) | done | verified 2026-06-11: refusal JSON carries `missing_phase`, `missing_title`, expected evidence, and "run scratch-gate 1 first"; the validate_note silent-pass half stays open as #41 |
 | #10 Obsidian CLI bypass (doc halves) | done | "When Obsidian isn't running" section documents the disk fallback and the final-report declaration; optional `vault-write` wrapper demoted to Low residue |
 | #33 Helper to set the scratch `**Vault note:**`/PDF header (4 runs) | done | `feat: add scratch-set-note to record vault note and PDF paths` — new subcommand writes the `**Vault note:**` header (and a `**PDF:**` line) under the scratch file lock, so the Phase 7 `[REJECTED]` hard-gate target is set by the helper instead of hand-edits; vault-relative paths resolve against `VICAYA_VAULT_PATH`; refuses when the note file doesn't exist (a typo'd path previously disarmed the gate silently — gate 7 skips the scan for nonexistent paths); gate-7 checklist items now name the subcommand; SKILL.md updated (quick-start step 4, Research scratchpad block, Phase 7 section + exit line); 6 regression tests |
@@ -112,11 +113,7 @@ _(#49 moved to Done — see Done table above)_
 - **#22 Obsidian vault path assumptions across machines** — ongoing
   (iCloud path vs ~/MyFiles), handled per-run.
 - **#28 Movement-internal term mapping** — unchanged.
-- **#38 WisdomLib "mandatory on every run" wrong for non-Indological
-  topics** — add skip clause (20260609-230046); verified 2026-06-11 that
-  SKILL.md:1416 still reads "mandatory on every run — it cannot be
-  skipped". Same run suggests "arXiv IDs cannot be guessed — use the search
-  endpoint".
+_(#38 moved to Done — WisdomLib skip clause added 2026-06-20)_
 - **#40 Non-doctrinal thematic runs: tier headings map awkwardly** — allow
   relabelling note in Phase 7 template (20260610-025816); nrf-table texts
   (Milindapañha) need tier-classification guidance (20260605-025640).
