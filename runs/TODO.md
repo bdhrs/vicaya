@@ -16,8 +16,11 @@ spot-checks content), and #35 (lookup-book / cst_book_translator stub). Closed
 onto remote before an explicitly-qualified push) and #47 residue (structural
 verify-content — `scratch-verify` now flags empty/placeholder gather phases and
 checks the full 0–4c set, reconciling the 4b disagreement with `scratch-gate 5`).
-Still open: #49 (sub-agent claim verification). Staged-router subskills were
-removed (`2304ecd`), retiring the premise behind dropped #5.
+#49 (sub-agent claim verification) closed 2026-06-20: Hard Rule 12 (0-hit
+book-code recheck before "absent") + orchestrator re-verify step for the top
+cited suttas after each agent returns. All High/Medium issues from this triage
+cycle now closed. Staged-router subskills were removed (`2304ecd`), retiring
+the premise behind dropped #5.
 
 ## Done
 
@@ -64,6 +67,7 @@ removed (`2304ecd`), retiring the premise behind dropped #5.
 | #43 REGRESSION: sequential-scratch rule lost in doc restructure | done (re-scoped 2026-06-11) | `docs: re-add scratch sequencing rule scoped to hand-edits + guard test` — premise was partially stale: helper appends have been flock-serialized inside `_append_under_phase` since `ee5917a` (06-07), which postdates the last corruption sighting (20260606-110638) and survived `9a77539`, so parallel helper calls are structurally safe and the old blanket prose rule would be wrong; the only unprotected path is direct hand-edits to the scratch file (Edit/Write racing a helper append), so the restored rule targets exactly that, placed in `## Research scratchpad` (routed by all four staged routers); new guard test in `tests/test_skill_routes.py` fails if the rule ever leaves that section again |
 | #46 Sub-agent context overflow (single all-phases gather agent) | done (2026-06-20) | `feat: per-phase gather sub-agents + --quiet helper output` — SKILL.md dispatch rewritten to spawn ONE single-phase sub-agent per phase (read only the Phase 0/1 briefing, not the growing dossier; read only that phase's SKILL sections; gate each phase; orchestrator spot-checks content between agents). Phase 4b now collects video details and pulls a transcript only if clearly relevant (no bulk fetch — transcripts were the biggest context killer). `--quiet` flag added to 8 search helpers (search-canon/vault/library-folders/ebc/sanskrit, sc-parallels, sc-search, get-agama): full results still written to the scratch dossier, only stdout compacted, so the dossier + note are byte-identical. 5 regression tests (`TestCompactQuietOutput`) confirm refs preserved, long text truncated, full text still in scratch. Implements the Option-3 quiet-helper too. (seen in 3 runs: 20260619-070000, 20260615-101237, 20260619-155720) |
 | #47 (doc half) orchestrator spot-checks phase content after each agent | done (2026-06-20) | same commit — dispatch documents the post-agent content spot-check (`grep '^## Phase'`, scan 4a–4c for placeholder language) + inline-fallback on spawn failure. Structural verify-content half remains open as #47 residue (High). |
+| #49 sub-agent claims unverified before synthesis | done (2026-06-20) | `docs: add citation re-verify rule and 0-hit book-code recheck protocol` — two rules in SKILL.md. (1) Hard Rule 12: a 0-hit in a book the question predicts should contain the term must trigger `lookup-book` to confirm the code before logging absence; AN nipāta off-by-one (s0404m3 = AN10, s0404m4 = AN11) named as the canonical example. (2) Orchestrator spot-check block: re-verify the 2–3 highest-priority cited suttas from each sub-agent's report via `verify-citation` before spawning the next agent; covers the three real failure modes (hallucinated evidence, citation without resolve-citation, wrong-book 0-hit logged as absent); log the result in working notes. (seen in 5 runs: 20260613-231817, 20260614-123500, 20260614-143529, 20260614-230548, 20260615-215012) |
 | #47 (residue) scratch-verify checks gate presence, not content | done (2026-06-20) | `feat: scratch-verify checks phase content and full gather set` — both halves closed. **Content half:** `scratch-verify` now classifies each gated gather phase's body (1, 2, 2.5, 3, 3b, 4, 4b, 4c) as `empty` (only the exit-gate block, no logged hits — a crashed/limited agent) or `placeholder` ("would search …", "<fill in>") and returns them under `content_issues`, making `ok` False so the orchestrator can't draft over a silent gap; auto-skipped (thematic 2.5/3b) and hand-explained N/A phases are exempt. **4b-disagreement half:** verify-without-`through` no longer stops at the highest gate written (which let an ungated 4b in the middle report `missing: []`) — it now checks every pre-synthesis phase (0 through 4c), the exact set `scratch-gate 5` requires, applying the thematic 2.5/3b auto-skip, so verify and gate 5 can never disagree. SKILL.md updated (dispatch spot-check note, Phase 5 entry-gate, Iron-rule). 5 regression tests. (seen in 4 runs: 20260615-134607, 20260614-230548, 20260619-070000, 20260619-155720) |
 | #48 sync_notes.py strands commits — no pull before push | done (2026-06-20) | `fix: rebase notes onto remote before push so commits aren't stranded` — after committing the note by pathspec, `sync_notes.py` now runs `git pull --rebase --autostash origin <branch>` (branch detected via `rev-parse`, falls back to `main`) then pushes `HEAD:refs/heads/<branch>` explicitly, fixing both the non-fast-forward stranding (inverse of Done #21) and the "must fully qualify the ref (src HEAD)" error; `--autostash` keeps other in-flight vault edits from blocking the rebase; a rebase failure aborts cleanly (`git rebase --abort`) and falls back to commit-saved-locally, preserving the best-effort push contract; `main()` now takes `argv` for testability; 2 real-git regression tests (remote-advanced, dirty-tree) |
 | #35 lookup-book broken — cst_book_translator import fails | done (2026-06-20) | `fix: stub ProjectPaths with TSV path for dpd-db cst_book_translator` — dpd-db's translator was changed (06-15) to read `ProjectPaths().cst_book_translator_tsv_path` at import time; the loader's `lambda: None` stub turned that into `None.attr` and broke every lookup-book call. Stub now returns a SimpleNamespace pointing at the TSV beside the module (+ `cst_xml_dir` placeholder). 6 `TestLookupBook` tests green again. The original "add a path candidate" proposal was a misdiagnosis — the path matched; the stub was the gap. |
@@ -91,21 +95,7 @@ cycle (seed-note handoff worked well in 20260606-110638).
 #29, #31, #33, and #6 were closed structurally; #45 (resolve-citation input
 footgun) is the remaining concrete instance.
 
-**#49 Sub-agent completion reports can't be trusted — verify before synthesis.**
-Recurring: a gather sub-agent reports evidence not actually in the scratch
-(20260615-215012), names suttas without resolve-citation (20260613-231817,
-20260614-123500), or gets 0 hits from inflected-phrase / wrong-book-code
-searches and wrongly concludes "absent" (20260614-143529 AN4 paṭipadā + Vism
-cariyā-not-carit; 20260614-230548 AN10 is s0404m3 not s0404m4). The per-phase
-dispatch (#46) adds an orchestrator spot-check and #47 now makes `scratch-verify`
-catch an *empty* gated phase structurally; this issue is the narrower
-*content-verification* half that survives both — a phase can be non-empty yet
-hold wrong/unverified claims: re-verify every sub-agent-claimed citation via
-resolve-citation and grep the scratch for the highest-priority items before
-synthesis, and tell sub-agents to recheck book-code/spelling (lookup-book /
-verify-citation) on a 0-hit in a book they expect to contain the term before
-concluding absence. Overlaps #19. (seen in 5 runs: 20260613-231817,
-20260614-123500, 20260614-143529, 20260614-230548, 20260615-215012)
+_(#49 moved to Done — see Done table above)_
 
 ### Low severity
 
@@ -252,13 +242,16 @@ concluding absence. Overlaps #19. (seen in 5 runs: 20260613-231817,
    (lookup-book) turned out NOT to be the predicted macOS-path issue — dpd-db's
    translator changed to read its TSV path at import time and the loader's
    `lambda: None` ProjectPaths stub broke; fixed by stubbing the TSV path. The
-   live direction now: #49 (sub-agent claim verification). #47 residue closed
-   2026-06-20 — `scratch-verify` now checks gate *content* (empty/placeholder
-   gather phases → `content_issues`) and the full 0–4c set, the natural
-   structural follow-on to #46; the empty-but-gated silent gap is now caught by
-   the verifier itself, not only the orchestrator spot-check. #49 remains the
-   content-*verification* half: re-verify sub-agent-claimed citations and
-   recheck book-code/spelling on a 0-hit before concluding absence. Channel
-   note: "Ego (buddhism podcast)" hit 3 sightings this cycle — evaluate for
-   promotion. AGENTS.md added at repo root (CLAUDE.md symlinks to it): tests go
-   green *after* the main issue is done.
+   All High/Medium issues from this triage cycle are now closed. #47 residue
+   closed 2026-06-20: `scratch-verify` checks gate *content* (empty/placeholder
+   → `content_issues`) and the full 0–4c set; the empty-but-gated silent gap is
+   now caught by the verifier structurally. #49 closed 2026-06-20: Hard Rule 12
+   (0-hit in expected book → run `lookup-book` before "absent") + orchestrator
+   re-verify step (run `verify-citation` on the 2–3 top cited suttas from each
+   sub-agent's report before spawning the next). The remaining backlog is all
+   Low severity — quick wins (#45 resolve-citation DPD-code hint, #41
+   validate_note PASS line) and longer-term structural items (#7 gate-content
+   evidence, #19 weak-model control points). Channel note: "Ego (buddhism
+   podcast)" hit 3 sightings this cycle — evaluate for promotion. AGENTS.md
+   added at repo root (CLAUDE.md symlinks to it): tests go green *after* the
+   main issue is done.

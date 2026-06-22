@@ -46,6 +46,7 @@ These rules apply to every run, by every agent. They are part of the skill, not 
 9. **CST paragraph numbers are book-global, not sutta-local.** A `paranum` returned by `search-canon` is a continuous index across the entire book file — para 261 in `s0202m_mul` is MN78, not MN60. Always run `resolve-citation` to confirm which sutta a paragraph belongs to before citing it. Never assume the paragraph number matches a sutta number. Exception: a few books (Khp, Paṭisambhidāmagga, Netti, Milinda) restart paranums per section — `resolve-citation` then says "paranum repeats per section" and lists candidate sections; disambiguate from the hit's own text before citing.
 10. **YAML frontmatter safety.** Always wrap YAML values in double quotes if they contain a colon followed by a space (e.g. `"Topic: Subtitle"`). Unquoted colons break Obsidian's property rendering.
 11. **No global temporary directories.** Every stage must keep working files inside this repo. Use `data/scratch/` for anything needed after an interruption, restart, context refresh, or handoff. Use repo-local `temp/` only for disposable extraction files, and create it with `mkdir -p temp` before use.
+12. **A 0-hit in a book you expected to contain the term is a book-code problem until proven otherwise.** Before concluding a term is absent from a given book or nipāta, confirm the code is right: run `lookup-book <your-code>` (or check the embedded book-code table) to verify you have the correct CST table for that text. The commonest mistake is AN nipāta off-by-one — `s0404m3_mul` is AN10 (Dasakanipāta), `s0404m4_mul` is AN11 (Ekādasakanipāta) — but the same pattern recurs across the Khuddaka collection. Only after confirming the code may you log 0-hits as evidence of absence.
 
 ## Inputs
 
@@ -1016,6 +1017,7 @@ Steps:
 
 - Confirm the phase's section has real logged hits, not just a header: `grep -n '^## Phase' <scratch>` for the section bounds, then check it is not empty. Scan 4a/4b/4c logs for "would search"/placeholder language. An empty-but-gated phase is a silent gap — re-run that phase before continuing.
 - If a spawn fails (shared-account session limit, or the Agent tool blocked by a hook), run that one phase inline in the orchestrator yourself, then gate it.
+- **Re-verify the top cited suttas before spawning the next agent.** A sub-agent's completion report names the suttas it found — run `verify-citation` on the 2–3 highest-priority ones before accepting them. A sub-agent can report evidence not actually in the scratch (context-exhausted hallucination), name suttas without having run `resolve-citation`, or get 0 hits from a wrong book code and silently log them as absent. The re-verify step catches all three before the next phase builds on the error. Log the result in the orchestrator's working notes ("verified: MN60 ✓, AN4.1 ✗ not found in sutta_info — re-run phase 2 for this book"); if a cited sutta fails, treat it as a content issue and backfill, same as an empty phase.
 
 After the last phase, run `uv run tools/research_sources.py scratch-verify`:
 
@@ -1184,6 +1186,14 @@ uv run tools/research_sources.py search-canon "<Pāḷi stem>" --books "s*_mul" 
 # Also try English if the user used English terms:
 uv run tools/research_sources.py search-canon "<English term>" --books "s*_mul" --lang english --limit 20
 ```
+
+**0-hit recheck protocol (Hard Rule 12).** If a search returns 0 hits in a specific book that the question or the perspective map predicts should contain the term, do not log "absent" yet. Confirm the book code first:
+
+```bash
+uv run tools/research_sources.py lookup-book "<your code or book name>"
+```
+
+If `lookup-book` returns a different `cst_table` than the one you searched, re-run with the correct table. Common mistake: AN nipāta codes are volume-numbered, not nipāta-numbered — `s0404m3_mul` = AN10 Dasakanipāta, `s0404m4_mul` = AN11 Ekādasakanipāta. Only after confirming the code matches the book may you log 0-hits as evidence of absence.
 
 **Example — search for "ñāṇa" in the Paṭisambhidāmagga only, get Pāḷi + English:**
 
