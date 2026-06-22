@@ -1370,9 +1370,10 @@ mkdir -p temp
 |---|---|
 | PDF | `pdftotext /path/to/book.pdf -` |
 | epub | `mkdir -p "$RUN_TEMP/epub_extract" && find "$RUN_TEMP/epub_extract" -mindepth 1 -depth -delete && unzip -q /path/to/book.epub -d "$RUN_TEMP/epub_extract" && rg "<term>" "$RUN_TEMP/epub_extract"/` |
+| .doc | `mkdir -p "$RUN_TEMP" && libreoffice --headless --convert-to txt /path/to/book.doc --outdir "$RUN_TEMP" && rg "<term>" "$RUN_TEMP/"*.txt` |
 | Any format | `mkdir -p "$RUN_TEMP" && ebook-convert /path/to/book.<ext> "$RUN_TEMP/book.txt" && rg "<term>" "$RUN_TEMP/book.txt"` |
 
-`ebook-convert` (ships with Calibre) is the universal fallback. The book's source
+`ebook-convert` (ships with Calibre) is the universal fallback for most formats, but fails silently on legacy `.doc` files — use `libreoffice` for those. The book's source
 path is in the metadata returned by `search-library-folders` or from the library's folder.
 
 **Zero-hit fallback.** If a known author returns 0, try searching by title keyword

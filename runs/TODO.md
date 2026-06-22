@@ -1,10 +1,11 @@
 # Vicaya skill improvements — work in progress
 
 This file replaces the run-by-run reflection backlog. Processed reflections
-live in `runs/processed/`. Last triage: 2026-06-20 (incremental, 1 run:
-20260620-133500 — no new global issues; one POSITIVE confirming #46). Prior
-triage 2026-06-20, covering 26 runs from 2026-06-11 to 2026-06-19 (and
-2026-06-10/11, 81 runs).
+live in `runs/processed/`. Last triage: 2026-06-22 (incremental, 1 run:
+20260622-053000 — one new Low issue #53; one POSITIVE added to Working well).
+Prior triage 2026-06-20 (incremental, 1 run: 20260620-133500 — no new global
+issues; one POSITIVE confirming #46). Prior triage 2026-06-20, covering 26
+runs from 2026-06-11 to 2026-06-19 (and 2026-06-10/11, 81 runs).
 
 Triage 2026-06-20: the dominant new signal was **sub-agent context exhaustion**
 — the single all-phases gather sub-agent overflowed ("Prompt is too long") and
@@ -78,6 +79,7 @@ the premise behind dropped #5.
 | #47 (residue) scratch-verify checks gate presence, not content | done (2026-06-20) | `feat: scratch-verify checks phase content and full gather set` — both halves closed. **Content half:** `scratch-verify` now classifies each gated gather phase's body (1, 2, 2.5, 3, 3b, 4, 4b, 4c) as `empty` (only the exit-gate block, no logged hits — a crashed/limited agent) or `placeholder` ("would search …", "<fill in>") and returns them under `content_issues`, making `ok` False so the orchestrator can't draft over a silent gap; auto-skipped (thematic 2.5/3b) and hand-explained N/A phases are exempt. **4b-disagreement half:** verify-without-`through` no longer stops at the highest gate written (which let an ungated 4b in the middle report `missing: []`) — it now checks every pre-synthesis phase (0 through 4c), the exact set `scratch-gate 5` requires, applying the thematic 2.5/3b auto-skip, so verify and gate 5 can never disagree. SKILL.md updated (dispatch spot-check note, Phase 5 entry-gate, Iron-rule). 5 regression tests. (seen in 4 runs: 20260615-134607, 20260614-230548, 20260619-070000, 20260619-155720) |
 | #48 sync_notes.py strands commits — no pull before push | done (2026-06-20) | `fix: rebase notes onto remote before push so commits aren't stranded` — after committing the note by pathspec, `sync_notes.py` now runs `git pull --rebase --autostash origin <branch>` (branch detected via `rev-parse`, falls back to `main`) then pushes `HEAD:refs/heads/<branch>` explicitly, fixing both the non-fast-forward stranding (inverse of Done #21) and the "must fully qualify the ref (src HEAD)" error; `--autostash` keeps other in-flight vault edits from blocking the rebase; a rebase failure aborts cleanly (`git rebase --abort`) and falls back to commit-saved-locally, preserving the best-effort push contract; `main()` now takes `argv` for testability; 2 real-git regression tests (remote-advanced, dirty-tree) |
 | #35 lookup-book broken — cst_book_translator import fails | done (2026-06-20) | `fix: stub ProjectPaths with TSV path for dpd-db cst_book_translator` — dpd-db's translator was changed (06-15) to read `ProjectPaths().cst_book_translator_tsv_path` at import time; the loader's `lambda: None` stub turned that into `None.attr` and broke every lookup-book call. Stub now returns a SimpleNamespace pointing at the TSV beside the module (+ `cst_xml_dir` placeholder). 6 `TestLookupBook` tests green again. The original "add a path candidate" proposal was a misdiagnosis — the path matched; the stub was the gap. |
+| #50 `.doc` extraction fallback | done (2026-06-22) | `docs: add libreoffice .doc extraction row to Phase 3 table` — added a `.doc` row to the SKILL.md Phase 3 format/command table using `libreoffice --headless --convert-to txt`; added a note that `ebook-convert` fails silently on `.doc` files. (20260615-101237) |
 
 ## Remaining — prioritized
 
@@ -121,10 +123,12 @@ _(#38 moved to Done — WisdomLib skip clause added 2026-06-20)_
   (Saṃyutta, wrong text) while "Snp 2.2" is correct; ambiguous "Sn"
   collapses into "SN" (20260604-034355). Also: dhammatalks.org AN URL
   pattern 404s (20260605-082000).
-- **#50 `.doc` extraction fallback** — `ebook-convert` fails silently on legacy
-  `.doc`; `libreoffice --headless --convert-to txt` succeeds. Add it as the
-  documented first `.doc` fallback in the Phase 3 extraction table
-  (20260615-101237).
+- **#53 Sub-agent notification cross-labelling.** Sub-agent completion
+  notifications can carry a wrong phase ID (Phase 2 id reported Phase 3
+  status). Never trust the notification summary for phase id/status — always
+  verify via `grep '^### ' scratch.md` or `scratch-resume` output. Impact was
+  cosmetic (caught nothing lost) but the rule is load-bearing for correctness.
+  (seen in 1 run: 20260622-053000)
 _(#51 moved to Done — thematic gate-vs-work clarification added 2026-06-20)_
 _(#52 moved to Done — comparative-religion T1 section documented 2026-06-20)_
 _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
@@ -160,6 +164,11 @@ _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
 - **Per-phase gather sub-agent + parent-synthesis split (#46)**: confirmed
   live 2026-06-20 (20260620-133500) — the gatherer/parent division of labour
   kept the main context clean and focused. Keep delegating all gather phases.
+- **Definitional loci for "is X a vice/virtue?" questions**: DPD/WisdomLib
+  glosses for the specific key terms (*vasavattī*, *issariya-mada*, *dama*)
+  gave sharper polarity evidence than thematic stem searches for a
+  "Christian spirit of control" comparison; lead with the lexicon on any
+  vice/virtue angle. (20260622-053000)
 - **Per-run scratch isolation + RESUME protocol**: clean cold resumes across
   compaction and multi-day sessions (many runs); staged context-break system
   completed a ~16.5k-line dossier across 5+ passes with no loss
