@@ -1017,29 +1017,41 @@ def get_ebc_overview(
     if vault is None:
         return None
     normalised = _normalise_sutta_code(code)
-    path = _find_ebc_overview_path(normalised, vault)
-    if path is None:
-        return None
-    yaml = _parse_ebc_yaml(path.read_text(encoding="utf-8"))
-    return EBCOverview(
-        code=str(yaml.get("sutta_code") or normalised),
-        path=str(path),
-        pts=str(yaml.get("sutta_pts") or ""),
-        titles=_as_list(yaml.get("sutta_title")),
-        nikaya=_as_list(yaml.get("nikaya")),
-        chapter=_as_list(yaml.get("sutta_chapter")),
-        themes=_as_list(yaml.get("sutta_theme")),
-        topics=_as_list(yaml.get("sutta_topic")),
-        training=_as_list(yaml.get("sutta_training")),
-        formula=_as_list(yaml.get("sutta_formula")),
-        audience=_as_list(yaml.get("sutta_audience")),
-        teacher=_as_list(yaml.get("sutta_teacher")),
-        parallels_agama=_split_parallel_refs(str(yaml.get("parallels_agama") or "")),
-        # EBC frontmatter uses the (sic) key `parallels_partilal`.
-        parallels_partial=_split_parallel_refs(
-            str(yaml.get("parallels_partilal") or "")
-        ),
-    )
+    # "Sn N.N" (mixed case, no trailing p) is ambiguous — Saṃyutta or Suttanipāta.
+    # Extract the raw prefix before uppercasing; try SNP first when ambiguous,
+    # mirroring the same logic in _normalise_citation.
+    raw_m = _re.match(r"^([A-Za-z]+)", "".join(code.split()))
+    raw_p = raw_m.group(1) if raw_m else ""
+    if raw_p.lower() == "sn" and raw_p != "SN" and normalised.startswith("SN"):
+        candidates = [f"SNP{normalised[2:]}", normalised]
+    else:
+        candidates = [normalised]
+    for candidate in candidates:
+        path = _find_ebc_overview_path(candidate, vault)
+        if path is not None:
+            yaml = _parse_ebc_yaml(path.read_text(encoding="utf-8"))
+            return EBCOverview(
+                code=str(yaml.get("sutta_code") or candidate),
+                path=str(path),
+                pts=str(yaml.get("sutta_pts") or ""),
+                titles=_as_list(yaml.get("sutta_title")),
+                nikaya=_as_list(yaml.get("nikaya")),
+                chapter=_as_list(yaml.get("sutta_chapter")),
+                themes=_as_list(yaml.get("sutta_theme")),
+                topics=_as_list(yaml.get("sutta_topic")),
+                training=_as_list(yaml.get("sutta_training")),
+                formula=_as_list(yaml.get("sutta_formula")),
+                audience=_as_list(yaml.get("sutta_audience")),
+                teacher=_as_list(yaml.get("sutta_teacher")),
+                parallels_agama=_split_parallel_refs(
+                    str(yaml.get("parallels_agama") or "")
+                ),
+                # EBC frontmatter uses the (sic) key `parallels_partilal`.
+                parallels_partial=_split_parallel_refs(
+                    str(yaml.get("parallels_partilal") or "")
+                ),
+            )
+    return None
 
 
 def _find_agama_path(code: str, vault: Path) -> tuple[Path | None, str]:

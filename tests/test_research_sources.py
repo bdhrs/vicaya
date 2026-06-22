@@ -1992,3 +1992,63 @@ class TestCompactQuietOutput:
             "resemblance": True,
             "n": None,
         }
+
+
+class TestGetEbcOverview:
+    """get_ebc_overview must handle the Sn/SNP ambiguity the same way
+    _normalise_citation does: mixed-case "Sn" tries SNP first, all-caps "SN"
+    is Saṃyutta only."""
+
+    @pytest.fixture
+    def ebc_vault(self, tmp_path):
+        vault = tmp_path / "vault"
+        snp_dir = vault / "+Suttas" / "Overviews Suttas" / "SNP"
+        sn_dir = vault / "+Suttas" / "Overviews Suttas" / "SN"
+        snp_dir.mkdir(parents=True)
+        sn_dir.mkdir(parents=True)
+        (snp_dir / "SNP2.2.md").write_text(
+            '---\nsutta_code: "SNP2.2"\nsutta_title: "Ratanasuttaṃ"\n---\n',
+            encoding="utf-8",
+        )
+        (sn_dir / "SN2.2.md").write_text(
+            '---\nsutta_code: "SN2.2"\nsutta_title: "Dutiyakassapasuttaṃ"\n---\n',
+            encoding="utf-8",
+        )
+        return vault
+
+    def test_snp_code_returns_suttanipata(self, ebc_vault):
+        from tools.research_sources import get_ebc_overview
+
+        result = get_ebc_overview("SNP2.2", vault=ebc_vault)
+        assert result is not None
+        assert result.code == "SNP2.2"
+
+    def test_sn_all_caps_returns_samyutta(self, ebc_vault):
+        from tools.research_sources import get_ebc_overview
+
+        result = get_ebc_overview("SN2.2", vault=ebc_vault)
+        assert result is not None
+        assert result.code == "SN2.2"
+
+    def test_sn_mixed_case_prefers_suttanipata(self, ebc_vault):
+        # Regression: "Sn 2.2" previously normalised to "SN2.2" and returned
+        # the Saṃyutta sutta instead of the Suttanipāta one.
+        from tools.research_sources import get_ebc_overview
+
+        result = get_ebc_overview("Sn 2.2", vault=ebc_vault)
+        assert result is not None
+        assert result.code == "SNP2.2"
+
+    def test_sn_mixed_case_falls_back_to_samyutta_when_no_snp(self, tmp_path):
+        from tools.research_sources import get_ebc_overview
+
+        vault = tmp_path / "vault"
+        sn_dir = vault / "+Suttas" / "Overviews Suttas" / "SN"
+        sn_dir.mkdir(parents=True)
+        (sn_dir / "SN2.2.md").write_text(
+            '---\nsutta_code: "SN2.2"\nsutta_title: "Dutiyakassapasuttaṃ"\n---\n',
+            encoding="utf-8",
+        )
+        result = get_ebc_overview("Sn 2.2", vault=vault)
+        assert result is not None
+        assert result.code == "SN2.2"

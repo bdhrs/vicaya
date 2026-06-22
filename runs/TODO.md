@@ -80,6 +80,7 @@ the premise behind dropped #5.
 | #48 sync_notes.py strands commits — no pull before push | done (2026-06-20) | `fix: rebase notes onto remote before push so commits aren't stranded` — after committing the note by pathspec, `sync_notes.py` now runs `git pull --rebase --autostash origin <branch>` (branch detected via `rev-parse`, falls back to `main`) then pushes `HEAD:refs/heads/<branch>` explicitly, fixing both the non-fast-forward stranding (inverse of Done #21) and the "must fully qualify the ref (src HEAD)" error; `--autostash` keeps other in-flight vault edits from blocking the rebase; a rebase failure aborts cleanly (`git rebase --abort`) and falls back to commit-saved-locally, preserving the best-effort push contract; `main()` now takes `argv` for testability; 2 real-git regression tests (remote-advanced, dirty-tree) |
 | #35 lookup-book broken — cst_book_translator import fails | done (2026-06-20) | `fix: stub ProjectPaths with TSV path for dpd-db cst_book_translator` — dpd-db's translator was changed (06-15) to read `ProjectPaths().cst_book_translator_tsv_path` at import time; the loader's `lambda: None` stub turned that into `None.attr` and broke every lookup-book call. Stub now returns a SimpleNamespace pointing at the TSV beside the module (+ `cst_xml_dir` placeholder). 6 `TestLookupBook` tests green again. The original "add a path candidate" proposal was a misdiagnosis — the path matched; the stub was the gap. |
 | #50 `.doc` extraction fallback | done (2026-06-22) | `docs: add libreoffice .doc extraction row to Phase 3 table` — added a `.doc` row to the SKILL.md Phase 3 format/command table using `libreoffice --headless --convert-to txt`; added a note that `ebook-convert` fails silently on `.doc` files. (20260615-101237) |
+| #42 (part) EBC `"Sn N.N"` returns wrong sutta | done (2026-06-22) | `fix: get-ebc-overview tries SNP before SN for mixed-case "Sn" input` — `get_ebc_overview` now extracts the raw prefix before uppercasing; if it's mixed-case `sn` without trailing `p`, tries `SNP{tail}` first then `SN{tail}`, mirroring `_normalise_citation`; 4 regression tests in `TestGetEbcOverview`. dhammatalks AN URL residue stays open. (20260604-034355) |
 
 ## Remaining — prioritized
 
@@ -118,11 +119,10 @@ _(#38 moved to Done — WisdomLib skip clause added 2026-06-20)_
   relabelling note in Phase 7 template (20260610-025816); nrf-table texts
   (Milindapañha) need tier-classification guidance (20260605-025640).
   Verified 2026-06-11: neither guidance exists in SKILL.md.
-- **#42 EBC overview code mismatch for Suttanipāta** — verified live
-  2026-06-11: `get-ebc-overview "Sn 2.2"` → SN2.2 Dutiyakassapasutta
-  (Saṃyutta, wrong text) while "Snp 2.2" is correct; ambiguous "Sn"
-  collapses into "SN" (20260604-034355). Also: dhammatalks.org AN URL
-  pattern 404s (20260605-082000).
+- **#42 residue: dhammatalks.org AN URL pattern** — AN URL structure on
+  dhammatalks.org differs from the MN example in SKILL.md; agents construct
+  the wrong URL and get 404s (20260605-082000). EBC Sn/SNP code mismatch
+  fixed 2026-06-22 (see Done).
 - **#53 Sub-agent notification cross-labelling.** Sub-agent completion
   notifications can carry a wrong phase ID (Phase 2 id reported Phase 3
   status). Never trust the notification summary for phase id/status — always
