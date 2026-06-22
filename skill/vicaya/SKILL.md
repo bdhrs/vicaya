@@ -1709,6 +1709,8 @@ paragraph is the spec; do not reverse-engineer the shape from sibling notes.
   `## Critical Gaps`, `## Bibliography`, and `## Angles Not Pursued` when
   applicable.
 
+**Comparative-religion questions (non-Buddhist tradition as primary subject).** When the research question centres on a tradition with no canon-DB primary text (e.g. Christianity, Islam, Judaism, Stoicism), replace `## Canon Evidence (T1)` with a tradition-appropriate heading — `## Biblical Evidence (T1)`, `## Quranic Evidence (T1)`, `## Stoic Sources (T1)`, etc. The validator accepts any `## * Evidence (T1)` heading and does not warn. Use the same blockquote + citation discipline as the standard Canon Evidence section: verbatim primary-text quotes with source attribution, not paraphrase. The Buddhist canon evidence (if any parallel is relevant) goes in a separate `## Canon Evidence (T1)` section alongside.
+
 **Before writing, run this source-coverage check:**
 - Is every position from the perspective map represented by at least one block-quoted canon passage?
 - Is every *applicable* angle from the Phase 1 triage represented by at least one citation, and is every *non-applicable* angle logged in `## Angles Not Pursued` with a one-line reason?
