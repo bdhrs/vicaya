@@ -14,3 +14,10 @@ complement the global rules and the canonical `/vicaya` workflow in
   them as part of closing out the work rather than leaving them for later.
 - Always run the relevant tests after a change, and add regression coverage for
   any bug you fix or behaviour you add.
+
+## Static analysis
+
+- **Fix every diagnostic in every file you touch.** When the linter or type
+  checker flags an error or warning in a file you have edited — even if the
+  issue predates your change — fix it before closing the task. Leave touched
+  files cleaner than you found them.
