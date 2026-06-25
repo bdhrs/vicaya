@@ -200,6 +200,12 @@ pip install -U yt-dlp          # or: uv tool install yt-dlp
 # Calibre (optional — provides ebook-convert for Kindle/Mobipocket extraction in library folders)
 # Install Calibre from https://calibre-ebook.com/download; ebook-convert is included.
 
+# opencode CLI (optional — cross-check chain)
+brew install opencode               # macOS; or: curl -fsSL https://opencode.ai/install | bash
+
+# agy CLI (optional — cross-check chain)
+brew install antigravity           # macOS; or check https://github.com/google-gemini for other platforms
+
 # Gemini CLI — requires Google AI Studio API key
 npm install -g @google/gemini-cli   # or follow https://github.com/google-gemini/gemini-cli
 ```
@@ -276,6 +282,7 @@ VICAYA_LIBRARY_FOLDERS_EXCLUDE=
 VICAYA_CANON_DB=~/path/to/dpd-db/resources/tipitaka_translation_db/tipitaka-translation-data.db
 VICAYA_DPD_DB=~/path/to/dpd-db/dpd.db
 VICAYA_GRETIL_PATH=~/MyFiles/2_Resources/gretil
+VICAYA_CROSS_CHECK_CHAIN=
 ```
 
 Verify the file was written and does not contain placeholder text:
