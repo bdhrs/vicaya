@@ -1,7 +1,0 @@
-{
-  "_help": "OpenRouter model chain for Phase 6 cross-check. Lead is a paid model (cheap + reliable); free backup only fires if the paid one is down. CAP: max 3 entries (OpenRouter API limit). Browse models at https://openrouter.ai/models",
-  "models": [
-    "deepseek/deepseek-v4-flash",
-    "openai/gpt-oss-120b:free"
-  ]
-}

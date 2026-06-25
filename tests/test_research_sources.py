@@ -23,7 +23,6 @@ from tools.research_sources import (  # noqa: E402
     DEFAULT_GRETIL_PATH,
     CanonHit,
     VaultHit,
-    gemini_cross_check,
     lookup_book,
     resolve_citation,
     search_canon,
@@ -333,24 +332,6 @@ class TestSearchVault:
         assert isinstance(hits, list)
         for h in hits:
             assert isinstance(h, VaultHit)
-
-
-# ---------- gemini_cross_check ----------
-
-
-class TestGeminiCrossCheck:
-    def test_trivial_prompt_returns_text(self, monkeypatch):
-        class _Result:
-            returncode = 0
-            stdout = "pong"
-            stderr = ""
-
-        monkeypatch.setattr(
-            "tools.research_sources.subprocess.run",
-            lambda *a, **kw: _Result(),
-        )
-        out = gemini_cross_check("Reply with the single word: pong")
-        assert isinstance(out, str)
 
 
 class TestChannelAllowlist:

@@ -11,7 +11,7 @@
 - **Note validation:** `scripts/validate_note.py` uses `tools/note_checks.py` for final-note mechanical checks
 - **PDF generation:** `scripts/generate_note_pdf.py` renders optional final-note PDFs with `markdown` and `weasyprint`
 - **Web:** `WebSearch` / `WebFetch` (Claude Code built-ins)
-- **Cross-check:** `cross_check()` POSTs to OpenRouter (model list in `data/openrouter_models.json` — server-side fallback via the `models: [...]` field, cap 3). Current lead: `deepseek/deepseek-v4-flash` (paid, ~22s, ~$0.0001/call); free `gpt-oss-120b:free` as outage backup. On any failure returns a `# SELF_REVIEW:` sentinel so the calling agent runs the Phase 6 checklist on its own synthesis. Stdlib `urllib`; no SDK dep. Key from `OPENROUTER_API_KEY` env / `.env`, or `~/.local/share/opencode/auth.json` → `.openrouter.key`.
+- **Cross-check:** `cross_check()` tries each `app:model` entry in `$VICAYA_CROSS_CHECK_CHAIN` (`.env`, pipe-separated) in order via subprocess — `opencode run -m <model> <prompt>` or `agy --print <prompt> --model <model>`. First entry to exit 0 with non-empty stdout wins. On empty/unset chain or every entry failing, returns a `# SELF_REVIEW:` sentinel so the calling agent runs the Phase 6 checklist on its own synthesis. No HTTP/SDK dep; vicaya stores no provider API keys — `opencode`/`agy` must already be authenticated out-of-band.
 - **Sanskrit search:** `grep -rn -F --include="*.htm"` across a local GRETIL corpus (shallow clone of `wujastyk/GRETIL-mirror`). Unicode IAST `.htm` files; no new dependencies.
 - **Validation:** pytest, ruff, pyright, pyrefly
 
