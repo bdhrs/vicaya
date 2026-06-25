@@ -30,13 +30,13 @@ Each source is optional — if the tool or path isn't configured it is silently 
 | **Sanskrit (GRETIL)** | Local clone of the GRETIL corpus — Vedic, Epic, Upaniṣadic, and philosophical Sanskrit texts in IAST plain text |
 | **YouTube** | Dhamma talks and sutta studies via a curated channel allowlist |
 | **Web** | General search and page fetch |
-| **Gemini cross-check** | Second model reviews the draft before the note is written |
+| **Cross-check** | Second model (via `VICAYA_CROSS_CHECK_CHAIN`) reviews the draft before the note is written |
 
 ## Setup
 
 1. `cp .env.example .env` and edit the paths to match your vault, library,
    and canon database.
-2. Install whichever of these you want to use: `obsidian` CLI, `yt-dlp`, `sqlite3`, `gemini` CLI.
+2. Install whichever of these you want to use: `obsidian` CLI, `yt-dlp`, `sqlite3`, `opencode` CLI, `agy`.
    For richer text extraction from library folders: `pdftotext`, `ebook-convert` (ships with Calibre).
 3. `uv sync` to install Python dependencies.
 4. Symlink the main skill folder into your agents' skills directories. Using
@@ -179,7 +179,8 @@ which uv          # Python package manager — required
 which obsidian    # Obsidian CLI — optional (vault search)
 which ebook-convert  # Calibre — optional (extracts Kindle/Mobipocket ebooks in library folders)
 which yt-dlp      # yt-dlp — optional (YouTube search)
-which gemini      # Gemini CLI — optional (cross-check model)
+which opencode    # opencode CLI — optional (cross-check chain)
+which agy         # agy CLI — optional (cross-check chain)
 python3 --version # system Python — only needed if uv is absent
 ```
 
@@ -198,6 +199,12 @@ pip install -U yt-dlp          # or: uv tool install yt-dlp
 
 # Calibre (optional — provides ebook-convert for Kindle/Mobipocket extraction in library folders)
 # Install Calibre from https://calibre-ebook.com/download; ebook-convert is included.
+
+# opencode CLI (optional — cross-check chain)
+brew install opencode               # macOS; or: curl -fsSL https://opencode.ai/install | bash
+
+# agy CLI (optional — cross-check chain)
+brew install antigravity           # macOS; or check https://github.com/google-gemini for other platforms
 
 # Gemini CLI — requires Google AI Studio API key
 npm install -g @google/gemini-cli   # or follow https://github.com/google-gemini/gemini-cli
@@ -275,6 +282,7 @@ VICAYA_LIBRARY_FOLDERS_EXCLUDE=
 VICAYA_CANON_DB=~/path/to/dpd-db/resources/tipitaka_translation_db/tipitaka-translation-data.db
 VICAYA_DPD_DB=~/path/to/dpd-db/dpd.db
 VICAYA_GRETIL_PATH=~/MyFiles/2_Resources/gretil
+VICAYA_CROSS_CHECK_CHAIN=
 ```
 
 Verify the file was written and does not contain placeholder text:

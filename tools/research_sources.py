@@ -4,7 +4,7 @@ Five functions that the skill calls in sequence:
     search_vault         - Obsidian vault full-text search
     search_canon         - SQL search across CST + translations
     resolve_citation     - Book-code + paranum -> human-readable sutta reference
-    gemini_cross_check   - Pipe a synthesis to Gemini for a second opinion
+    cross_check          - Pipe a synthesis through an app/model chain for a second opinion
 
 Each helper subprocesses the relevant CLI tool. Returns plain Python data; no printing.
 Empty lists on no-results. Raises on tool-missing.
@@ -1475,71 +1475,58 @@ def sc_search(
     return hits
 
 
-# ---------- Gemini cross-check ----------
+# ---------- Cross-check (app/model chain) ----------
 
 
-def gemini_cross_check(prompt: str, timeout: int = 120) -> str:
-    """Send a prompt to `gemini -p` and return the text response.
+def _parse_cross_check_chain() -> list[tuple[str, str]]:
+    entries: list[tuple[str, str]] = []
+    raw = os.environ.get("VICAYA_CROSS_CHECK_CHAIN", "")
+    for segment in raw.split("|"):
+        segment = segment.strip()
+        if not segment:
+            continue
+        parts = segment.split(":", 1)
+        if len(parts) != 2:
+            continue
+        app, model = parts[0].strip(), parts[1].strip()
+        if app and model:
+            entries.append((app, model))
+    return entries
 
-    Returns a '# ERROR: ...' line on timeout or failure so the caller can
-    distinguish a rate-limit / quota error from a genuine empty response.
-    """
+
+def _run_opencode(prompt: str, model: str, timeout: int) -> str | None:
     try:
         result = subprocess.run(
-            ["gemini", "--approval-mode", "plan", "-p", prompt],
+            ["opencode", "run", "-m", model, prompt],
             capture_output=True,
             text=True,
             timeout=timeout,
         )
-    except subprocess.TimeoutExpired:
-        return "# ERROR: gemini timed out"
-    if result.returncode != 0:
-        lines = result.stderr.strip().splitlines()
-        # Prefer the human-readable message line if present
-        msg_line = next(
-            (ln.strip() for ln in lines if ln.strip().startswith("message:")), None
-        )
-        reason = msg_line or (lines[-1].strip() if lines else "non-zero exit")
-        return f"# ERROR: {reason}"
-    return result.stdout.strip()
-
-
-# ---------- Cross-check (OpenRouter model chain) ----------
-
-_OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-_OPENROUTER_MODELS_PATH = _REPO_ROOT / "data" / "openrouter_models.json"
-_OPENROUTER_MAX_MODELS = 3  # OpenRouter API caps the `models` array at 3.
-_OPENCODE_AUTH_PATH = Path.home() / ".local" / "share" / "opencode" / "auth.json"
-
-
-def _load_openrouter_models() -> list[str]:
-    try:
-        with _OPENROUTER_MODELS_PATH.open("r", encoding="utf-8") as f:
-            models = json.load(f).get("models")
-        if isinstance(models, list) and all(isinstance(m, str) and m for m in models):
-            return models[:_OPENROUTER_MAX_MODELS]
-    except (OSError, json.JSONDecodeError):
-        pass
-    return []
-
-
-def _load_openrouter_key() -> str | None:
-    key = os.environ.get("OPENROUTER_API_KEY")
-    if key:
-        return key
-    try:
-        with _OPENCODE_AUTH_PATH.open("r", encoding="utf-8") as f:
-            entry = json.load(f).get("openrouter")
-    except (OSError, json.JSONDecodeError):
+    except (subprocess.TimeoutExpired, OSError):
         return None
-    if isinstance(entry, dict):
-        k = entry.get("key")
-        if isinstance(k, str) and k:
-            return k
-    return None
+    if result.returncode != 0:
+        return None
+    text = result.stdout.strip()
+    return text if text else None
 
 
-_SELF_REVIEW_SENTINEL = """# SELF_REVIEW: OpenRouter cross-check unavailable.
+def _run_agy(prompt: str, model: str, timeout: int) -> str | None:
+    try:
+        result = subprocess.run(
+            ["agy", "--print", prompt, "--model", model],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    text = result.stdout.strip()
+    return text if text else None
+
+
+_SELF_REVIEW_SENTINEL = """# SELF_REVIEW: cross-check unavailable.
 
 Run the Phase 6 checklist on your own synthesis before writing the note.
 For each item, either fix the synthesis or note "no issue":
@@ -1550,12 +1537,13 @@ For each item, either fix the synthesis or note "no issue":
 2. Tier integrity — Is any claim attributed to the root canon (mūla) that
    actually originates in the commentarial tradition (aṭṭhakathā / ṭīkā)?
    Is any teacher's interpretation presented as if it were canonical?
-3. Citation quality — Are citations precise (book, chapter, paragraph,
-   page where applicable)? Any "as the Buddha said" without a sutta ref?
-4. Internal consistency — Do the evidence and the analysis agree? Any
-   conclusion that the cited passages do not actually support?
-5. Overreach — Any claim stated more strongly than the sources warrant?
-   Any speculation presented as established fact?
+3. Disputed consensus — Is any live interpretive dispute presented as
+   settled? Are there scholars or lineages who hold a substantially
+   different position that the synthesis does not mention?
+4. Factual accuracy — Are there errors in Pāḷi terminology, sutta
+   references, historical claims, or scholarly attributions?
+5. General — Any other factual errors, oversights, or alternative
+   interpretations not captured above.
 """
 
 
@@ -1840,45 +1828,26 @@ def annotate_citations(text: str, dpd_db: Path | None = None) -> str:
 
 
 def cross_check(prompt: str, timeout: int = 180) -> str:
-    """Cross-check `prompt` via OpenRouter's model chain.
+    """Cross-check `prompt` via the app/model chain in VICAYA_CROSS_CHECK_CHAIN.
 
-    Returns the model's text on success. On any failure (no key, all models
-    unreachable, network error, bad response shape) returns the
-    `# SELF_REVIEW:` sentinel so the calling agent can run the checklist on
-    its own synthesis instead.
+    Returns the model's text on success. On any failure (empty chain, every
+    entry failing, unknown app tokens) returns the `# SELF_REVIEW:` sentinel
+    so the calling agent can run the checklist on its own synthesis instead.
 
-    Model list lives in `data/openrouter_models.json` — edit freely;
-    OpenRouter routes server-side via the `models: [...]` field, so the
-    first reachable entry wins.
+    Chain format: pipe-separated `app:model` entries, tried in order.
+    Supported apps: `opencode`, `agy`.
     """
-    import urllib.request
-
-    key = _load_openrouter_key()
-    models = _load_openrouter_models()
-    if not key or not models:
-        return _SELF_REVIEW_SENTINEL
-
-    body = json.dumps(
-        {
-            "models": models,
-            "messages": [{"role": "user", "content": prompt}],
-        }
-    ).encode("utf-8")
-    req = urllib.request.Request(
-        _OPENROUTER_URL,
-        data=body,
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            payload = json.loads(r.read().decode("utf-8"))
-        text = (payload["choices"][0]["message"]["content"] or "").strip()
-    except Exception:
-        return _SELF_REVIEW_SENTINEL
-    if not text:
-        return _SELF_REVIEW_SENTINEL
-    return annotate_citations(text)
+    chain = _parse_cross_check_chain()
+    for app, model in chain:
+        if app == "opencode":
+            text = _run_opencode(prompt, model, timeout)
+        elif app == "agy":
+            text = _run_agy(prompt, model, timeout)
+        else:
+            continue
+        if text is not None:
+            return annotate_citations(text)
+    return _SELF_REVIEW_SENTINEL
 
 
 # ---------- CST book translator (sibling dpd-db) ----------
@@ -2034,7 +2003,6 @@ from tools.scratch import (  # noqa: E402, F401
 #     uv run tools/research_sources.py resolve-citation s0201m_mul 23
 #     uv run tools/research_sources.py search-vault "paṭiccasamuppāda" --limit 5
 #     uv run tools/research_sources.py search-library-folders "dependent origination" --limit 5
-#     echo "review this synthesis: ..." | uv run tools/research_sources.py gemini-cross-check
 
 
 _QUIET_MAXLEN = 200
@@ -2167,15 +2135,6 @@ def _cli() -> int:
     def _handle_lookup_book(args):
         _dump(lookup_book(args.value))
         return _done()
-
-    def _handle_gemini_cross_check(args):
-        prompt = sys.stdin.read()
-        if not prompt.strip():
-            print("error: empty prompt on stdin", file=sys.stderr)
-            return _done(exit_code=1, autolog=False)
-        text = gemini_cross_check(prompt, timeout=args.timeout)
-        sys.stdout.write(text + "\n")
-        return _done(["<stdin>"], {"output": text})
 
     def _handle_cross_check(args):
         prompt = sys.stdin.read()
@@ -2397,17 +2356,10 @@ def _cli() -> int:
     pr.add_argument("paranum")
     pr.set_defaults(func=_handle_resolve_citation)
 
-    pg = sub.add_parser(
-        "gemini-cross-check",
-        help="Reads prompt from stdin to avoid shell quoting issues.",
-    )
-    pg.add_argument("--timeout", type=int, default=120)
-    pg.set_defaults(func=_handle_gemini_cross_check)
-
     pcc = sub.add_parser(
         "cross-check",
-        help="OpenRouter cross-check; falls back to a "
-        "# SELF_REVIEW: sentinel if unreachable. "
+        help="App/model chain cross-check per VICAYA_CROSS_CHECK_CHAIN; "
+        "falls back to # SELF_REVIEW: sentinel if unreachable. "
         "Reads prompt from stdin.",
     )
     pcc.add_argument("--timeout", type=int, default=180)

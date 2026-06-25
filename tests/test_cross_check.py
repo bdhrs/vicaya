@@ -1,12 +1,8 @@
-"""Unit tests for `cross_check`. Network calls are monkey-patched."""
+"""Unit tests for `cross_check`. Subprocess calls are monkey-patched."""
 
 from __future__ import annotations
 
-import email.message
-import io
-import json
 import sys
-import urllib.error
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -14,142 +10,139 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools import research_sources as rs  # noqa: E402
 
 
-class _FakeResp:
-    def __init__(self, body: bytes):
-        self._body = body
-
-    def read(self):
-        return self._body
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *a):
-        return False
+# ---------- _parse_cross_check_chain ----------
 
 
-# ---------- _load_openrouter_key ----------
-
-
-def test_key_prefers_env(monkeypatch, tmp_path):
-    monkeypatch.setenv("OPENROUTER_API_KEY", "env-key")
-    auth = tmp_path / "auth.json"
-    auth.write_text(json.dumps({"openrouter": {"key": "file-key"}}))
-    monkeypatch.setattr(rs, "_OPENCODE_AUTH_PATH", auth)
-    assert rs._load_openrouter_key() == "env-key"
-
-
-def test_key_falls_back_to_auth_json(monkeypatch, tmp_path):
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    auth = tmp_path / "auth.json"
-    auth.write_text(json.dumps({"openrouter": {"key": "file-key"}}))
-    monkeypatch.setattr(rs, "_OPENCODE_AUTH_PATH", auth)
-    assert rs._load_openrouter_key() == "file-key"
-
-
-def test_key_returns_none_when_unset(monkeypatch, tmp_path):
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    monkeypatch.setattr(rs, "_OPENCODE_AUTH_PATH", tmp_path / "missing.json")
-    assert rs._load_openrouter_key() is None
-
-
-# ---------- _load_openrouter_models ----------
-
-
-def test_models_reads_json(monkeypatch, tmp_path):
-    f = tmp_path / "or.json"
-    f.write_text(json.dumps({"models": ["a/b:free", "c/d:free"]}))
-    monkeypatch.setattr(rs, "_OPENROUTER_MODELS_PATH", f)
-    assert rs._load_openrouter_models() == ["a/b:free", "c/d:free"]
-
-
-def test_models_truncates_to_api_cap(monkeypatch, tmp_path):
-    f = tmp_path / "or.json"
-    overlong = [f"m{i}/x:free" for i in range(rs._OPENROUTER_MAX_MODELS + 2)]
-    f.write_text(json.dumps({"models": overlong}))
-    monkeypatch.setattr(rs, "_OPENROUTER_MODELS_PATH", f)
-    out = rs._load_openrouter_models()
-    assert len(out) == rs._OPENROUTER_MAX_MODELS
-    assert out == overlong[: rs._OPENROUTER_MAX_MODELS]
-
-
-def test_models_returns_empty_when_missing(monkeypatch, tmp_path):
-    monkeypatch.setattr(rs, "_OPENROUTER_MODELS_PATH", tmp_path / "nope.json")
-    assert rs._load_openrouter_models() == []
-
-
-def test_models_returns_empty_on_bad_json(monkeypatch, tmp_path):
-    f = tmp_path / "bad.json"
-    f.write_text("{ not valid")
-    monkeypatch.setattr(rs, "_OPENROUTER_MODELS_PATH", f)
-    assert rs._load_openrouter_models() == []
-
-
-def test_models_returns_empty_on_wrong_shape(monkeypatch, tmp_path):
-    f = tmp_path / "shape.json"
-    f.write_text(json.dumps({"models": [1, 2, 3]}))
-    monkeypatch.setattr(rs, "_OPENROUTER_MODELS_PATH", f)
-    assert rs._load_openrouter_models() == []
-
-
-# ---------- cross_check ----------
-
-
-def test_cross_check_returns_model_text(monkeypatch):
-    monkeypatch.setattr(rs, "_load_openrouter_key", lambda: "k")
-    monkeypatch.setattr(rs, "_load_openrouter_models", lambda: ["a/b:free"])
-    payload = {"choices": [{"message": {"content": "critique"}}]}
-    monkeypatch.setattr(
-        "urllib.request.urlopen",
-        lambda req, timeout: _FakeResp(json.dumps(payload).encode()),
+def test_parse_chain_parses_two_entries(monkeypatch):
+    monkeypatch.setenv(
+        "VICAYA_CROSS_CHECK_CHAIN",
+        "opencode:openrouter/deepseek/v4 | agy:Gemini 3.5 Flash",
     )
-    assert rs.cross_check("hi") == "critique"
+    assert rs._parse_cross_check_chain() == [
+        ("opencode", "openrouter/deepseek/v4"),
+        ("agy", "Gemini 3.5 Flash"),
+    ]
 
 
-def test_cross_check_self_review_when_no_key(monkeypatch):
-    monkeypatch.setattr(rs, "_load_openrouter_key", lambda: None)
-    monkeypatch.setattr(rs, "_load_openrouter_models", lambda: ["a/b:free"])
-    assert rs.cross_check("hi").startswith("# SELF_REVIEW:")
+def test_parse_chain_returns_empty_for_unset_env(monkeypatch):
+    monkeypatch.delenv("VICAYA_CROSS_CHECK_CHAIN", raising=False)
+    assert rs._parse_cross_check_chain() == []
 
 
-def test_cross_check_self_review_when_no_models(monkeypatch):
-    monkeypatch.setattr(rs, "_load_openrouter_key", lambda: "k")
-    monkeypatch.setattr(rs, "_load_openrouter_models", lambda: [])
-    assert rs.cross_check("hi").startswith("# SELF_REVIEW:")
+def test_parse_chain_returns_empty_for_blank_env(monkeypatch):
+    monkeypatch.setenv("VICAYA_CROSS_CHECK_CHAIN", "")
+    assert rs._parse_cross_check_chain() == []
 
 
-def test_cross_check_self_review_on_http_error(monkeypatch):
-    monkeypatch.setattr(rs, "_load_openrouter_key", lambda: "k")
-    monkeypatch.setattr(rs, "_load_openrouter_models", lambda: ["a/b:free"])
-
-    def boom(req, timeout):
-        raise urllib.error.HTTPError(
-            "http://x", 429, "rate limit", email.message.Message(), io.BytesIO(b"")
-        )
-
-    monkeypatch.setattr("urllib.request.urlopen", boom)
-    assert rs.cross_check("hi").startswith("# SELF_REVIEW:")
+def test_parse_chain_skips_malformed_no_colon(monkeypatch):
+    monkeypatch.setenv("VICAYA_CROSS_CHECK_CHAIN", "opencode|agy:model")
+    assert rs._parse_cross_check_chain() == [("agy", "model")]
 
 
-def test_cross_check_self_review_on_empty_content(monkeypatch):
-    monkeypatch.setattr(rs, "_load_openrouter_key", lambda: "k")
-    monkeypatch.setattr(rs, "_load_openrouter_models", lambda: ["a/b:free"])
-    payload = {"choices": [{"message": {"content": "   "}}]}
-    monkeypatch.setattr(
-        "urllib.request.urlopen",
-        lambda req, timeout: _FakeResp(json.dumps(payload).encode()),
+def test_parse_chain_skips_malformed_empty_app(monkeypatch):
+    monkeypatch.setenv("VICAYA_CROSS_CHECK_CHAIN", ":model|agy:model")
+    assert rs._parse_cross_check_chain() == [("agy", "model")]
+
+
+def test_parse_chain_skips_malformed_empty_model(monkeypatch):
+    monkeypatch.setenv("VICAYA_CROSS_CHECK_CHAIN", "opencode:|agy:model")
+    assert rs._parse_cross_check_chain() == [("agy", "model")]
+
+
+def test_parse_chain_trims_whitespace(monkeypatch):
+    monkeypatch.setenv(
+        "VICAYA_CROSS_CHECK_CHAIN", " opencode : deepseek/v4 | agy : Gemini 3.5 "
     )
+    assert rs._parse_cross_check_chain() == [
+        ("opencode", "deepseek/v4"),
+        ("agy", "Gemini 3.5"),
+    ]
+
+
+# ---------- cross_check: chain unset / empty ----------
+
+
+def test_cross_check_self_review_when_chain_unset(monkeypatch):
+    monkeypatch.delenv("VICAYA_CROSS_CHECK_CHAIN", raising=False)
     assert rs.cross_check("hi").startswith("# SELF_REVIEW:")
+
+
+def test_cross_check_self_review_when_chain_blank(monkeypatch):
+    monkeypatch.setenv("VICAYA_CROSS_CHECK_CHAIN", "")
+    assert rs.cross_check("hi").startswith("# SELF_REVIEW:")
+
+
+# ---------- cross_check: single working entry ----------
+
+
+def test_cross_check_opencode_success(monkeypatch):
+    monkeypatch.setenv(
+        "VICAYA_CROSS_CHECK_CHAIN", "opencode:deepseek/deepseek-v4-flash"
+    )
+    monkeypatch.setattr(rs, "_run_opencode", lambda p, m, t: "hello")
+    assert rs.cross_check("hi") == "hello"
+
+
+def test_cross_check_agy_success(monkeypatch):
+    monkeypatch.setenv("VICAYA_CROSS_CHECK_CHAIN", "agy:Gemini 3.5 Flash (High)")
+    monkeypatch.setattr(rs, "_run_agy", lambda p, m, t: "hello")
+    assert rs.cross_check("hi") == "hello"
+
+
+# ---------- cross_check: fallthrough ----------
+
+
+def test_cross_check_first_fails_second_succeeds(monkeypatch):
+    monkeypatch.setenv(
+        "VICAYA_CROSS_CHECK_CHAIN",
+        "opencode:bad|agy:good",
+    )
+    monkeypatch.setattr(rs, "_run_opencode", lambda p, m, t: None)
+    monkeypatch.setattr(rs, "_run_agy", lambda p, m, t: "second wins")
+    assert rs.cross_check("hi") == "second wins"
+
+
+# ---------- cross_check: all fail ----------
+
+
+def test_cross_check_all_fail_returns_self_review(monkeypatch):
+    monkeypatch.setenv(
+        "VICAYA_CROSS_CHECK_CHAIN",
+        "opencode:bad|agy:also-bad",
+    )
+    monkeypatch.setattr(rs, "_run_opencode", lambda p, m, t: None)
+    monkeypatch.setattr(rs, "_run_agy", lambda p, m, t: None)
+    assert rs.cross_check("hi").startswith("# SELF_REVIEW:")
+
+
+# ---------- cross_check: unknown app ----------
+
+
+def test_cross_check_unknown_app_treated_as_failure(monkeypatch):
+    monkeypatch.setenv("VICAYA_CROSS_CHECK_CHAIN", "unknown:model")
+    assert rs.cross_check("hi").startswith("# SELF_REVIEW:")
+
+
+def test_cross_check_unknown_app_falls_through_to_valid(monkeypatch):
+    monkeypatch.setenv(
+        "VICAYA_CROSS_CHECK_CHAIN",
+        "unknown:model|opencode:good",
+    )
+    monkeypatch.setattr(rs, "_run_opencode", lambda p, m, t: "opencode text")
+    assert rs.cross_check("hi") == "opencode text"
+
+
+# ---------- sentinel checklist matches the external-review rubric ----------
 
 
 def test_self_review_lists_all_checklist_items(monkeypatch):
-    monkeypatch.setattr(rs, "_load_openrouter_key", lambda: None)
+    monkeypatch.delenv("VICAYA_CROSS_CHECK_CHAIN", raising=False)
     out = rs.cross_check("hi")
     for label in (
         "Perspective coverage",
         "Tier integrity",
-        "Citation quality",
-        "Internal consistency",
-        "Overreach",
+        "Disputed consensus",
+        "Factual accuracy",
+        "General",
     ):
         assert label in out

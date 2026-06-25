@@ -64,7 +64,8 @@ Seven phases (see `SKILL.md`):
 | `obsidian` CLI v1.12.4+ | yes | `obsidian version` |
 | `sqlite3` | yes | `sqlite3 --version` |
 | `yt-dlp` | yes (YouTube search) | `yt-dlp --version` |
-| `gemini` CLI | optional (cross-check) | `gemini --version` |
+| `opencode` CLI | optional (cross-check chain) | `opencode --version` |
+| `agy` CLI | optional (cross-check chain) | `agy --version` |
 | `uv` | yes (to run helpers) | `uv --version` |
 
 ## Configuration

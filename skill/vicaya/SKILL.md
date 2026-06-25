@@ -87,7 +87,7 @@ It prints all `VICAYA_*` values as shell-quoted `export` lines with `~` expanded
 - Canon db: read-only SQLite at `$VICAYA_CANON_DB`.
 - DPD dictionary db: read-only SQLite at `$VICAYA_DPD_DB` — Pāḷi word meanings, grammar, roots, and inflected-form resolution. See the **DPD dictionary database** section below for the two lookup paths.
 - Library folders: `$VICAYA_LIBRARY_FOLDERS` (pipe-separated paths) are indexed into `$VICAYA_LIBRARY_FOLDERS_INDEX`, a local SQLite FTS5 database. Calibre libraries are recognised automatically — author and tag metadata (`Calibre #id | Authors: … | Tags: …`) is prepended to each book's FTS text, making tag/author searches work through the unified index. Normal search reads the index only; source files are touched only during `library-folders-refresh` or manual inspection.
-- Cross-check uses an OpenRouter model chain (see Phase 6; current lead `deepseek/deepseek-v4-flash` — paid but ~$0.0001/call). Requires `OPENROUTER_API_KEY` in env / `.env`, or an OpenRouter key in `~/.local/share/opencode/auth.json`. When unavailable the helper returns a `# SELF_REVIEW:` sentinel and the agent runs the checklist on its own synthesis.
+- Cross-check uses `VICAYA_CROSS_CHECK_CHAIN` (env), a pipe-separated `app:model` list tried in order (`opencode run -m <model>` or `agy --print ... --model <model>`). The first successful subprocess response wins; if the chain is empty or every entry fails, the helper returns a `# SELF_REVIEW:` sentinel and the agent runs the checklist on its own synthesis. vicaya does not store any provider API keys — `opencode`/`agy` must already be authenticated.
 - **Book code → source XML map**: `/home/bodhirasa/MyFiles/3_Active/dpd-db/tools/pali_text_files.py` maps every canon book code (e.g. `s0201m_mul`) to its source XML file in the DPD database. Consult this when you need to know which raw XML file a given book code corresponds to, or when debugging why a search returns no results for a book you expect to exist.
 - **EBC vault** (Early Buddhist Connections): `$VICAYA_EBC_VAULT_PATH` — a separate, read-only Obsidian vault of curated EBT material. Supplies per-sutta Āgama-parallel metadata, multiple parallel English translations of each sutta, Chinese-Āgama translations (Patton + BDK), and a Pātimokkha rule/commentary set. See the **EBC vault** section below.
 
@@ -117,9 +117,8 @@ Subcommands (each prints JSON to stdout):
 | `search-library-folders QUERY` | `--limit N` `--include-duplicates` | Search the library folders index. Exact duplicates are collapsed by default. |
 | `library-folders-duplicates` | `--samples N` | Read-only duplicate diagnostic from the local index. |
 | `lookup-book VALUE` | — | Translate any CST book identifier into the others (filename, table, Pāḷi title, gui code, DPD code) |
-| `cross-check` | `--timeout N`; **prompt on stdin** | OpenRouter model chain (see `data/openrouter_models.json`) → `# SELF_REVIEW:` sentinel on failure. Output is post-processed: every sutta citation is stamped `[VERIFIED]`, `[REJECTED — not in sutta_info]`, or `[UNVERIFIABLE — …]` (global verse numbers). Use this in Phase 6. |
+| `cross-check` | `--timeout N`; **prompt on stdin** | App/model chain per `VICAYA_CROSS_CHECK_CHAIN` → `# SELF_REVIEW:` sentinel on failure. Output is post-processed: every sutta citation is stamped `[VERIFIED]`, `[REJECTED — not in sutta_info]`, or `[UNVERIFIABLE — …]` (global verse numbers). Use this in Phase 6. |
 | `verify-citation REF` | — | Confirm a human sutta reference (`MN60`, `SN 46.42`, `Sn 4.8`, `Dhp 178`, `SN48.9-10`) exists in `dpd.db sutta_info`. Handles range-stored books by containment, hyphenated ranges by endpoints, Thag/Thig/Kp aliases. Exit 0 verified · 1 rejected · 2 unverifiable (global verse number — cite by chapter.sutta instead). Existence-only; says nothing about content claims. |
-| `gemini-cross-check` | `--timeout N`; **prompt on stdin** | Legacy direct gemini call. Not used in Phase 6; kept for ad-hoc use if you want a second opinion from a different provider. |
 | `get-ebc-overview SUTTA_CODE` | — | Parsed EBC overview card: PTS ref, titles, themes, training, formula, **named Āgama parallels**, partial parallels. Accepts `MN10`, `mn 10`, `mn-10`, `DN22`, `MA98`, etc. Returns `EBCOverview` JSON or exits 1 if missing. |
 | `get-agama SUTTA_CODE` | `--max N` | **Always call this immediately after `get-ebc-overview`.** Resolves every code in `parallels_agama`, reads the Patton (preferred) or BDK translation file, and returns the full text in `parallels_found`. Codes with no file on disk appear in `parallels_missing` — never silently dropped. Default max 5. |
 | `search-ebc QUERY` | `--folder PATH` `--limit N` | Fixed-string grep across the EBC vault (markdown only). Returns `VaultHit`s. `--folder` accepts a subdir like `+Suttas/Overviews Suttas/MN` or `+Vinaya/Patimokkha/bmc1`. |
@@ -401,7 +400,7 @@ uv run tools/research_sources.py scratch-which
 **Auto-logging is on as soon as `scratch-init` has run.** The active scratch path
 and phase are persisted to a per-run state file (`data/scratch/.active-<run>.json`)
 keyed to your agent process. Every `search-*`, `sc-*`, `get-ebc-overview`,
-`fetch-transcript`, `cross-check`, and `gemini-cross-check` call appends a full
+`fetch-transcript`, and `cross-check` call appends a full
 JSON-results block to the selected phase. Forgetting to log is structurally
 impossible. Scratch target precedence is: explicit helper argument such as
 `scratch-resume <slug>` or a direct `scratch=` path, then `VICAYA_SCRATCH` (manual
@@ -1661,7 +1660,7 @@ uv run tools/research_sources.py scratch-log 6 cross-check-review "$CROSS_CHECK_
   --summary "Raw Phase 6 cross-check output saved in the scratch-local review file and integrated before the Phase 6 gate."
 ```
 
-The `cross-check` helper POSTs to OpenRouter (model list in `data/openrouter_models.json` — edit freely, read at runtime). OpenRouter routes server-side via `models: [...]`: the first reachable model wins, subsequent entries cover outages / rate-limits. On any failure (no key, all models down, network error) the helper returns the `# SELF_REVIEW:` sentinel. **If the scratch-local review file begins with `# SELF_REVIEW:`**, no external provider was reachable. In that case, run the embedded five-point checklist on your own synthesis: read each numbered item, audit your synthesis against it, and apply fixes the same way you would for an external review. Do not write anything in the note acknowledging the self-review fallback; it is still subject to the IRON RULE below. The terminal report in Phase 7 records `cross-check: self-review` instead of a model name.
+The `cross-check` helper tries each `app:model` entry in `VICAYA_CROSS_CHECK_CHAIN` (env) in order via subprocess (`opencode run -m <model>` or `agy --print ... --model <model>`), returns the first one that succeeds, and falls back to the `# SELF_REVIEW:` sentinel if the chain is empty or every entry fails. **If the scratch-local review file begins with `# SELF_REVIEW:`**, no chain entry succeeded (or the chain was empty). In that case, run the embedded five-point checklist on your own synthesis: read each numbered item, audit your synthesis against it, and apply fixes the same way you would for an external review. Do not write anything in the note acknowledging the self-review fallback; it is still subject to the IRON RULE below. The terminal report in Phase 7 records `cross-check: self-review` instead of a model name.
 
 **Citation pre-annotation.** Every sutta reference in the helper's output arrives already labelled `[VERIFIED]`, `[REJECTED — not in sutta_info]`, or `[UNVERIFIABLE — …]` (existence check against `dpd.db sutta_info`). The label is existence-only: `[VERIFIED]` means the citation is a real sutta, **not** that the reviewer's content claim about it is correct. Pāḷi-quote misreads (e.g. `asantasanto` confused with `asanta`) and conceptual conflations are *not* caught by this — those still need scholarly judgement during integration. **Drop every `[REJECTED]` claim entirely; do not paraphrase, do not retain.** A `[REJECTED]` tag anywhere in the final vault note will cause `scratch-gate 7` to refuse, so they must be excised cleanly.
 
@@ -1928,7 +1927,7 @@ The note records which model produced it, in two places:
 2. A single italic footer line at the very end of the note: `*Researched by [Vicaya](https://github.com/bdhrs/vicaya) using <Family Version> (<host app>) on YYYY-MM-DD HH:MM.*`
 
 The parenthetical names the **host app/harness you are running inside** (e.g. Claude Code,
-Antigravity, Codex CLI, Gemini CLI) — never the raw model slug. A model slug like
+Antigravity, Codex CLI, agy) — never the raw model slug. A model slug like
 `gemini-3.5-flash` is pure duplication when the family+version is already spelled out
 ("Gemini 3.5 Flash"); the host app is the information actually worth recording, since the
 same model family can run under different orchestrating apps.
@@ -1946,7 +1945,7 @@ Examples (do not copy — look up your own):
 
 - Claude Code: `"Claude Opus 4.7 (Claude Code)"`, `"Claude Sonnet 4.6 (Claude Code)"`.
 - Gemini running in Antigravity: `"Gemini 3.5 Flash (Antigravity)"` — not `(gemini-3.5-flash)`.
-- Gemini CLI: `"Gemini 2.5 Pro (Gemini CLI)"` or whatever the CLI reports as its own host name.
+- agy: `"Gemini 2.5 Pro (agy)"` or whatever the CLI reports as its own host name.
 - Codex / GPT-based: `"GPT-5.4 (Codex CLI)"` or equivalent.
 - Other: `"<Model name as the runtime reports it> (<host app as the runtime reports it>)"`.
 
@@ -2121,7 +2120,7 @@ If fewer than 10, omit this section entirely.
 - **Canon search returns 0 hits**: try lang="any" and/or broader book scope before giving up.
 - **Library folders returns 0 hits**: first distinguish empty from error — `library-folders-check` exits 1 when the index path is missing or unreadable. If the index is reachable and truly empty: try fewer/looser terms; check `data/calibre_tags.csv` for the right tag vocabulary; try an author's surname as the query. Extract content directly with `pdftotext` or `ebook-convert` on known book files when needed.
 - **`WebSearch` returns 403 on every query**: the search backend is blocked or mis-credentialed on this machine (seen on macOS) — don't keep retrying. Fall back to `WebFetch` on directly constructed URLs (the mirror patterns in Phase 4a); for academic papers use the arXiv search endpoint (`http://export.arxiv.org/api/query?search_query=all:"<terms>"`) — arXiv IDs cannot be guessed.
-- **`cross-check` returns `# SELF_REVIEW:`**: OpenRouter is unreachable. Run the embedded checklist on your own synthesis as described in Phase 6; do not retry the helper. Common root causes: no `OPENROUTER_API_KEY` set (check `.env`), an empty / malformed `data/openrouter_models.json`, or every free model in the chain simultaneously rate-limited (rare). (Note: the legacy `gemini-cross-check` subcommand returns a `# ERROR:` line on failure instead — same response: skip the section and continue.)
+- **`cross-check` returns `# SELF_REVIEW:`**: every configured chain entry failed (or `VICAYA_CROSS_CHECK_CHAIN` is unset/blank). Run the embedded checklist on your own synthesis as described in Phase 6; do not retry the helper. Common root causes: the chain var is empty, `opencode`/`agy` aren't on `$PATH`, or neither app has valid provider credentials configured.
 - **`scratch-gate 7` shows passed but the vault note is missing**: a prior
   invocation gated before the vault write completed. Do not treat the run as
   done and do not try to re-gate — write the complete note to the vault now,
