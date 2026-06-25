@@ -1526,7 +1526,7 @@ def _run_agy(prompt: str, model: str, timeout: int) -> str | None:
     return text if text else None
 
 
-_SELF_REVIEW_SENTINEL = """# SELF_REVIEW: OpenRouter cross-check unavailable.
+_SELF_REVIEW_SENTINEL = """# SELF_REVIEW: cross-check unavailable.
 
 Run the Phase 6 checklist on your own synthesis before writing the note.
 For each item, either fix the synthesis or note "no issue":
