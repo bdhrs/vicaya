@@ -47,7 +47,7 @@ Each source is optional — if the tool or path isn't configured it is silently 
    **OpenCode:**
    ```bash
    # Symlink skills
-   for skill in vicaya vicaya-improve vicaya-pre vicaya-quick; do
+   for skill in vicaya vicaya-improve vicaya-pre vicaya-quick align; do
      ln -sf "$(pwd)/skill/$skill" ~/.agents/skills/$skill
    done
    # Symlink slash commands (for autocomplete)
@@ -58,14 +58,14 @@ Each source is optional — if the tool or path isn't configured it is silently 
 
    **Antigravity CLI (`agy`):**
    ```bash
-   for skill in vicaya vicaya-improve vicaya-pre vicaya-quick; do
+   for skill in vicaya vicaya-improve vicaya-pre vicaya-quick align; do
      ln -sf "$(pwd)/skill/$skill" ~/.gemini/skills/$skill
    done
    ```
 
    **Claude Code:**
    ```bash
-   for skill in vicaya vicaya-improve vicaya-pre vicaya-quick; do
+   for skill in vicaya vicaya-improve vicaya-pre vicaya-quick align; do
      ln -sf "$(pwd)/skill/$skill" ~/.claude/skills/$skill
    done
    ```
@@ -291,6 +291,18 @@ find ~ -maxdepth 8 -name "dpd.db" 2>/dev/null | head -3
 
 # GRETIL corpus — check if already cloned
 find ~ -maxdepth 6 -name "gretil.html" 2>/dev/null | head -3
+
+# EBC vault — Early Buddhist Connections (read-only reference vault)
+find ~ -maxdepth 6 -name "early-buddhist-connections" -type d 2>/dev/null | head -3
+
+# SC data — SuttaCentral offline archive (look inside dpd-db first)
+find ~ -maxdepth 8 -path "*/dpd-db/resources/sc-data" -type d 2>/dev/null | head -3
+
+# VICAYA_USER — short label for this user (used in run-report sync commits)
+# Choose any short name, e.g. your first name or a hostname.
+
+# VICAYA_PDF_PATH — recommended: <VICAYA_VAULT_PATH>/Vicaya/PDF
+# Derive from the vault path found above, e.g. ~/Obsidian/Vicaya/PDF
 ```
 
 **Canon DB and DPD DB — choose one:**
@@ -329,6 +341,24 @@ find ~ -maxdepth 6 -name "gretil.html" 2>/dev/null | head -3
   ```
   Set `VICAYA_GRETIL_PATH=<repo>/resources/gretil`.
 
+**EBC vault — choose one:**
+
+- **Found on disk** → use the directory returned by `find` as `VICAYA_EBC_VAULT_PATH`.
+- **Not found** → clone into `resources/` (gitignored):
+  ```bash
+  git clone https://github.com/dhamma-vinaya-connections/early-buddhist-connections.git resources/early-buddhist-connections
+  ```
+  Set `VICAYA_EBC_VAULT_PATH=<repo>/resources/early-buddhist-connections`.
+
+**SC data — choose one:**
+
+- **Found inside dpd-db** → use the path returned by `find` (e.g. `~/path/to/dpd-db/resources/sc-data`) as `VICAYA_SC_DATA_PATH`.
+- **Not found** → clone into `resources/` (gitignored):
+  ```bash
+  git clone https://github.com/digitalpalidictionary/sc-data.git resources/sc-data
+  ```
+  Set `VICAYA_SC_DATA_PATH=<repo>/resources/sc-data`.
+
 Resources that are skipped should be left blank in `.env` — the corresponding
 source will be silently disabled.
 
@@ -344,6 +374,8 @@ Edit `.env` with the values found in step 2. Use `~` for the home directory.
 Example layout (adjust to actual paths):
 
 ```
+# Short label for this user (used in run-report sync commits)
+VICAYA_USER=yourname
 VICAYA_VAULT_NAME=Obsidian
 VICAYA_VAULT_PATH=~/Obsidian
 VICAYA_LIBRARY_FOLDERS=
@@ -355,6 +387,12 @@ VICAYA_CANON_DB=
 VICAYA_DPD_DB=
 # Use path found in step 2, or ~/MyFiles/2_Resources/gretil or <repo>/resources/gretil
 VICAYA_GRETIL_PATH=
+# Use path found in step 2, or <repo>/resources/early-buddhist-connections if cloned there
+VICAYA_EBC_VAULT_PATH=
+# Use path found in step 2 (inside dpd-db), or <repo>/resources/sc-data if cloned there
+VICAYA_SC_DATA_PATH=
+# Recommended: <VICAYA_VAULT_PATH>/Vicaya/PDF (leave blank to skip PDF generation)
+VICAYA_PDF_PATH=
 VICAYA_CROSS_CHECK_CHAIN=
 ```
 
@@ -393,6 +431,7 @@ ln -sf "$(pwd)/skill/vicaya" ~/.agents/skills/vicaya
 ln -sf "$(pwd)/skill/vicaya-improve" ~/.agents/skills/vicaya-improve
 ln -sf "$(pwd)/skill/vicaya-pre" ~/.agents/skills/vicaya-pre
 ln -sf "$(pwd)/skill/vicaya-quick" ~/.agents/skills/vicaya-quick
+ln -sf "$(pwd)/skill/align" ~/.agents/skills/align
 ```
 
 **For Claude Code:**
@@ -403,6 +442,7 @@ ln -sf "$(pwd)/skill/vicaya" ~/.claude/skills/vicaya
 ln -sf "$(pwd)/skill/vicaya-improve" ~/.claude/skills/vicaya-improve
 ln -sf "$(pwd)/skill/vicaya-pre" ~/.claude/skills/vicaya-pre
 ln -sf "$(pwd)/skill/vicaya-quick" ~/.claude/skills/vicaya-quick
+ln -sf "$(pwd)/skill/align" ~/.claude/skills/align
 ```
 
 **Verification:**
@@ -413,12 +453,14 @@ ls ~/.agents/skills/vicaya/SKILL.md
 ls ~/.agents/skills/vicaya-improve/SKILL.md
 ls ~/.agents/skills/vicaya-pre/SKILL.md
 ls ~/.agents/skills/vicaya-quick/SKILL.md
+ls ~/.agents/skills/align/SKILL.md
 
 # Check Claude
 ls ~/.claude/skills/vicaya/SKILL.md
 ls ~/.claude/skills/vicaya-improve/SKILL.md
 ls ~/.claude/skills/vicaya-pre/SKILL.md
 ls ~/.claude/skills/vicaya-quick/SKILL.md
+ls ~/.claude/skills/align/SKILL.md
 ```
 
 If you ever move or rename this repository, you will need to re-run these
