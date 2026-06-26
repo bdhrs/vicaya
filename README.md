@@ -47,7 +47,7 @@ Each source is optional — if the tool or path isn't configured it is silently 
    **OpenCode:**
    ```bash
    # Symlink skills
-   for skill in vicaya vicaya-improve vicaya-pre vicaya-quick; do
+   for skill in vicaya vicaya-improve vicaya-pre vicaya-quick align; do
      ln -sf "$(pwd)/skill/$skill" ~/.agents/skills/$skill
    done
    # Symlink slash commands (for autocomplete)
@@ -58,14 +58,14 @@ Each source is optional — if the tool or path isn't configured it is silently 
 
    **Antigravity CLI (`agy`):**
    ```bash
-   for skill in vicaya vicaya-improve vicaya-pre vicaya-quick; do
+   for skill in vicaya vicaya-improve vicaya-pre vicaya-quick align; do
      ln -sf "$(pwd)/skill/$skill" ~/.gemini/skills/$skill
    done
    ```
 
    **Claude Code:**
    ```bash
-   for skill in vicaya vicaya-improve vicaya-pre vicaya-quick; do
+   for skill in vicaya vicaya-improve vicaya-pre vicaya-quick align; do
      ln -sf "$(pwd)/skill/$skill" ~/.claude/skills/$skill
    done
    ```
@@ -73,15 +73,55 @@ Each source is optional — if the tool or path isn't configured it is silently 
    Open a fresh agent session after adding a new skill symlink; skill discovery
    happens when the session starts.
 
-5. (Optional) Clone the GRETIL Sanskrit corpus for pre-Buddhist source search:
-   ```bash
-   git clone https://github.com/wujastyk/GRETIL-mirror.git ~/MyFiles/2_Resources/gretil
-   ```
-   Set `VICAYA_GRETIL_PATH` in `.env` to match. If skipped, Sanskrit source search is silently disabled.
+5. (Optional) Download the databases and clone the GRETIL corpus — see
+   [Getting the databases](#getting-the-databases) and
+   [Getting the GRETIL corpus](#getting-the-gretil-corpus) below.
 
 6. Run `/vicaya <a question>` in Claude Code, OpenCode, or `agy`.
 
 Full setup notes are in [`skill/vicaya/SKILL.md`](skill/vicaya/SKILL.md).
+
+### Getting the databases
+
+If `dpd.db` and `tipitaka-translation-data.db` are not already on your machine,
+download them into `resources/` inside this repository (that folder is gitignored,
+so keeping both databases here puts everything in one place):
+
+```bash
+mkdir -p resources
+
+# DPD dictionary database (tar.bz2 — extracts to resources/dpd.db)
+curl -L https://github.com/digitalpalidictionary/dpd-db/releases/latest/download/dpd.db.tar.bz2 \
+  | tar -xj -C resources
+
+# Canon database (zip — extracts to resources/tipitaka-translation-data.db)
+curl -L https://github.com/digitalpalidictionary/tipitaka-translation-db/releases/latest/download/tipitaka-translation-data.db.zip \
+  -o resources/tipitaka-translation-data.db.zip
+unzip -o resources/tipitaka-translation-data.db.zip -d resources
+rm resources/tipitaka-translation-data.db.zip
+```
+
+Then point `.env` at the downloaded files (use the absolute repo path):
+
+```
+VICAYA_DPD_DB=/path/to/vicaya/resources/dpd.db
+VICAYA_CANON_DB=/path/to/vicaya/resources/tipitaka-translation-data.db
+```
+
+### Getting the GRETIL corpus
+
+The GRETIL Sanskrit corpus is a `git clone` — several GB, skip if you do not need
+Sanskrit source search:
+
+```bash
+git clone https://github.com/wujastyk/GRETIL-mirror.git ~/MyFiles/2_Resources/gretil
+```
+
+Set `VICAYA_GRETIL_PATH` in `.env` to match the clone destination. The repository
+is a plain-text mirror maintained by Dominik Wujastyk at
+[github.com/wujastyk/GRETIL-mirror](https://github.com/wujastyk/GRETIL-mirror);
+the canonical upstream is the Göttingen Register of Electronic Texts in Indian Languages
+(gretil.sub.uni-goettingen.de).
 
 ### Library folders search
 
@@ -146,11 +186,8 @@ hints.
 The `obsidian` command is part of the Obsidian desktop app — install Obsidian
 from https://obsidian.md and the CLI comes with it.
 
-**The desktop app must be running** when the skill executes. If it is not open,
-vault search and note creation are disabled (the skill falls back to writing
-the note directly to the vault folder, which Obsidian indexes on next launch).
-
-To start Obsidian silently in the background before running the skill:
+The skill opens Obsidian automatically at startup if it is not already running.
+If for some reason you need to start it manually:
 
 | Platform | Command |
 |---|---|
@@ -219,10 +256,7 @@ Some sources require a desktop application to be open:
 
 | Source | Requirement | Impact if not running |
 |---|---|---|
-| **Obsidian vault** | Obsidian desktop app must be running | Vault search and note-write are disabled; note is written directly to disk instead |
-Tell the user about these requirements after setup is complete:
-- If `VICAYA_VAULT_PATH` is configured: remind them to keep Obsidian open when
-  running `/vicaya`.
+| **Obsidian vault** | Obsidian desktop app (opened automatically by the skill) | Vault search and note-write are disabled if the app fails to start; note is written directly to disk instead |
 
 ### 1 — Python environment
 
@@ -257,10 +291,76 @@ find ~ -maxdepth 8 -name "dpd.db" 2>/dev/null | head -3
 
 # GRETIL corpus — check if already cloned
 find ~ -maxdepth 6 -name "gretil.html" 2>/dev/null | head -3
+
+# EBC vault — Early Buddhist Connections (read-only reference vault)
+find ~ -maxdepth 6 -name "early-buddhist-connections" -type d 2>/dev/null | head -3
+
+# SC data — SuttaCentral offline archive (look inside dpd-db first)
+find ~ -maxdepth 8 -path "*/dpd-db/resources/sc-data" -type d 2>/dev/null | head -3
+
+# VICAYA_USER — short label for this user (used in run-report sync commits)
+# Choose any short name, e.g. your first name or a hostname.
+
+# VICAYA_PDF_PATH — recommended: <VICAYA_VAULT_PATH>/Vicaya/PDF
+# Derive from the vault path found above, e.g. ~/Obsidian/Vicaya/PDF
 ```
 
-If any path is not found, leave that variable blank in `.env` — the
-corresponding source will be silently skipped.
+**Canon DB and DPD DB — choose one:**
+
+- **Found on disk** → use the path returned by `find` directly in `.env`.
+- **Not found** → download both into `resources/` (gitignored):
+
+  ```bash
+  mkdir -p resources
+
+  # DPD dictionary database (tar.bz2 — extracts to resources/dpd.db)
+  curl -L https://github.com/digitalpalidictionary/dpd-db/releases/latest/download/dpd.db.tar.bz2 \
+    | tar -xj -C resources
+
+  # Canon database (zip — extracts to resources/tipitaka-translation-data.db)
+  curl -L https://github.com/digitalpalidictionary/tipitaka-translation-db/releases/latest/download/tipitaka-translation-data.db.zip \
+    -o resources/tipitaka-translation-data.db.zip
+  unzip -o resources/tipitaka-translation-data.db.zip -d resources
+  rm resources/tipitaka-translation-data.db.zip
+  ```
+
+  Use the absolute paths `<repo>/resources/dpd.db` and
+  `<repo>/resources/tipitaka-translation-data.db` as the `.env` values.
+
+**GRETIL corpus — choose one (several GB; skip if Sanskrit source search is not needed):**
+
+- **Found on disk** → use the directory returned by `find` as `VICAYA_GRETIL_PATH`.
+- **Not found, and `~/MyFiles/2_Resources/` exists** → clone there:
+  ```bash
+  git clone https://github.com/wujastyk/GRETIL-mirror.git ~/MyFiles/2_Resources/gretil
+  ```
+  Set `VICAYA_GRETIL_PATH=~/MyFiles/2_Resources/gretil`.
+- **Not found, `~/MyFiles/2_Resources/` absent** → clone into `resources/` (gitignored):
+  ```bash
+  git clone https://github.com/wujastyk/GRETIL-mirror.git resources/gretil
+  ```
+  Set `VICAYA_GRETIL_PATH=<repo>/resources/gretil`.
+
+**EBC vault — choose one:**
+
+- **Found on disk** → use the directory returned by `find` as `VICAYA_EBC_VAULT_PATH`.
+- **Not found** → clone into `resources/` (gitignored):
+  ```bash
+  git clone https://github.com/dhamma-vinaya-connections/early-buddhist-connections.git resources/early-buddhist-connections
+  ```
+  Set `VICAYA_EBC_VAULT_PATH=<repo>/resources/early-buddhist-connections`.
+
+**SC data — choose one:**
+
+- **Found inside dpd-db** → use the path returned by `find` (e.g. `~/path/to/dpd-db/resources/sc-data`) as `VICAYA_SC_DATA_PATH`.
+- **Not found** → clone into `resources/` (gitignored):
+  ```bash
+  git clone https://github.com/digitalpalidictionary/sc-data.git resources/sc-data
+  ```
+  Set `VICAYA_SC_DATA_PATH=<repo>/resources/sc-data`.
+
+Resources that are skipped should be left blank in `.env` — the corresponding
+source will be silently disabled.
 
 ### 3 — Write .env
 
@@ -274,14 +374,25 @@ Edit `.env` with the values found in step 2. Use `~` for the home directory.
 Example layout (adjust to actual paths):
 
 ```
+# Short label for this user (used in run-report sync commits)
+VICAYA_USER=yourname
 VICAYA_VAULT_NAME=Obsidian
 VICAYA_VAULT_PATH=~/Obsidian
 VICAYA_LIBRARY_FOLDERS=
 VICAYA_LIBRARY_FOLDERS_INDEX=
 VICAYA_LIBRARY_FOLDERS_EXCLUDE=
-VICAYA_CANON_DB=~/path/to/dpd-db/resources/tipitaka_translation_db/tipitaka-translation-data.db
-VICAYA_DPD_DB=~/path/to/dpd-db/dpd.db
-VICAYA_GRETIL_PATH=~/MyFiles/2_Resources/gretil
+# Use path found in step 2, or <repo>/resources/tipitaka-translation-data.db if downloaded there
+VICAYA_CANON_DB=
+# Use path found in step 2, or <repo>/resources/dpd.db if downloaded there
+VICAYA_DPD_DB=
+# Use path found in step 2, or ~/MyFiles/2_Resources/gretil or <repo>/resources/gretil
+VICAYA_GRETIL_PATH=
+# Use path found in step 2, or <repo>/resources/early-buddhist-connections if cloned there
+VICAYA_EBC_VAULT_PATH=
+# Use path found in step 2 (inside dpd-db), or <repo>/resources/sc-data if cloned there
+VICAYA_SC_DATA_PATH=
+# Recommended: <VICAYA_VAULT_PATH>/Vicaya/PDF (leave blank to skip PDF generation)
+VICAYA_PDF_PATH=
 VICAYA_CROSS_CHECK_CHAIN=
 ```
 
@@ -320,6 +431,7 @@ ln -sf "$(pwd)/skill/vicaya" ~/.agents/skills/vicaya
 ln -sf "$(pwd)/skill/vicaya-improve" ~/.agents/skills/vicaya-improve
 ln -sf "$(pwd)/skill/vicaya-pre" ~/.agents/skills/vicaya-pre
 ln -sf "$(pwd)/skill/vicaya-quick" ~/.agents/skills/vicaya-quick
+ln -sf "$(pwd)/skill/align" ~/.agents/skills/align
 ```
 
 **For Claude Code:**
@@ -330,6 +442,7 @@ ln -sf "$(pwd)/skill/vicaya" ~/.claude/skills/vicaya
 ln -sf "$(pwd)/skill/vicaya-improve" ~/.claude/skills/vicaya-improve
 ln -sf "$(pwd)/skill/vicaya-pre" ~/.claude/skills/vicaya-pre
 ln -sf "$(pwd)/skill/vicaya-quick" ~/.claude/skills/vicaya-quick
+ln -sf "$(pwd)/skill/align" ~/.claude/skills/align
 ```
 
 **Verification:**
@@ -340,12 +453,14 @@ ls ~/.agents/skills/vicaya/SKILL.md
 ls ~/.agents/skills/vicaya-improve/SKILL.md
 ls ~/.agents/skills/vicaya-pre/SKILL.md
 ls ~/.agents/skills/vicaya-quick/SKILL.md
+ls ~/.agents/skills/align/SKILL.md
 
 # Check Claude
 ls ~/.claude/skills/vicaya/SKILL.md
 ls ~/.claude/skills/vicaya-improve/SKILL.md
 ls ~/.claude/skills/vicaya-pre/SKILL.md
 ls ~/.claude/skills/vicaya-quick/SKILL.md
+ls ~/.claude/skills/align/SKILL.md
 ```
 
 If you ever move or rename this repository, you will need to re-run these
