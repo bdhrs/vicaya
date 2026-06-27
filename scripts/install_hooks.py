@@ -10,24 +10,24 @@ project_root = Path(__file__).resolve().parent.parent
 
 HOOK_PROJECT = """\
 #!/bin/sh
-# Block direct git push; allow only when called via the sync scripts.
-if [ -z "$VICAYA_SYNC" ]; then
-    echo "Direct git push is restricted in this repo." >&2
-    echo "Use: uv run scripts/sync_notes.py <file>  or  uv run scripts/sync_run_report.py" >&2
-    exit 1
-fi
-exit 0
+# Block direct git push; allow the sync scripts (VICAYA_SYNC), and allow anyone
+# who has opted in with: git config --global vicaya.allowpush true
+if [ -n "$VICAYA_SYNC" ]; then exit 0; fi
+if [ "$(git config --bool vicaya.allowpush 2>/dev/null)" = "true" ]; then exit 0; fi
+echo "Direct git push is restricted in this repo." >&2
+echo "Use: uv run scripts/sync_notes.py <file>  or  uv run scripts/sync_run_report.py" >&2
+exit 1
 """
 
 HOOK_NOTES = """\
 #!/bin/sh
-# Block direct git push; allow only when called via the sync scripts.
-if [ -z "$VICAYA_SYNC" ]; then
-    echo "Direct git push is restricted in this repo." >&2
-    echo "Use: uv run scripts/sync_notes.py <file>" >&2
-    exit 1
-fi
-exit 0
+# Block direct git push; allow the sync scripts (VICAYA_SYNC), and allow anyone
+# who has opted in with: git config --global vicaya.allowpush true
+if [ -n "$VICAYA_SYNC" ]; then exit 0; fi
+if [ "$(git config --bool vicaya.allowpush 2>/dev/null)" = "true" ]; then exit 0; fi
+echo "Direct git push is restricted in this repo." >&2
+echo "Use: uv run scripts/sync_notes.py <file>" >&2
+exit 1
 """
 
 

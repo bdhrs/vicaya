@@ -34,6 +34,10 @@ Each source is optional — if the tool or path isn't configured it is silently 
 
 ## Setup
 
+> **Setting up with an AI agent?** Jump to
+> [Autonomous agent setup](#autonomous-agent-setup) — a step-by-step guide
+> written for agents to install and verify everything without human help.
+
 1. `cp .env.example .env` and edit the paths to match your vault, library,
    and canon database.
 2. Install whichever of these you want to use: `obsidian` CLI, `yt-dlp`, `sqlite3`, `opencode` CLI, `agy`.
@@ -489,6 +493,19 @@ Verify the block is active:
 ```bash
 git push  # must fail with "Direct git push is restricted in this repo."
 ```
+
+Non-coders submit their work through the sync scripts, which are allowed
+through the hook automatically — nothing more to do.
+
+If you write code in either repo (and so need to push directly), opt out once
+per machine:
+
+```bash
+git config --global vicaya.allowpush true
+```
+
+After that `git push` works normally for you, while the block stays in place
+for everyone who has not opted in.
 
 ### 7 — Final verification
 
