@@ -67,20 +67,37 @@ def main(argv: list[str] | None = None):
         rprint(f"[red]Error: Note file not found: {note_path}[/red]")
         sys.exit(1)
 
+    # Always commit the note's matching PDF alongside it when one exists inside
+    # the notes repo. The PDF (generate_note_pdf.py) is written to
+    # VICAYA_PDF_PATH and named after the note stem.
+    pathspecs = [filename]
+    pdf_dir_raw = os.environ.get("VICAYA_PDF_PATH", "").strip()
+    if pdf_dir_raw:
+        pdf_path = (
+            Path(pdf_dir_raw).expanduser() / f"{Path(filename).stem}.pdf"
+        ).resolve()
+        if pdf_path.exists():
+            try:
+                pathspecs.append(str(pdf_path.relative_to(notes_repo.resolve())))
+            except ValueError:
+                rprint(
+                    f"[yellow]PDF outside notes repo; not committed: {pdf_path}[/yellow]"
+                )
+
     try:
         rprint("[cyan]Git add...[/cyan]", end=" ")
-        run_git(["add", "--", filename], notes_repo)
+        run_git(["add", "--", *pathspecs], notes_repo)
         rprint("[green]ok[/green]")
 
         staged = run_git(
-            ["diff", "--cached", "--quiet", "--", filename], notes_repo, check=False
+            ["diff", "--cached", "--quiet", "--", *pathspecs], notes_repo, check=False
         )
         if staged.returncode == 0:
             rprint("[yellow]Nothing to commit[/yellow]")
         else:
             slug = Path(filename).stem
             rprint("[cyan]Git commit...[/cyan]", end=" ")
-            run_git(["commit", "-m", f"note: {slug}", "--", filename], notes_repo)
+            run_git(["commit", "-m", f"note: {slug}", "--", *pathspecs], notes_repo)
             rprint("[green]ok[/green]")
     except subprocess.CalledProcessError as e:
         rprint("[red]failed[/red]")
