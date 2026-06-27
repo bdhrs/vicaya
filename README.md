@@ -466,7 +466,31 @@ ls ~/.claude/skills/align/SKILL.md
 If you ever move or rename this repository, you will need to re-run these
 commands to update the symlinks.
 
-### 6 — Final verification
+### 6 — Install git hooks
+
+Install pre-push hooks that restrict direct `git push` in both this repo and
+the notes vault repo, allowing pushes only through the approved sync scripts.
+Requires `.env` to be written (step 3) so the notes vault path is known.
+
+```bash
+uv run scripts/install_hooks.py
+```
+
+Expected output:
+
+```
+Installed project repo pre-push → <repo>/.git/hooks/pre-push
+Installed notes vault pre-push  → <vault>/Vicaya/.git/hooks/pre-push
+All hooks installed.
+```
+
+Verify the block is active:
+
+```bash
+git push  # must fail with "Direct git push is restricted in this repo."
+```
+
+### 7 — Final verification
 
 ```bash
 # Resolve a known citation (requires VICAYA_DPD_DB to be set)

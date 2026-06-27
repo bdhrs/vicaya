@@ -38,6 +38,7 @@ def today_reports(repo_path: Path, today: str) -> list[str]:
 
 
 def main() -> None:
+    os.environ["VICAYA_SYNC"] = "1"
     load_dotenv(project_root / ".env")
     today = datetime.now(timezone.utc).strftime("%Y%m%d")
 
@@ -48,7 +49,7 @@ def main() -> None:
 
     try:
         rprint("[cyan]Git pull --rebase...[/cyan]", end=" ")
-        run_git(["pull", "--rebase", "origin", "main"], project_root)
+        run_git(["pull", "--rebase", "--autostash", "origin", "main"], project_root)
         rprint("[green]ok[/green]")
 
         reports = today_reports(project_root, today)

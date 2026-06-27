@@ -39,6 +39,7 @@ def main(argv: list[str] | None = None):
     )
     args = parser.parse_args(argv)
 
+    os.environ["VICAYA_SYNC"] = "1"
     load_dotenv(project_root / ".env")
 
     vault_path_raw = os.environ.get("VICAYA_VAULT_PATH")
