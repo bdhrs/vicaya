@@ -30,7 +30,7 @@ If context compaction fires at any point, `scratch-resume <slug>` explicitly sel
 These rules apply to every run, by every agent. They are part of the skill, not stored in any agent's private memory.
 
 1. **No AI / model attribution in the scholarship body.** Never write "Gemini noted", "Claude found", "the AI suggested", "added by cross-check", etc. inside the findings, evidence, or analysis. The body must read like scholarship — information and sources are what matter, not the process of producing them. If a second-pass review surfaces material, integrate it silently with proper citations to the underlying primary or secondary source. **The only places agent identity appears are the `agent` frontmatter field and the final footer line** (see Phase 7 — Agent self-identification). Those are metadata, not scholarship.
-2. **No process or workflow logging inside the research note.** No "Improvements made" sections, no "the helper failed and I switched to X", no "this was missed in the first pass". Notes contain content; process belongs in the terminal report only (Phase 7's final summary), and self-improvement edits go into this `SKILL.md` file.
+2. **No process or workflow logging inside the research note.** No "Improvements made" sections, no "the helper failed and I switched to X", no "this was missed in the first pass". Notes contain content; process belongs in the terminal report only (Phase 7's final summary), and improvement suggestions go into the run report under `## Improvement suggestions` for `/vicaya-improve` to process later — never into `SKILL.md` directly.
 3. **Pāḷi spelling conventions differ per source:**
    - **Canon SQLite (`tipitaka-translation-data.db`) and the Obsidian vault** use exact Pāḷi diacritics (`paṭiccasamuppāda`, `dukkha`, `nibbāna`). Search verbatim. The `search-canon` helper normalizes niggahita (`ṁ`/`ŋ` → `ṃ`), case, and embedded markup automatically; direct SQL `LIKE` does not — there use `ṃ` exactly. If 0 hits, also try edition spelling variants (`pathavī`/`paṭhavī`, `kaṅkhā`/`kankhā`-type retroflex–dental swaps) before concluding absence.
    - **Library folders** index contains Calibre metadata labels with ASCII Pāḷi (`paticcasamuppada`). Diacritics in queries are handled automatically.
@@ -2100,15 +2100,15 @@ The terminal report has two distinct sections. Keep them separate — conflating
 - One sentence: the headline finding.
 - Optionally one line per *content* integration from the cross-check, framed as content not process. **Example (good):** `Added MN 101 Devadahasutta as a load-bearing reference — it refutes the strict-determinist reading.` **Example (bad — never write this):** `Gemini noted MN 101 was missing.`
 
-### Section 2 — Skill improvements made
+### Section 2 — Improvement suggestions
 
-Only edits to `SKILL.md` or `tools/research_sources.py`. One line each, prefixed with `Improved:`. **If you made no skill edits, omit this section entirely** — don't pad it with content integrations (those go in Section 1).
+Suggestions for future `/vicaya-improve` runs only — **never direct edits to `SKILL.md`, anything in `tools/`, or anything in `scripts/`**. One line each, prefixed with `Suggest:`. **If you have no suggestions, omit this section entirely** — don't pad it with content integrations (those go in Section 1).
 
 ### Section 3 — Distillation reminder (conditional)
 
 Count the files in `runs/`. If there are 10 or more, print one line:
 
-> **Skill distillation due** — `runs/` has <N> reflections. Read them back and promote any recurring lessons into SKILL.md Hard Rules or guidance sections.
+> **Skill distillation due** — `runs/` has <N> reflections. Run `/vicaya-improve` to batch-process them and promote recurring lessons into SKILL.md.
 
 If fewer than 10, omit this section entirely.
 
@@ -2286,8 +2286,8 @@ duration_min: <approximate>
 - [BUG] Evidence: <script/tool failure or unclear output, or "nothing">. Cause: <likely cause>. Fix: <proposed change, or "none">. Scope: <local/global>.
 - [DOC] Evidence: <instruction that should be clarified, or "nothing">. Cause: <likely cause>. Fix: <proposed documentation change, or "none">. Scope: <local/global>.
 
-## What I changed this run
-- <one bullet per edit actually made to SKILL.md / research_sources.py / helper scripts, or "nothing">
+## Improvement suggestions
+- <one bullet per suggestion for `/vicaya-improve` to act on, prefixed with `Suggest:`, or "nothing" — never direct edits to SKILL.md, tools/, or scripts/>
 
 ## Channel tuning
 - Promote to trusted: <Channel — one-line reason this run, or "none">
@@ -2313,19 +2313,24 @@ After writing the reflection, apply any concrete `Channel tuning` decisions dire
 `data/youtube_channels.md`. Promotions and demotions are how the channel allowlist gets
 richer over time; without this step the file goes stale.
 
-### Step 2 — If a change is small and obvious, make it now
+### Step 2 — Write improvement suggestions to the run report only
 
-If reflection turned up a one-line fix (a wrong path, a missing field name, a confusing
-phrase), edit `SKILL.md` or `research_sources.py` directly in this run. The file is
-symlinked from `~/.claude/skills/vicaya/` to `<repo>/skill/vicaya/`, so edits
-propagate instantly. Larger refactors should go in the reflection as a proposal and be
-batched later — don't derail a research run with a refactor.
+**Never edit `SKILL.md` or any file in `tools/` or `scripts/` during a vicaya run.** Skill and script edits are handled exclusively by `/vicaya-improve`, which batches run reflections and applies changes deliberately.
 
-### Step 3 — Report skill edits in Section 2 of the final report
+If reflection turned up a fix — one-line or larger — write it as a clearly marked suggestion in the run report under `## Improvement suggestions`. Use the format:
+
+```
+## Improvement suggestions
+- Suggest: <concise description of what to change and why>
+```
+
+These suggestions will be picked up by `/vicaya-improve` in the next improvement cycle.
+
+### Step 3 — Report skill suggestions in Section 2 of the final report
 
 See "Final report to the user" above. **Content integrations** (e.g. "added MN 101")
-belong in Section 1, not here. **Skill edits** (e.g. "documented `CanonHit` fields") go
-in Section 2 as `Improved:` lines.
+belong in Section 1, not here. **Improvement suggestions** (e.g. "document `CanonHit` fields") go
+in Section 2 as `Suggest:` lines — never `Improved:` lines, since no edits are made during a run.
 
 ### Reflection triggers
 
