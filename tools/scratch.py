@@ -248,10 +248,26 @@ def _next_worked_phase(text: str, idx: int) -> str | None:
     return None
 
 
+def _dated_slug(slug: str) -> str:
+    """Prefix the slug with today's date (YYYY-MM-DD-), unless it already carries one."""
+    if _re.match(r"\d{4}-\d{2}-\d{2}-", slug):
+        return slug
+    import datetime as _dt
+
+    return f"{_dt.date.today().isoformat()}-{slug}"
+
+
 def _scratch_path(slug: str | None = None) -> Path:
     """Resolve the scratch path. Explicit slug > env override > active-state file > error."""
     if slug:
-        return _SCRATCH_DIR / f"{slug}.md"
+        direct = _SCRATCH_DIR / f"{slug}.md"
+        if direct.exists():
+            return direct
+        dated_re = _re.compile(r"^\d{4}-\d{2}-\d{2}-" + _re.escape(slug) + r"\.md$")
+        matches = sorted(p for p in _SCRATCH_DIR.glob("*.md") if dated_re.match(p.name))
+        if matches:
+            return matches[-1]
+        return direct
     env = os.environ.get("VICAYA_SCRATCH")
     if env:
         return Path(env)
@@ -292,10 +308,11 @@ def scratch_init(
             f"ambiguity must be one of {_AMBIGUITY_VALUES}, got {ambiguity!r}"
         )
     _SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
-    path = _SCRATCH_DIR / f"{slug}.md"
+    path = _scratch_path(slug)
     if path.exists():
         _write_state(path)
         return path
+    path = _SCRATCH_DIR / f"{_dated_slug(slug)}.md"
     lines = [
         f"# Vicaya dossier — {slug}",
         f"**Question original:** {question_original or '<fill in>'}",

@@ -798,6 +798,37 @@ class TestScratchDossier:
         assert "Should be ignored" not in text
         assert "### PHASE 0 EXIT GATE" not in text
 
+    def test_init_creates_date_prefixed_filename(self, tmp_path, monkeypatch):
+        import re as _re
+
+        from tools.research_sources import scratch_init
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        path = scratch_init("date-prefix-slug")
+        assert _re.match(r"\d{4}-\d{2}-\d{2}-date-prefix-slug\.md$", path.name)
+        # The filename gets the date; the header keeps the bare slug.
+        assert "Vicaya dossier — date-prefix-slug" in path.read_text(encoding="utf-8")
+
+    def test_init_is_idempotent_across_dated_filename(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_init
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        first = scratch_init("resume-me")
+        again = scratch_init("resume-me")
+        assert again == first
+
+    def test_resume_finds_date_prefixed_file_by_bare_slug(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_init, scratch_resume
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        path = scratch_init("resumable")
+        result = scratch_resume(slug="resumable")
+        assert result["ok"]
+        assert result["path"] == str(path)
+
     def test_gate_refusal_message_says_what_to_run(self, tmp_path, monkeypatch):
         # Issue #31, second half: the refusal must name the exact command,
         # not just describe the missing gate.
