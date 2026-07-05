@@ -966,10 +966,28 @@ def refresh(
     }
 
 
+class LibraryFoldersSearchTimeout(RuntimeError):
+    """Raised when an FTS5 search exceeds its wall-clock time budget.
+
+    A single common term (a stopword, or one word of an unquoted multi-word
+    phrase) can force SQLite to score and sort a large fraction of a
+    multi-gigabyte index before ORDER BY/LIMIT can trim it, which blocks for
+    minutes instead of seconds. We abort via ``set_progress_handler`` rather
+    than let the caller (an agent's foreground shell call) hang past its own
+    timeout with no diagnostic.
+    """
+
+
+_SEARCH_TIMEOUT_SECONDS = 20.0
+_SEARCH_PROGRESS_STEPS = 1000
+
+
 def _search_rows(
     conn: sqlite3.Connection,
     query: str,
     limit: int,
+    *,
+    timeout: float | None = _SEARCH_TIMEOUT_SECONDS,
 ) -> list[sqlite3.Row]:
     conn.row_factory = sqlite3.Row
     sql = """
@@ -988,10 +1006,41 @@ def _search_rows(
         ORDER BY bm25(document_fts)
         LIMIT ?
     """
+
+    def _run(match_query: str) -> list[sqlite3.Row]:
+        timed_out = False
+        if timeout is not None:
+            deadline = time.monotonic() + timeout
+
+            def _check_deadline() -> int:
+                nonlocal timed_out
+                if time.monotonic() >= deadline:
+                    timed_out = True
+                    return 1
+                return 0
+
+            conn.set_progress_handler(_check_deadline, _SEARCH_PROGRESS_STEPS)
+        try:
+            return list(conn.execute(sql, (match_query, limit)).fetchall())
+        except sqlite3.OperationalError:
+            if timed_out:
+                raise LibraryFoldersSearchTimeout(
+                    f"search timed out after {timeout:.0f}s — query "
+                    f"{match_query!r} is too broad (a stopword or common short "
+                    "phrase forces a full scan of a large index); narrow the "
+                    "query to more specific or additional terms"
+                ) from None
+            raise
+        finally:
+            if timeout is not None:
+                conn.set_progress_handler(None, 0)
+
     try:
-        return list(conn.execute(sql, (query, limit)).fetchall())
+        return _run(query)
+    except LibraryFoldersSearchTimeout:
+        raise
     except sqlite3.OperationalError:
-        return list(conn.execute(sql, (_safe_fts_query(query), limit)).fetchall())
+        return _run(_safe_fts_query(query))
 
 
 def _find(parent: dict[int, int], value: int) -> int:
@@ -1235,6 +1284,7 @@ def search(
     *,
     limit: int = 20,
     include_duplicates: bool = False,
+    timeout: float | None = _SEARCH_TIMEOUT_SECONDS,
 ) -> list[dict[str, Any]]:
     if limit <= 0:
         return []
@@ -1247,7 +1297,7 @@ def search(
             conn.row_factory = sqlite3.Row
             duplicate_map = _exact_duplicate_map(conn)
             weak_hints = _weak_duplicate_hints(conn, duplicate_map)
-            rows = _search_rows(conn, query, candidate_limit)
+            rows = _search_rows(conn, query, candidate_limit, timeout=timeout)
         except sqlite3.Error:
             return []
     hits: list[dict[str, Any]] = []

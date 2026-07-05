@@ -562,6 +562,31 @@ def test_search_does_not_hint_for_size_only_matches(tmp_path):
     assert all(hit["possible_duplicate_of"] == [] for hit in hits)
 
 
+def test_search_times_out_on_too_broad_query(tmp_path, monkeypatch):
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "a.txt").write_text("dhamma target one", encoding="utf-8")
+    (root / "b.txt").write_text("dhamma target two", encoding="utf-8")
+    config = LibraryFoldersConfig(roots=[root], index=tmp_path / "folder.sqlite")
+    refresh(config)
+    monkeypatch.setattr(library_folders, "_SEARCH_PROGRESS_STEPS", 1)
+
+    with pytest.raises(library_folders.LibraryFoldersSearchTimeout, match="too broad"):
+        search("dhamma", config, timeout=0)
+
+
+def test_search_with_generous_timeout_still_returns_hits(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "a.txt").write_text("dhamma target", encoding="utf-8")
+    config = LibraryFoldersConfig(roots=[root], index=tmp_path / "folder.sqlite")
+    refresh(config)
+
+    hits = search("dhamma", config, timeout=20.0)
+
+    assert [hit["relative_path"] for hit in hits] == ["a.txt"]
+
+
 def test_junk_filename_hints_are_filtered(tmp_path):
     root = tmp_path / "root"
     (root / "book-a").mkdir(parents=True)

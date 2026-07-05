@@ -94,24 +94,13 @@ the premise behind dropped #5.
 | #42 (part) EBC `"Sn N.N"` returns wrong sutta | done (2026-06-22) | `fix: get-ebc-overview tries SNP before SN for mixed-case "Sn" input` — `get_ebc_overview` now extracts the raw prefix before uppercasing; if it's mixed-case `sn` without trailing `p`, tries `SNP{tail}` first then `SN{tail}`, mirroring `_normalise_citation`; 4 regression tests in `TestGetEbcOverview`. dhammatalks AN URL residue stays open. (20260604-034355) |
 | #54 Placeholder-heuristic false positive — claimed fixed, never landed | done (2026-07-05) | `fix: word-boundary match placeholder patterns in scratch phase content check` — `_phase_content_issue` in `tools/scratch.py` now requires a trailing word boundary for word-final placeholder patterns (e.g. "would search" no longer false-matches "would searching" inside quoted canon translation text), via `re.search(re.escape(pat) + r"\b", low)`; patterns ending in punctuation (`<fill in>`) keep plain substring matching since they have no word-char tail to bound. New regression test `test_verify_ignores_placeholder_word_inside_inflected_text` reproduces the exact DN15 "would searching still be found" false positive from 20260630-040739/20260705-162000. The prior run's claim to have already made this fix was checked against `git log` and the live code during triage and found to be false — the fix had never actually landed; this closes that gap for real. All 260 tests pass. |
 | #55 Phase-pointer drift scrambles auto-log headings across multi-agent runs | done (2026-07-05) | `docs: mandate inline VICAYA_PHASE pin for sub-agent dispatch to fix phase drift` — root cause: the per-run active-phase pointer is a single shared, mutable state file, and `scratch-gate` advances it the instant any phase (yours or a sibling's) gates; SKILL.md previously told agents "there is nothing to pin or export," actively discouraging the one thing that makes filing immune to the race. Fix is documentation-first (the `VICAYA_PHASE` env override already existed in `tools/scratch.py`, unused by the dispatch flow): the "Three rules" list in Sub-agent dispatch is now four, rule 1 mandates `VICAYA_PHASE=<PHASE>` inline on every single helper call (not `export`, which doesn't survive between Bash calls); the dispatch prompt template shows the literal prefixed invocation; the Phase 0 exec-rule and the Auto-logging section both now distinguish "nothing to pin" (true only for the single-orchestrator Phase 0/1/5/6/7 flow) from the multi-sub-agent gather phases, where it's false. Defense-in-depth in `tools/scratch.py`: `_maybe_autolog` now appends a `phase-source: run-pointer` line whenever a call was NOT explicitly pinned, so a pointer-inferred (and therefore possibly-stale) entry is visible on inspection instead of silent; the orchestrator's post-agent spot-check step now includes `grep 'phase-source: run-pointer' <scratch>` — any hit means that sub-agent skipped the mandatory pin. 3 new regression tests for the marker (pinned vs. unpinned auto-log). Also fixed while touching the test file (project static-analysis rule): unused-parameter lint noise in `tests/test_research_sources.py` — replaced 7 throwaway `lambda *a, **kw: …` mocks with `MagicMock(return_value=…)`/`MagicMock(side_effect=…)` (no named params to flag) and one unused tuple-unpack (`_translator` → `_`). All 262 tests pass. |
+| #61 search-library-folders hangs indefinitely on stopword/long-phrase queries | done (2026-07-05) | `fix: abort FTS5 library-folders search on a wall-clock timeout` — root cause: `_search_rows` in `tools/library_folders.py` runs `ORDER BY bm25(document_fts) LIMIT ?` against a 12.8GB index; a stopword or one word of an unquoted multi-word phrase matches a huge fraction of the corpus, forcing SQLite to score and sort nearly the whole match set before LIMIT can trim it — minutes of CPU, not a query-syntax bug (the existing `_safe_fts_query` fallback only handles syntax errors, not this). Fix: `_search_rows` installs a `sqlite3.Connection.set_progress_handler` wall-clock deadline (default 20s, new `--timeout` flag on `search-library-folders`); on trip, the query is aborted and a new `LibraryFoldersSearchTimeout` is raised with a message naming the query and telling the caller to narrow it. The CLI handler (`_handle_search_library_folders`) catches it and prints a clean `error: … too broad` to stderr with exit 1 (no autolog), instead of the Bash tool call hanging past its own foreground timeout with zero diagnostic. SKILL.md documents the new flag and failure mode (helper table + "When something fails"). 3 regression tests: timeout raises with a tiny index + `_SEARCH_PROGRESS_STEPS` forced to 1 for determinism, a generous timeout still returns hits normally, and the CLI wiring prints the clean stderr message and exits 1. All 264 tests pass. |
 
 ## Remaining — prioritized
 
 ### High severity
 
-**#61 search-library-folders hangs indefinitely on stopword/long-phrase
-queries.** Reproduced twice: a 3+ word phrase query ("licking the bowl",
-"Book of the Discipline Horner") took 2-3+ minutes and had to be killed while
-1-2 word queries returned in seconds (20260701-135123); a bare stopword query
-containing "of" hung 10+ minutes at ~99% CPU, isolated via binary search by
-the sub-agent itself (20260705-162000). Likely an FTS5 query-plan issue with
-multi-term phrase matching or stopword handling against the large
-snippet-generation path in `tools/research_sources.py`'s
-`search_library_folders`. Needs investigation into the FTS5 query
-construction before a fix can be scoped; in the meantime, worth documenting
-as a known slow-path (short queries first, background+timeout for long
-phrase queries) so it costs a `run_in_background` call instead of a stalled
-agent. (seen in 2 runs: 20260701-135123, 20260705-162000)
+_(#61 moved to Done — FTS5 search now aborts on a wall-clock timeout instead of hanging, 2026-07-05)_
 
 ### Medium severity
 
@@ -412,3 +401,14 @@ _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
    of silent. "Ego (buddhism podcast)" (flagged 3 sightings in the prior
    cycle) surfaced again — now past the promotion-evaluation threshold, still
    not auto-promoted per the no-sightings-alone rule.
+
+7. `/vicaya-improve` run 2026-07-05 (no unprocessed runs; picked from the
+   existing backlog): closed #61 (`search-library-folders` hangs). Root cause
+   was scale, not query syntax — the index is 12.8GB, and a stopword or one
+   word of an unquoted phrase forces SQLite to score/sort nearly the whole
+   corpus before `ORDER BY … LIMIT` can trim it. Fixed with a
+   `set_progress_handler` wall-clock deadline (default 20s, `--timeout` flag)
+   that aborts the query and raises a clear `LibraryFoldersSearchTimeout`
+   instead of hanging past the caller's own foreground timeout. This also
+   partially de-risks #57 (Bash foreground timeout) for this specific helper,
+   though #57's broader external-subprocess-dispatch fix is still open.

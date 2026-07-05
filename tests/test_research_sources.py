@@ -334,6 +334,28 @@ class TestSearchVault:
             assert isinstance(h, VaultHit)
 
 
+class TestSearchLibraryFoldersTimeout:
+    def test_cli_reports_clean_error_on_timeout(self, monkeypatch, capsys):
+        import tools.research_sources as rs
+        from tools.library_folders import LibraryFoldersSearchTimeout as _Timeout
+
+        fake_library_folders = MagicMock()
+        fake_library_folders.LibraryFoldersSearchTimeout = _Timeout
+        fake_library_folders.search.side_effect = _Timeout(
+            "search timed out after 20s — query 'of' is too broad"
+        )
+
+        monkeypatch.setattr(
+            rs, "_load_library_folders_module", lambda: fake_library_folders
+        )
+        monkeypatch.setattr(
+            sys, "argv", ["research_sources", "search-library-folders", "of"]
+        )
+
+        assert rs._cli() == 1
+        assert "too broad" in capsys.readouterr().err
+
+
 class TestChannelAllowlist:
     def test_channel_allowlist_parses(self, tmp_path):
         from tools.research_sources import load_channel_allowlist

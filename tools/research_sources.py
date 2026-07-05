@@ -2198,11 +2198,16 @@ def _cli() -> int:
 
     def _handle_search_library_folders(args):
         library_folders = _load_library_folders_module()
-        result = library_folders.search(
-            args.query,
-            limit=args.limit,
-            include_duplicates=args.include_duplicates,
-        )
+        try:
+            result = library_folders.search(
+                args.query,
+                limit=args.limit,
+                include_duplicates=args.include_duplicates,
+                timeout=args.timeout,
+            )
+        except library_folders.LibraryFoldersSearchTimeout as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return _done(exit_code=1, autolog=False)
         argv = [args.query, "--limit", str(args.limit)]
         if args.include_duplicates:
             argv.append("--include-duplicates")
@@ -2465,6 +2470,14 @@ def _cli() -> int:
     psfc.add_argument("--limit", type=int, default=20)
     psfc.add_argument("--include-duplicates", action="store_true")
     psfc.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
+    psfc.add_argument(
+        "--timeout",
+        type=float,
+        default=20.0,
+        help="Abort the FTS5 query after N seconds (a stopword or common "
+        "short phrase can otherwise force a full scan of a large index); "
+        "prints a clear error instead of hanging.",
+    )
     psfc.set_defaults(func=_handle_search_library_folders)
 
     pfd = sub.add_parser(
