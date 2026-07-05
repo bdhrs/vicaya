@@ -2064,6 +2064,30 @@ Vault-relative paths resolve against `VICAYA_VAULT_PATH`; absolute paths work
 too. The command refuses if the note file does not exist, so a typo cannot
 silently disarm the gate.
 
+### Library coverage check (advisory)
+
+After `scratch-set-note`, run:
+
+```bash
+uv run tools/research_sources.py scratch-check-coverage
+```
+
+This flags library-folder documents that were gathered in any phase but
+appear nowhere in the note — not cited, and not logged in `## Sources
+Investigated, Not Used` either. It is a narrow, targeted check (re-scoped
+from a broader hypothesis in 2026-07-05 triage, see TODO #64): an audit of 6
+recent notes found canon and web coverage already self-curated well through
+the rejection table, but library documents can slip through both the
+citations and the rejection table silently. It is advisory, not a hard
+gate — a nonzero exit just means review the listed documents and either cite
+them or add a one-line reason to the rejection table.
+
+The check matches `calibre-<document_id>` / `Calibre #<document_id>` (the
+two forms already used in notes) anywhere in the note text. **When logging a
+library source in `## Sources Investigated, Not Used`, include its calibre
+id** (e.g. `Author, Title (Calibre #2365)`) so the rejection is machine-
+checkable, not just a title a future pass can't verify against.
+
 ### Self-audit (required before the gate)
 
 After `scratch-set-note` and before `scratch-gate 7`, record the failure
@@ -2101,7 +2125,7 @@ approved script path.
 
 A sync failure is never fatal — the note is already saved to the vault.
 
-→ **Phase 7 exit:** after validation/PDF generation, run `scratch-set-note` (records the saved note + PDF paths), then `scratch-self-audit` with answers (the gate refuses without it), then `scratch-gate 7`, then `uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"`; after writing the reflection, run `uv run scripts/sync_run_report.py`. The run is not complete until the gate passes and both sync commands have been attempted — the gate confirms the vault path and PDF path are recorded in the dossier, note sync publishes the saved note, and run-report sync publishes the latest `runs/*.md` report. `scripts/sync_run_report.py` is a pre-approved run-report publishing script and may pull, commit, and push Vicaya run reports in this project repo. New or materially modified scripts are not automatically pre-approved for git, publishing, deployment, sync, delete, or overwrite operations.
+→ **Phase 7 exit:** after validation/PDF generation, run `scratch-set-note` (records the saved note + PDF paths), then `scratch-check-coverage` (advisory — review any flagged library documents), then `scratch-self-audit` with answers (the gate refuses without it), then `scratch-gate 7`, then `uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"`; after writing the reflection, run `uv run scripts/sync_run_report.py`. The run is not complete until the gate passes and both sync commands have been attempted — the gate confirms the vault path and PDF path are recorded in the dossier, note sync publishes the saved note, and run-report sync publishes the latest `runs/*.md` report. `scripts/sync_run_report.py` is a pre-approved run-report publishing script and may pull, commit, and push Vicaya run reports in this project repo. New or materially modified scripts are not automatically pre-approved for git, publishing, deployment, sync, delete, or overwrite operations.
 
 After both sync commands have been attempted, clean only this run's disposable repo-local temp directory; never remove `data/scratch/` or scratch-local draft/review files:
 

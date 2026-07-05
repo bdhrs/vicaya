@@ -797,6 +797,68 @@ def scratch_verify(through: str | None = None, scratch: Path | None = None) -> d
     }
 
 
+def scratch_check_coverage(scratch: Path | None = None) -> dict:
+    """Flag library-folder hits gathered but mentioned nowhere in the final note.
+
+    Advisory, not gating: a 2026-07-05 audit of 6 recent notes found canon/web
+    hits are dominated by stem-search noise and near-duplicate passages that
+    the Devil's Advocate / rejection-table process already self-curates well
+    (62-87% citation rate against the note's own funnel, with reasons logged
+    for the rest). The one confirmed gap was a library document with an
+    on-topic snippet that never appeared in the note's citations or its
+    Sources Investigated, Not Used table. This checks for that specific
+    pattern by matching `calibre-<document_id>` / `Calibre #<document_id>`
+    (the two forms already used in notes) anywhere in the note text — tag a
+    rejection with the id to clear this check.
+    """
+    path = scratch or _scratch_path()
+    if not path.exists():
+        return {"ok": False, "error": f"scratch not initialised: {path}"}
+    text = path.read_text(encoding="utf-8")
+
+    note_match = _re.search(r"^\*\*Vault note:\*\*\s*(.+)$", text, _re.M)
+    note_path_str = note_match.group(1).strip() if note_match else ""
+    if not note_path_str or note_path_str == "<set at Phase 7>":
+        return {
+            "ok": False,
+            "error": "no vault note recorded — run scratch-set-note first",
+        }
+    note_path = Path(note_path_str)
+    if not note_path.exists():
+        return {"ok": False, "error": f"vault note not found: {note_path}"}
+    note_text = note_path.read_text(encoding="utf-8")
+
+    docs: dict[int, dict] = {}
+    for m in _re.finditer(r"\{[^{}]*\"document_id\"\s*:\s*\d+[^{}]*\}", text):
+        try:
+            hit = json.loads(m.group(0))
+        except json.JSONDecodeError:
+            continue
+        doc_id = hit.get("document_id")
+        if isinstance(doc_id, int):
+            docs[doc_id] = hit
+
+    unaccounted = []
+    for doc_id, hit in sorted(docs.items()):
+        if _re.search(rf"calibre[\s#-]*{doc_id}\b", note_text, _re.I):
+            continue
+        unaccounted.append(
+            {
+                "document_id": doc_id,
+                "title": hit.get("title"),
+                "relative_path": hit.get("relative_path"),
+                "snippet": (hit.get("snippet") or "")[:200],
+            }
+        )
+
+    return {
+        "ok": not unaccounted,
+        "note": str(note_path),
+        "library_hits_gathered": len(docs),
+        "unaccounted": unaccounted,
+    }
+
+
 def scratch_resume(slug: str | None = None, scratch: Path | None = None) -> dict:
     """Print the last gate written and suggest the next phase."""
     path = scratch or _scratch_path(slug)

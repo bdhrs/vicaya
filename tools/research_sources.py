@@ -1988,6 +1988,7 @@ from tools.scratch import (  # noqa: E402, F401
     scratch_set_note,
     scratch_self_audit,
     scratch_verify,
+    scratch_check_coverage,
     scratch_resume,
     _maybe_autolog,
 )
@@ -2305,6 +2306,11 @@ def _cli() -> int:
         _dump(result)
         return _done(exit_code=0 if result.get("ok") else 1, autolog=False)
 
+    def _handle_scratch_check_coverage(_args):
+        result = scratch_check_coverage()
+        _dump(result)
+        return _done(exit_code=0 if result.get("ok") else 1, autolog=False)
+
     def _handle_scratch_resume(args):
         result = scratch_resume(slug=args.slug)
         _dump(result)
@@ -2619,6 +2625,14 @@ def _cli() -> int:
         help="Check gates through this phase id; default = highest gate written.",
     )
     psv.set_defaults(func=_handle_scratch_verify)
+
+    pscc = sub.add_parser(
+        "scratch-check-coverage",
+        help="Flag library-folder hits gathered but absent from the vault "
+        "note's citations or its Sources Investigated, Not Used table. "
+        "Advisory — run before the Phase 7 gate, not a hard blocker.",
+    )
+    pscc.set_defaults(func=_handle_scratch_check_coverage)
 
     psr = sub.add_parser(
         "scratch-resume",

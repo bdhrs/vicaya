@@ -1616,6 +1616,134 @@ class TestScratchSetNote:
         assert new_text.index("**Run class:**") < new_text.index("**Vault note:**")
 
 
+class TestScratchCheckCoverage:
+    """scratch-check-coverage flags library hits absent from the final note.
+
+    Regression for issue #64 (re-scoped 2026-07-05): a note comparing 6
+    real scratch/note pairs found canon/web coverage is already
+    self-curated well via the rejection table, but one library document
+    with an on-topic snippet slipped through uncited and unlisted.
+    """
+
+    def _log_library_hit(self, tmp_path, document_id, title="A Relevant Book.pdf"):
+        import json as _json
+
+        from tools.research_sources import scratch_log
+
+        results_file = tmp_path / f"lib-{document_id}.json"
+        results_file.write_text(
+            _json.dumps(
+                [
+                    {
+                        "document_id": document_id,
+                        "title": title,
+                        "relative_path": f"Library/{title}",
+                        "snippet": "... clearly on-topic passage ...",
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+        scratch_log(
+            "3",
+            "search-library-folders",
+            summary="library hit",
+            results_file=results_file,
+            hits=1,
+        )
+
+    def test_flags_uncited_unlisted_library_hit(self, tmp_path, monkeypatch):
+        from tools.research_sources import (
+            scratch_check_coverage,
+            scratch_init,
+            scratch_set_note,
+        )
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("coverage-gap")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        self._log_library_hit(tmp_path, 2366, "Meditation Centers Directory.pdf")
+        note = tmp_path / "note.md"
+        note.write_text(
+            "# Note\n\nNo mention of that document at all.\n", encoding="utf-8"
+        )
+        assert scratch_set_note(str(note))["ok"]
+
+        result = scratch_check_coverage()
+
+        assert result["ok"] is False
+        assert result["library_hits_gathered"] == 1
+        assert result["unaccounted"] == [
+            {
+                "document_id": 2366,
+                "title": "Meditation Centers Directory.pdf",
+                "relative_path": "Library/Meditation Centers Directory.pdf",
+                "snippet": "... clearly on-topic passage ...",
+            }
+        ]
+
+    def test_passes_when_cited_as_footnote(self, tmp_path, monkeypatch):
+        from tools.research_sources import (
+            scratch_check_coverage,
+            scratch_init,
+            scratch_set_note,
+        )
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("coverage-cited")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        self._log_library_hit(tmp_path, 2365)
+        note = tmp_path / "note.md"
+        note.write_text(
+            "# Note\n\nSome claim.[^calibre-2365]\n\n[^calibre-2365]: A Relevant Book.\n",
+            encoding="utf-8",
+        )
+        assert scratch_set_note(str(note))["ok"]
+
+        result = scratch_check_coverage()
+
+        assert result["ok"] is True
+        assert result["unaccounted"] == []
+
+    def test_passes_when_logged_in_rejection_table_by_id(self, tmp_path, monkeypatch):
+        from tools.research_sources import (
+            scratch_check_coverage,
+            scratch_init,
+            scratch_set_note,
+        )
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("coverage-rejected")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        self._log_library_hit(tmp_path, 7439)
+        note = tmp_path / "note.md"
+        note.write_text(
+            "# Note\n\n"
+            "## Sources Investigated, Not Used\n"
+            "| A Relevant Book (Calibre #7439) | T3 Library | Off-topic |\n",
+            encoding="utf-8",
+        )
+        assert scratch_set_note(str(note))["ok"]
+
+        result = scratch_check_coverage()
+
+        assert result["ok"] is True
+        assert result["unaccounted"] == []
+
+    def test_refuses_without_vault_note(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_check_coverage, scratch_init
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("coverage-no-note")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        self._log_library_hit(tmp_path, 1)
+
+        result = scratch_check_coverage()
+
+        assert result["ok"] is False
+        assert "scratch-set-note" in result["error"]
+
+
 class TestScratchSelfAudit:
     """scratch-self-audit records the failure checklist the Phase 7 gate requires."""
 

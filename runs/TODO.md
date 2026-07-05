@@ -95,6 +95,7 @@ the premise behind dropped #5.
 | #54 Placeholder-heuristic false positive — claimed fixed, never landed | done (2026-07-05) | `fix: word-boundary match placeholder patterns in scratch phase content check` — `_phase_content_issue` in `tools/scratch.py` now requires a trailing word boundary for word-final placeholder patterns (e.g. "would search" no longer false-matches "would searching" inside quoted canon translation text), via `re.search(re.escape(pat) + r"\b", low)`; patterns ending in punctuation (`<fill in>`) keep plain substring matching since they have no word-char tail to bound. New regression test `test_verify_ignores_placeholder_word_inside_inflected_text` reproduces the exact DN15 "would searching still be found" false positive from 20260630-040739/20260705-162000. The prior run's claim to have already made this fix was checked against `git log` and the live code during triage and found to be false — the fix had never actually landed; this closes that gap for real. All 260 tests pass. |
 | #55 Phase-pointer drift scrambles auto-log headings across multi-agent runs | done (2026-07-05) | `docs: mandate inline VICAYA_PHASE pin for sub-agent dispatch to fix phase drift` — root cause: the per-run active-phase pointer is a single shared, mutable state file, and `scratch-gate` advances it the instant any phase (yours or a sibling's) gates; SKILL.md previously told agents "there is nothing to pin or export," actively discouraging the one thing that makes filing immune to the race. Fix is documentation-first (the `VICAYA_PHASE` env override already existed in `tools/scratch.py`, unused by the dispatch flow): the "Three rules" list in Sub-agent dispatch is now four, rule 1 mandates `VICAYA_PHASE=<PHASE>` inline on every single helper call (not `export`, which doesn't survive between Bash calls); the dispatch prompt template shows the literal prefixed invocation; the Phase 0 exec-rule and the Auto-logging section both now distinguish "nothing to pin" (true only for the single-orchestrator Phase 0/1/5/6/7 flow) from the multi-sub-agent gather phases, where it's false. Defense-in-depth in `tools/scratch.py`: `_maybe_autolog` now appends a `phase-source: run-pointer` line whenever a call was NOT explicitly pinned, so a pointer-inferred (and therefore possibly-stale) entry is visible on inspection instead of silent; the orchestrator's post-agent spot-check step now includes `grep 'phase-source: run-pointer' <scratch>` — any hit means that sub-agent skipped the mandatory pin. 3 new regression tests for the marker (pinned vs. unpinned auto-log). Also fixed while touching the test file (project static-analysis rule): unused-parameter lint noise in `tests/test_research_sources.py` — replaced 7 throwaway `lambda *a, **kw: …` mocks with `MagicMock(return_value=…)`/`MagicMock(side_effect=…)` (no named params to flag) and one unused tuple-unpack (`_translator` → `_`). All 262 tests pass. |
 | #61 search-library-folders hangs indefinitely on stopword/long-phrase queries | done (2026-07-05) | `fix: abort FTS5 library-folders search on a wall-clock timeout` — root cause: `_search_rows` in `tools/library_folders.py` runs `ORDER BY bm25(document_fts) LIMIT ?` against a 12.8GB index; a stopword or one word of an unquoted multi-word phrase matches a huge fraction of the corpus, forcing SQLite to score and sort nearly the whole match set before LIMIT can trim it — minutes of CPU, not a query-syntax bug (the existing `_safe_fts_query` fallback only handles syntax errors, not this). Fix: `_search_rows` installs a `sqlite3.Connection.set_progress_handler` wall-clock deadline (default 20s, new `--timeout` flag on `search-library-folders`); on trip, the query is aborted and a new `LibraryFoldersSearchTimeout` is raised with a message naming the query and telling the caller to narrow it. The CLI handler (`_handle_search_library_folders`) catches it and prints a clean `error: … too broad` to stderr with exit 1 (no autolog), instead of the Bash tool call hanging past its own foreground timeout with zero diagnostic. SKILL.md documents the new flag and failure mode (helper table + "When something fails"). 3 regression tests: timeout raises with a tiny index + `_SEARCH_PROGRESS_STEPS` forced to 1 for determinism, a generous timeout still returns hits normally, and the CLI wiring prints the clean stderr message and exits 1. All 264 tests pass. |
+| #64 Phase 5 drafts thin relative to dossier size | re-scoped, done (2026-07-05) | `feat: add scratch-check-coverage to catch dropped library sources` — before implementing the original hypothesis (a full gathered-vs-cited coverage-diff tool), ran an empirical audit: hand-checked sri-lanka-forest-monks-galduwa (dossier vs. note) and forked a 6-note survey across late-June/July runs. Verdict: the broad "agent ignores most of the dossier" claim doesn't hold — raw `hits: N` counts are dominated by stem-search noise and near-duplicate stock passages (e.g. the same "brothers went forth" narrative repeated 5x in one commentary); once deduped, T1 canon citation rates against each note's own self-reported evidence funnel ran 62-87%, with explicit reasons logged in `## Sources Investigated, Not Used` for the rest. The one confirmed gap, in both the hand-check and the fork's sample: a library document with an on-topic snippet that appeared in neither the note's citations nor its rejection table — a bookkeeping miss, not wholesale under-use. The original flagship case (karuna-vs-christian-compassion) traces to a weak sub-agent model (north-mini-code) that the same retrospective flagged as doing "searches and gating but no analytical work" — a model-capability issue, not a general Phase 5 defect. Shipped instead: `scratch_check_coverage()` in `tools/scratch.py` + `scratch-check-coverage` CLI subcommand — greps every `document_id`-bearing JSON block logged across all phases, and flags any whose id doesn't appear as `calibre-<id>` / `Calibre #<id>` anywhere in the vault note. Advisory only (not wired into `scratch_gate`/`scratch_verify`), run after `scratch-set-note` and before the self-audit. SKILL.md Phase 7 documents the new step and the id-tagging convention for `## Sources Investigated, Not Used` entries. 4 regression tests (`TestScratchCheckCoverage`). All 269 tests pass. |
 
 ## Remaining — prioritized
 
@@ -160,19 +161,9 @@ already has any gate written, prints "slug exists; last gate N; note set")
 would remove the need to remember the rule at all. (seen in 1 run:
 20260626-044732)
 
-**#64 Phase 5 drafts thin relative to dossier size.** A run with 50 canon
-hits and 40 library hits produced only a ~3,000-word first draft citing ~6
-passages; the user explicitly rejected it ("longer notes are better... the
-dossier exists to be used, not summarised") and it was rebuilt to ~8,000
-words / 20 citations only after the user flagged it. Root cause: the
-reflex to finish overrode the Phase 5 instruction to read the scratch file
-before drafting, because that instruction is phrased as advice rather than a
-literal command. Fix candidates: make "cat $SCRATCH" (or equivalent) a
-literal step in the Phase 5 spec rather than prose; scale the target word
-count with dossier volume/source count instead of a fixed ~3,500-word
-target. (seen in 1 run: 20260704-230000, but the correction was an explicit,
-unambiguous user statement about repo-wide note quality, not a one-off
-preference)
+_(#64 moved to Done — re-scoped after empirical audit found the broad
+"thin drafts" hypothesis unsupported; a narrower library-coverage check
+shipped instead, 2026-07-05)_
 
 ### Low severity
 
@@ -412,3 +403,17 @@ _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
    instead of hanging past the caller's own foreground timeout. This also
    partially de-risks #57 (Bash foreground timeout) for this specific helper,
    though #57's broader external-subprocess-dispatch fix is still open.
+
+8. Follow-up session 2026-07-05: before building #64's originally-proposed
+   coverage-diff tool, measured the actual problem first — hand-checked one
+   scratch/note pair and forked a 6-note survey. Lesson worth repeating: a
+   single flagged run (even with a strong, explicit user complaint) is not
+   enough evidence to justify a structural fix at the scale first proposed;
+   measuring against several real scratch/note pairs upgraded a
+   "the agent throws away most of what it gathers" diagnosis into the much
+   narrower, verified "library sources occasionally slip past both citation
+   and the rejection table" — a smaller, cheaper, better-targeted fix
+   (`scratch-check-coverage`). If a future run reports thin drafts again,
+   check whether it used a weak/cheap sub-agent model first (the one
+   confirmed severe case did) before assuming the general Phase 5 flow
+   regressed.
