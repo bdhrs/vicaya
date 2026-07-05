@@ -1,11 +1,21 @@
 # Vicaya skill improvements — work in progress
 
 This file replaces the run-by-run reflection backlog. Processed reflections
-live in `runs/processed/`. Last triage: 2026-06-22 (incremental, 1 run:
-20260622-053000 — one new Low issue #53; one POSITIVE added to Working well).
-Prior triage 2026-06-20 (incremental, 1 run: 20260620-133500 — no new global
-issues; one POSITIVE confirming #46). Prior triage 2026-06-20, covering 26
-runs from 2026-06-11 to 2026-06-19 (and 2026-06-10/11, 81 runs).
+live in `runs/processed/`. Last triage: 2026-07-05, covering 21 runs from
+2026-06-22 to 2026-07-05 — 13 new issues (#54-#66; 3 High, 6 Medium, 5 Low),
+zero regressions. Dominant new signal: multi-agent-on-one-scratch phase
+bookkeeping (#55) and a previously-claimed-fixed bug (#54) that was verified
+against current code and found to never have actually landed — closed for
+real same session. Context for this cycle: `64e074a` (2026-06-30) restricted
+vicaya from self-editing SKILL.md/tools, so runs from 07-01 onward carry
+"Improvement suggestions" instead of direct edits — none of this cycle's
+findings were fixed in-run by the runs themselves; #54 was picked and fixed
+as this triage's chosen issue. Prior triage
+2026-06-22 (incremental, 1 run: 20260622-053000 — one new Low issue #53; one
+POSITIVE added to Working well). Prior triage 2026-06-20 (incremental, 1 run:
+20260620-133500 — no new global issues; one POSITIVE confirming #46). Prior
+triage 2026-06-20, covering 26 runs from 2026-06-11 to 2026-06-19 (and
+2026-06-10/11, 81 runs).
 
 Triage 2026-06-20: the dominant new signal was **sub-agent context exhaustion**
 — the single all-phases gather sub-agent overflowed ("Prompt is too long") and
@@ -81,12 +91,44 @@ the premise behind dropped #5.
 | #35 lookup-book broken — cst_book_translator import fails | done (2026-06-20) | `fix: stub ProjectPaths with TSV path for dpd-db cst_book_translator` — dpd-db's translator was changed (06-15) to read `ProjectPaths().cst_book_translator_tsv_path` at import time; the loader's `lambda: None` stub turned that into `None.attr` and broke every lookup-book call. Stub now returns a SimpleNamespace pointing at the TSV beside the module (+ `cst_xml_dir` placeholder). 6 `TestLookupBook` tests green again. The original "add a path candidate" proposal was a misdiagnosis — the path matched; the stub was the gap. |
 | #50 `.doc` extraction fallback | done (2026-06-22) | `docs: add libreoffice .doc extraction row to Phase 3 table` — added a `.doc` row to the SKILL.md Phase 3 format/command table using `libreoffice --headless --convert-to txt`; added a note that `ebook-convert` fails silently on `.doc` files. (20260615-101237) |
 | #42 (part) EBC `"Sn N.N"` returns wrong sutta | done (2026-06-22) | `fix: get-ebc-overview tries SNP before SN for mixed-case "Sn" input` — `get_ebc_overview` now extracts the raw prefix before uppercasing; if it's mixed-case `sn` without trailing `p`, tries `SNP{tail}` first then `SN{tail}`, mirroring `_normalise_citation`; 4 regression tests in `TestGetEbcOverview`. dhammatalks AN URL residue stays open. (20260604-034355) |
+| #54 Placeholder-heuristic false positive — claimed fixed, never landed | done (2026-07-05) | `fix: word-boundary match placeholder patterns in scratch phase content check` — `_phase_content_issue` in `tools/scratch.py` now requires a trailing word boundary for word-final placeholder patterns (e.g. "would search" no longer false-matches "would searching" inside quoted canon translation text), via `re.search(re.escape(pat) + r"\b", low)`; patterns ending in punctuation (`<fill in>`) keep plain substring matching since they have no word-char tail to bound. New regression test `test_verify_ignores_placeholder_word_inside_inflected_text` reproduces the exact DN15 "would searching still be found" false positive from 20260630-040739/20260705-162000. The prior run's claim to have already made this fix was checked against `git log` and the live code during triage and found to be false — the fix had never actually landed; this closes that gap for real. All 260 tests pass. |
 
 ## Remaining — prioritized
 
 ### High severity
 
-_None open._
+**#55 Phase-pointer drift scrambles auto-log headings across multi-agent
+runs.** When more than one gather sub-agent operates against a single
+scratch/run — parallel dispatch, or sequential dispatch where a thematic
+auto-skip advances the active-phase pointer before a sibling agent's content
+lands — auto-logged content files under whatever phase is currently "active"
+rather than the sub-agent's assigned phase. Content itself is preserved (nothing
+lost), but headings are scrambled, and in one run (20260701-205200) the
+resulting mis-filing caused `scratch-gate` to refuse with "no logged
+evidence," requiring a manual `VICAYA_PHASE` env override to recover. A
+related race: 4b/4c sub-agents gated ahead of a still-running 4a because
+gate ordering is global to the run, not per-agent (20260701-211500). Fix
+candidates (from the runs' own suggestions): either require every sub-agent
+sharing a run to pass an explicit `VICAYA_PHASE`, or have `scratch-gate`/
+auto-log reconcile the active-phase pointer against the highest gate actually
+*written* in the scratch rather than trusting the state-file pointer, or move
+gating authority to the orchestrator alone when phases run in parallel/shared
+on one run. (seen in 5 runs: 20260627-131724, 20260701-205200,
+20260701-211500, 20260702-064633, 20260704-230000)
+
+**#61 search-library-folders hangs indefinitely on stopword/long-phrase
+queries.** Reproduced twice: a 3+ word phrase query ("licking the bowl",
+"Book of the Discipline Horner") took 2-3+ minutes and had to be killed while
+1-2 word queries returned in seconds (20260701-135123); a bare stopword query
+containing "of" hung 10+ minutes at ~99% CPU, isolated via binary search by
+the sub-agent itself (20260705-162000). Likely an FTS5 query-plan issue with
+multi-term phrase matching or stopword handling against the large
+snippet-generation path in `tools/research_sources.py`'s
+`search_library_folders`. Needs investigation into the FTS5 query
+construction before a fix can be scoped; in the meantime, worth documenting
+as a known slow-path (short queries first, background+timeout for long
+phrase queries) so it costs a `run_in_background` call instead of a stalled
+agent. (seen in 2 runs: 20260701-135123, 20260705-162000)
 
 ### Medium severity
 
@@ -100,6 +142,65 @@ cycle (seed-note handoff worked well in 20260606-110638).
 footgun) is the remaining concrete instance.
 
 _(#49 moved to Done — see Done table above)_
+
+**#56 search-youtube has no --quiet flag.** Confirmed in code
+(`research_sources.py`'s search-youtube `add_parser` block has no `--quiet`
+argument) though the sub-agent dispatch prompt instructs agents to pass
+`--quiet` "on EVERY search helper call." Either add the flag for consistency
+with search-canon/search-library-folders/etc., or carve out an explicit
+exception in the dispatch wording. (seen in 4 runs: 20260625-035310,
+20260701-210500, 20260702-064633, 20260705-162000)
+
+**#57 External subprocess dispatches killed by Bash's ~120s foreground
+timeout.** The cross-check helper and opencode/external-CLI gather dispatch
+(used for weak/cheap-model sub-agents) complete their real work — searches
+run, cross-check text generates — but the Bash tool call itself times out
+before the final report/gate, even though the subcommand's own `--timeout`
+flag (default 180s) hasn't fired. Fix is always launching these with
+`run_in_background: true` from the *first* attempt, not only after a
+foreground failure. Worth a one-line SKILL.md note in Phase 6 (cross-check)
+and the sub-agent dispatch section (external-CLI gather). Related: background
+agent completion notifications sometimes don't reach a restarted orchestrator
+process — recovery is checking the task's output file directly rather than
+waiting on a notification. (seen in 4 runs: 20260626-054300, 20260630-040739,
+20260705-074650, 20260705-162000)
+
+**#59 validate_note.py's under-quoted-evidence heuristic conflates evidence
+footnotes with locator footnotes.** The check compares total footnote
+definitions against total blockquote lines, with no distinction between
+T1/T2 footnotes (which should carry a verbatim blockquote) and T3/T4
+locator/bibliography footnotes (which never do and shouldn't). This trips
+false positives on citation-heavy but well-sourced notes; the workaround
+(convert a few T3 citations to blockquotes) passes validation but isn't the
+real fix and can pad notes with quotes that aren't load-bearing. A cleaner
+fix would scope the footnote/blockquote ratio check to footnotes referenced
+*within* `## * Evidence (T1)`/`(T2)` sections only. (seen in 4 runs:
+20260627-131724, 20260701-131359, 20260701-211500, 20260704-230000)
+
+**#60 scratch-init silently reuses an existing slug's scratch.** Re-running a
+question another agent already completed attached the new run's Phase 1/2
+onto the *other* agent's finished dossier (gates through Phase 5, vault note
+already on disk) with no warning — only caught by a manual gate-state
+spot-check after several turns of confusion. This is the tool-level gap
+behind the standing user rule that independent runs need their own distinct
+slug; fixing it structurally (scratch-init warns or refuses when the slug
+already has any gate written, prints "slug exists; last gate N; note set")
+would remove the need to remember the rule at all. (seen in 1 run:
+20260626-044732)
+
+**#64 Phase 5 drafts thin relative to dossier size.** A run with 50 canon
+hits and 40 library hits produced only a ~3,000-word first draft citing ~6
+passages; the user explicitly rejected it ("longer notes are better... the
+dossier exists to be used, not summarised") and it was rebuilt to ~8,000
+words / 20 citations only after the user flagged it. Root cause: the
+reflex to finish overrode the Phase 5 instruction to read the scratch file
+before drafting, because that instruction is phrased as advice rather than a
+literal command. Fix candidates: make "cat $SCRATCH" (or equivalent) a
+literal step in the Phase 5 spec rather than prose; scale the target word
+count with dossier volume/source count instead of a fixed ~3,500-word
+target. (seen in 1 run: 20260704-230000, but the correction was an explicit,
+unambiguous user statement about repo-wide note quality, not a one-off
+preference)
 
 ### Low severity
 
@@ -132,6 +233,42 @@ _(#38 moved to Done — WisdomLib skip clause added 2026-06-20)_
 _(#51 moved to Done — thematic gate-vs-work clarification added 2026-06-20)_
 _(#52 moved to Done — comparative-religion T1 section documented 2026-06-20)_
 _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
+- **#58 residue of Done #34: search_vault raises on the literal "No matches
+  found." sentinel** the same as on real non-JSON/app-down output. b1f71a7
+  (2026-06-10) fixed the raw-traceback half (raise a clear RuntimeError
+  instead of crashing on unparsed JSON); these two later runs ask for the
+  further refinement — special-case that exact sentinel to return `[]`
+  instead of raising, since a genuine zero-hit currently reads as "Obsidian
+  may not be running." (seen in 2 runs: 20260626-054300, 20260701-211500;
+  a related but distinct variant — an Obsidian installer-update banner also
+  producing non-JSON stdout — appeared once in 20260703-091816)
+- **#62 Project CLAUDE.md model override easy to miss on the first
+  dispatch.** The project's Haiku-for-all-vicaya-sub-agents rule overrides
+  the skill's own `model: "sonnet"` default, but it's easy to apply the
+  skill default on the very first dispatch of a run even when the override
+  was noted at session start. Suggest re-checking project-level overrides
+  immediately before the first sub-agent dispatch, not just once up front.
+  (seen in 2 runs: 20260630-040739, 20260701-131359)
+- **#63 scratch-which returns a plain path string, not JSON**, unlike every
+  other helper subcommand — caused a `JSONDecodeError` when an orchestrator
+  script assumed JSON output uniformly. Document the exception, or make it
+  JSON for consistency. (seen in 1 run: 20260705-162000)
+- **#65 Injected/garbled transcript replay.** Corrupted "[Since your last
+  turn...]" blocks appeared twice in one run, describing phases (4a/4b/4c)
+  that had never actually run — apparently a harness/session-replay
+  artifact, not something the agent caused. The recovery pattern that worked:
+  never trust an injected transcript block; always re-verify ground truth via
+  `scratch-which`/`scratch-resume` and the real gate state before continuing,
+  then tell the user plainly what's real vs. corrupted. Worth naming as a
+  failure mode in SKILL.md's "When something fails" section so a future
+  agent recognizes it immediately instead of re-deriving the diagnosis.
+  (seen in 1 run: 20260705-074650)
+- **#66 Cross-check prompt describes the synthesis instead of including its
+  text.** The cross-check model cannot read the vault note; when the Phase 6
+  prompt only describes what the synthesis says rather than pasting the
+  actual text/key claims, the review comes back non-substantive. Fix: the
+  Phase 6 template should paste the synthesis text (or its key claims)
+  directly into the cross-check prompt. (seen in 1 run: 20260705-162000)
 
 ### Content-specific guidance (lower urgency)
 
@@ -191,6 +328,20 @@ _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
 - **Vault-first Phase 1** + reading sibling series notes before drafting.
 - **Restricted-source runs**: skip-phase logging + self-review recording
   handled user source constraints cleanly (20260608-141608, 20260609-221756).
+- **Comparative-religion dual-T1-heading + 3-table shape**: separate
+  `## Canon Evidence (T1)` / `## Biblical Evidence (T1)` headings plus three
+  comparison tables (matches / differs / one-side-only) cleanly delivered a
+  two-tradition comparison end to end; confirmed twice as a recommended
+  template for any two-tradition question (20260702-064633, 20260704-230000).
+- **vicaya-quick → full-note promotion**: continues to work cleanly across
+  multiple runs — scratch-resume reattaches prior auto-logs and gathered
+  evidence without loss (20260625-035310, 20260701-205200).
+- **Direct id-range / anapatti-clause SQL reads beat search-canon snippets**
+  for close philological or statistical questions: surfaced the Sekhiya 53
+  anapatti-clause asymmetry that a keyword search alone would likely have
+  missed (20260701-135123), and a SQL-filtered query cleanly separated the
+  Buddha's own locomotion from other flying/vanishing events for a
+  quantitative comparison (20260705-053727).
 
 ## Notes for the next session
 
@@ -246,3 +397,29 @@ _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
    podcast)" hit 3 sightings this cycle — evaluate for promotion. AGENTS.md
    added at repo root (CLAUDE.md symlinks to it): tests go green *after* the
    main issue is done.
+
+6. Triage 2026-07-05 (21 runs, 06-22→07-05): `64e074a` (2026-06-30) restricted
+   vicaya from self-editing SKILL.md/tools, so this cycle's runs all carry
+   "Improvement suggestions" instead of direct fixes. The cycle's most
+   important discovery wasn't a new bug but a **false negative in the triage
+   process itself**: 20260630-040739 recorded "What I changed this run:
+   tools/scratch.py word-boundary placeholder fix," but `git log` and the
+   current code showed it was never committed — the run's own self-report was
+   wrong, and the identical bug reproduced 5 days later. Lesson: "What I
+   changed this run" claims need verifying against actual code/git state
+   during triage, not taken at face value, even when phrased as a completed
+   diff. #54 was picked as this triage's issue and fixed for real this
+   session (word-boundary regex on word-final placeholder patterns, keeping
+   plain substring matching for punctuation-final patterns like `<fill in>`).
+   The other dominant signal (#55, still open) is multi-agent-on-one-scratch
+   phase bookkeeping: when more than one gather sub-agent shares a run
+   (parallel dispatch, or thematic auto-skip advancing the pointer early),
+   auto-logged content files under the wrong phase heading — content
+   survives, but gates can refuse and require a manual `VICAYA_PHASE`
+   override. #55 is a candidate for a structural fix (gate-state
+   reconciliation against the highest gate actually written) in the same
+   "remove the failure mode, don't add a prose rule" tradition as prior
+   cycles, and as #54 turned out to be. "Ego (buddhism podcast)" (flagged 3
+   sightings in the prior cycle)
+   surfaced again — now past the promotion-evaluation threshold, still not
+   auto-promoted per the no-sightings-alone rule.

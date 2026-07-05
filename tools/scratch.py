@@ -459,7 +459,16 @@ def _phase_content_issue(body: str) -> str | None:
         return None
     low = body.lower()
     for pat in _PLACEHOLDER_PATTERNS:
-        if pat in low:
+        # Patterns ending in a word character (e.g. "would search") need a
+        # trailing word boundary so they don't false-match an inflected form
+        # inside quoted canonical text (e.g. "would searching still be
+        # found" in a translated passage). Patterns ending in punctuation
+        # (e.g. "<fill in>") have no word-char tail to bound, so fall back
+        # to plain substring matching.
+        if pat[-1].isalnum():
+            if _re.search(_re.escape(pat) + r"\b", low):
+                return "placeholder"
+        elif pat in low:
             return "placeholder"
     seen_heading = False
     for line in body.splitlines():

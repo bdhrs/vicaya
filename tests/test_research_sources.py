@@ -993,6 +993,30 @@ class TestScratchDossier:
         issues = {c["phase"]: c["issue"] for c in result["content_issues"]}
         assert issues.get("1") == "placeholder"
 
+    def test_verify_ignores_placeholder_word_inside_inflected_text(
+        self, tmp_path, monkeypatch
+    ):
+        from tools.research_sources import (
+            scratch_gate,
+            scratch_init,
+            scratch_log,
+            scratch_verify,
+        )
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("test-not-placeholder")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        scratch_gate("0")
+        scratch_log(
+            "1",
+            "search-canon",
+            summary='DN15: "would searching still be found" — dependent origination',
+        )
+        scratch_gate("1")
+        result = scratch_verify(through="1")
+        assert result["ok"] is True
+        assert result["content_issues"] == []
+
     def test_verify_default_checks_through_4c_not_high_water_mark(
         self, tmp_path, monkeypatch
     ):
