@@ -32,3 +32,19 @@ lf-dups *args:
 # Migrate .env from folder-corpus/Calibre variable names to library-folders (run once after pulling the rename commit).
 migrate-env *args:
     uv run scripts/migrate_env.py {{args}}
+
+# Symlink every skill under skill/ into the Pi coding agent (skills + prompts). Content auto-updates via the symlink; re-run to pick up newly added skills.
+sync:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    src="$(pwd)/skill"
+    skills_dir="$HOME/.pi/agent/skills"
+    prompts_dir="$HOME/.pi/agent/prompts"
+    mkdir -p "$skills_dir" "$prompts_dir"
+    for dir in "$src"/*/; do
+        name="$(basename "$dir")"
+        [ -f "$dir/SKILL.md" ] || continue
+        ln -sfn "${dir%/}" "$skills_dir/$name"
+        ln -sfn "${dir}SKILL.md" "$prompts_dir/$name.md"
+        echo "synced: $name"
+    done
