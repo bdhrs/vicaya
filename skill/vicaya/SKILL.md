@@ -18,7 +18,7 @@ workflow and the only behavioral source of truth.
 
 Four structural commands carry the run. Everything else is reference.
 
-1. **Phase 0:** `scratch-init <slug> --question-original "…" --question-polished "…" --scope-assumptions "…" --ambiguity <clear|minor_uncertainty|unclear>` (add `--class thematic` for non-sutta-anchored questions). This records the active scratch for *this run*, fills the Phase 0 header fields, and — because all the Phase 0 evidence is then present — writes the Phase 0 exit gate automatically, so the run starts at Phase 1. Do not run the bare form unless the question is still unresolved; a bare init leaves gate 0 unwritten and every later gate will refuse until you run `scratch-gate 0`. Auto-logging is isolated automatically — the run's state is keyed to your agent process, so parallel runs never collide. There is nothing to pin or export.
+1. **Phase 0:** `scratch-init <slug> --question-original "…" --question-polished "…" --scope-assumptions "…" --ambiguity <clear|minor_uncertainty|unclear>` (add `--class thematic` for non-sutta-anchored questions). This records the active scratch for *this run*, fills the Phase 0 header fields, and — because all the Phase 0 evidence is then present — writes the Phase 0 exit gate automatically, so the run starts at Phase 1. Do not run the bare form unless the question is still unresolved; a bare init leaves gate 0 unwritten and every later gate will refuse until you run `scratch-gate 0`. Auto-logging is isolated automatically — the run's state is keyed to your agent process, so parallel runs never collide. There is nothing to pin or export **while you are the only agent working the run** (Phase 0/1, and Phases 5–7). The moment gather phases are delegated to sub-agents (below), that guarantee no longer holds — see the mandatory `VICAYA_PHASE` pin in **Sub-agent dispatch**.
 2. **Each phase boundary:** end the prior phase with `scratch-gate <prev-phase>`. The gate auto-advances the active phase, so the next phase's helper calls log correctly without any manual step. It refuses if earlier gates are missing and prints the exact evidence still needed. Thematic runs auto-skip the Phase 2.5 (SC-parallels) and 3b (Sanskrit) gates.
 3. **Start of Phase 5:** `scratch-verify`. Exit 0 = proceed to synthesis. Exit 1 = backfill the named phase first; do not draft.
 4. **End of Phase 7:** `scratch-set-note <note-path> --pdf <pdf-path|skipped>` (records the saved paths in the scratch header — the [REJECTED] hard-gate target), then `scratch-self-audit` (answer the failure checklist — the gate refuses without it), then `scratch-gate 7`, then publish the saved note with `uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"`; after writing the reflection, publish the run report with `uv run scripts/sync_run_report.py`. The run is not complete until the gate passes and both sync commands have been attempted.
@@ -103,6 +103,12 @@ Run from the project root:
 cd <repo-root>   # the vicaya repo
 uv run tools/research_sources.py <subcommand> [args...]
 ```
+
+**If you are a per-phase gather sub-agent** (see **Sub-agent dispatch**), prefix
+every call below with `VICAYA_PHASE=<your-assigned-phase>` — this is mandatory,
+not the bare form shown here. The bare form is only safe for the single
+orchestrating session (Phase 0/1/5/6/7), which is never running concurrently
+with anything else.
 
 Subcommands (each prints JSON to stdout):
 
@@ -416,6 +422,19 @@ There is no single shared `.active` pointer to clobber. You do **not** need to
 force a specific scratch when resuming a run from a different process). `export`
 does not survive between Bash calls in most agent harnesses anyway — rely on the
 automatic per-run isolation instead.
+
+**Within one run, the active-phase pointer is shared and racy — sub-agents must
+pin `VICAYA_PHASE`, not rely on it.** Everything above isolates *runs* from each
+other; it does nothing for *phases within the same run*. `scratch-gate` advances
+the shared pointer the instant it writes a gate, and `export` doesn't survive
+between Bash calls — so a sub-agent's own trailing helper call, or a sibling
+sub-agent's call landing a moment late, can read a pointer that has already
+moved on and file real evidence under the wrong phase's heading (issue #55: this
+has silently scrambled headings and, once, tripped `scratch-gate`'s "no logged
+evidence" refusal). An unpinned auto-log now appends a `phase-source: run-pointer`
+line so this is visible on inspection instead of silent — but the fix is not
+relying on the pointer at all inside a sub-agent: see the mandatory inline pin
+in **Sub-agent dispatch** below.
 
 **Within one run, helper writes are lock-serialized — hand-edits are not.**
 Every scratch-mutating helper call (auto-logs, `scratch-log`, `scratch-gate`)
@@ -962,11 +981,12 @@ The only datum each prompt must carry is the **scratch slug** — `uv run tools/
 - **Claude Code:** Use the Agent tool with `model: "sonnet"` (only environment where a cheaper model can be selected). Every other environment inherits the parent model — context isolation is the benefit, not cost savings.
 - **Any other environment:** Use that environment's sub-agent mechanism.
 
-**Three rules keep each agent light — state all three in every dispatch prompt:**
+**Four rules keep each agent light and correctly filed — state all four in every dispatch prompt:**
 
-1. **Read only the briefing, never the dossier.** Read the Phase 0/1 briefing block at the TOP of the scratch (question, angle triage, perspective map, seeds) — never the accumulating evidence blocks below it. Auto-log already persists every hit; re-reading them is what fills the context.
-2. **Pass `--quiet` on every search helper call** (`search-canon`, `search-library-folders`, `search-ebc`, `search-sanskrit`, `sc-parallels`, `sc-search`, `get-agama`). The full result still goes to the scratch dossier; only the agent's stdout is compacted to a snippet — that compaction is what keeps the agent's context from filling. (The dossier and the synthesised note are unaffected: full text always lands in the scratch.)
-3. **Read only the SKILL sections for its one phase** (table below), plus the shared preamble.
+1. **Pin `VICAYA_PHASE=<PHASE>` inline on EVERY helper call, no exceptions.** This is not advisory and it is not the same as exporting it once — `export` does not survive between Bash calls, and even if it did, the shared per-run active-phase pointer moves the instant any phase (yours or a sibling's) gates, so relying on it is a race (issue #55: it has scrambled which phase auto-logged content lands under, and once caused `scratch-gate` to refuse with "no logged evidence"). Prefix every single `search-*`/`sc-*`/`get-*`/`fetch-*` call: `VICAYA_PHASE=<PHASE> uv run tools/research_sources.py search-canon ... --quiet`. An unpinned call is visible after the fact as a `phase-source: run-pointer` line in the scratch — there should be none inside a phase sub-agent's own log entries.
+2. **Read only the briefing, never the dossier.** Read the Phase 0/1 briefing block at the TOP of the scratch (question, angle triage, perspective map, seeds) — never the accumulating evidence blocks below it. Auto-log already persists every hit; re-reading them is what fills the context.
+3. **Pass `--quiet` on every search helper call** (`search-canon`, `search-library-folders`, `search-ebc`, `search-sanskrit`, `sc-parallels`, `sc-search`, `get-agama`). The full result still goes to the scratch dossier; only the agent's stdout is compacted to a snippet — that compaction is what keeps the agent's context from filling. (The dossier and the synthesised note are unaffected: full text always lands in the scratch.)
+4. **Read only the SKILL sections for its one phase** (table below), plus the shared preamble.
 
 **Phase 4b transcript rule.** The YouTube agent collects video **details** (titles, channels, URLs, tiers) for the candidate set and pulls a transcript **only** for a video clearly relevant to the question — never bulk-fetch transcripts. A full transcript is ~4,000 lines and is the single largest context killer; one is plenty, zero is fine when the titles already settle relevance.
 
@@ -994,9 +1014,17 @@ Repo root: <repo-root>
 Scratch slug: <slug>
 Phase assigned: <PHASE>
 
+MANDATORY: prefix EVERY helper call below with VICAYA_PHASE=<PHASE> inline,
+e.g. `VICAYA_PHASE=<PHASE> uv run tools/research_sources.py search-canon ... --quiet`.
+Do not rely on the run's shared active-phase pointer — a sibling sub-agent's
+scratch-gate call (or your own) can advance it out from under you mid-phase and
+misfile your evidence under the wrong heading. This applies to every step below
+that calls a search/fetch helper, not just step 4.
+
 Steps:
 1. cd <repo-root> && uv run tools/research_sources.py scratch-resume <slug>
-   (Attaches to the run; auto-logging then writes to this run's scratch.)
+   (Attaches to the run; auto-logging then writes to this run's scratch. This
+   call itself is exempt from the VICAYA_PHASE prefix — it isn't auto-logged.)
 2. Read ONLY the Phase 0/1 briefing block at the TOP of the printed scratch path —
    the question, angle triage, perspective map, and seeds. Do NOT read the
    accumulating evidence blocks lower in the file (auto-log already has them).
@@ -1004,8 +1032,9 @@ Steps:
    shared preamble (Critical execution rules, Hard rules, Setup, Calling the
    helpers, Helper return shapes, Research scratchpad, Evidence tiers, When
    something fails) plus your phase's sections: <PHASE-SECTIONS>.
-4. Execute Phase <PHASE> per those instructions. Pass --quiet on EVERY search
-   helper call (full results still go to the scratch; only your stdout shrinks).
+4. Execute Phase <PHASE> per those instructions. Prefix EVERY search helper call
+   with VICAYA_PHASE=<PHASE> (see MANDATORY above) and pass --quiet (full results
+   still go to the scratch; only your stdout shrinks).
    (Phase 4b only: collect video details; fetch a transcript ONLY if a video is
    clearly relevant — never bulk-fetch transcripts.)
 5. Gate it: uv run tools/research_sources.py scratch-gate <PHASE>
@@ -1017,6 +1046,7 @@ Steps:
 **After each agent returns — spot-check before spawning the next.** `scratch-verify` now also flags gated-but-empty and placeholder-only phases (`content_issues`), so it backstops a crashed/limited/stubbed agent structurally — but still spot-check immediately after each agent so a silent gap is caught before the next agent builds on it, not only at the Phase 5 verify.
 
 - Confirm the phase's section has real logged hits, not just a header: `grep -n '^## Phase' <scratch>` for the section bounds, then check it is not empty. Scan 4a/4b/4c logs for "would search"/placeholder language. An empty-but-gated phase is a silent gap — re-run that phase before continuing.
+- **Check for misfiled content:** `grep -n 'phase-source: run-pointer' <scratch>`. Any hit means that sub-agent did not pin `VICAYA_PHASE` on that call — go read the entry and confirm it landed under the correct heading (it may belong under a different phase's section entirely if the pointer had already moved on). Zero hits is the expected state for a correctly-run sub-agent.
 - If a spawn fails (shared-account session limit, or the Agent tool blocked by a hook), run that one phase inline in the orchestrator yourself, then gate it.
 - **Re-verify the top cited suttas before spawning the next agent.** A sub-agent's completion report names the suttas it found — run `verify-citation` on the 2–3 highest-priority ones before accepting them. A sub-agent can report evidence not actually in the scratch (context-exhausted hallucination), name suttas without having run `resolve-citation`, or get 0 hits from a wrong book code and silently log them as absent. The re-verify step catches all three before the next phase builds on the error. Log the result in the orchestrator's working notes ("verified: MN60 ✓, AN4.1 ✗ not found in sutta_info — re-run phase 2 for this book"); if a cited sutta fails, treat it as a content issue and backfill, same as an empty phase.
 

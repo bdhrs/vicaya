@@ -829,6 +829,7 @@ def _maybe_autolog(cmd: str, argv: list[str], result_obj) -> None:
         state = _read_state()
         scratch = scratch_env or state.get("scratch")
         phase = phase_env or state.get("phase") or "?"
+    pinned = bool(phase_env)
     phase = _PHASE_ALIASES.get(str(phase).strip().lower(), phase)
     if not scratch:
         return
@@ -857,6 +858,15 @@ def _maybe_autolog(cmd: str, argv: list[str], result_obj) -> None:
         if isinstance(result_obj, list):
             hits = len(result_obj)
         body = [f"### {ts} · {cmd}"]
+        if not pinned:
+            # No explicit VICAYA_PHASE: phase came from the shared per-run
+            # pointer, which a sibling sub-agent's scratch-gate call can
+            # advance mid-flight. Flag it so a spot-check can spot drift
+            # instead of silently trusting a possibly-stale phase.
+            body.append(
+                "- phase-source: run-pointer (not pinned via VICAYA_PHASE — "
+                "verify this lands under the calling agent's assigned phase)"
+            )
         if argv:
             body.append(f"- args: `{' '.join(argv)}`")
         if hits is not None:

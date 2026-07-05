@@ -379,7 +379,7 @@ class TestSearchYouTube:
 
         monkeypatch.setattr(
             "tools.research_sources.subprocess.run",
-            lambda *a, **kw: Result(),
+            MagicMock(return_value=Result()),
         )
         allowlist = {
             "trusted": [{"name": "Buddhist Insights @ Empty Cloud", "channel_id": ""}],
@@ -420,14 +420,17 @@ class TestTranscriptCache:
             json.dumps(asdict(cached)), encoding="utf-8"
         )
 
-        def _boom(*a, **kw):
-            raise AssertionError("network must not be called on cache hit")
-
         try:
             import youtube_transcript_api
 
             monkeypatch.setattr(
-                youtube_transcript_api.YouTubeTranscriptApi, "__init__", _boom
+                youtube_transcript_api.YouTubeTranscriptApi,
+                "__init__",
+                MagicMock(
+                    side_effect=AssertionError(
+                        "network must not be called on cache hit"
+                    )
+                ),
             )
         except ImportError:
             pass
@@ -599,7 +602,7 @@ class TestGetAgama:
 
         # SA1.167-style codes stored as sa1_167-unknown.md in sa-patton-1
         assert DEFAULT_EBC_VAULT_PATH is not None
-        path, translator = _find_agama_path("SA1.167", DEFAULT_EBC_VAULT_PATH)
+        path, _ = _find_agama_path("SA1.167", DEFAULT_EBC_VAULT_PATH)
         if path is not None:
             assert path.exists()
             assert "sa-patton-1" in str(path)
@@ -1340,6 +1343,35 @@ class TestScratchDossier:
 
         assert "search-vault" in path.read_text(encoding="utf-8")
 
+    def test_autolog_flags_unpinned_phase_from_shared_pointer(
+        self, tmp_path, monkeypatch
+    ):
+        """Issue #55: a phase inferred from the shared run pointer (no explicit
+        VICAYA_PHASE) can be stale by the time a sibling sub-agent's call lands —
+        so unpinned auto-logs must carry a visible marker a spot-check can catch."""
+        from tools.research_sources import _maybe_autolog, scratch_init
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        monkeypatch.delenv("VICAYA_PHASE", raising=False)
+        path = scratch_init("autolog-unpinned")
+
+        _maybe_autolog("search-vault", ["dukkha"], [])
+
+        assert "phase-source: run-pointer" in path.read_text(encoding="utf-8")
+
+    def test_autolog_pinned_phase_has_no_unpinned_marker(self, tmp_path, monkeypatch):
+        from tools.research_sources import _maybe_autolog, scratch_init
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("autolog-pinned")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        monkeypatch.setenv("VICAYA_PHASE", "1")
+
+        _maybe_autolog("search-vault", ["dukkha"], [])
+
+        assert "phase-source" not in path.read_text(encoding="utf-8")
+
 
 class TestPhaseAlias:
     """Issue #32: SKILL.md says "Phase 4a" but the phase table stores "4" —
@@ -1863,8 +1895,10 @@ class TestSearchVaultErrorHandling:
         monkeypatch.setattr(
             subprocess,
             "run",
-            lambda *a, **kw: self._mock_run(
-                "The CLI is unable to find Obsidian. Please make sure Obsidian is running and try again."
+            MagicMock(
+                return_value=self._mock_run(
+                    "The CLI is unable to find Obsidian. Please make sure Obsidian is running and try again."
+                )
             ),
         )
         with pytest.raises(RuntimeError, match="non-JSON"):
@@ -1875,7 +1909,7 @@ class TestSearchVaultErrorHandling:
         monkeypatch.setattr(
             subprocess,
             "run",
-            lambda *a, **kw: self._mock_run("fatal error", returncode=1),
+            MagicMock(return_value=self._mock_run("fatal error", returncode=1)),
         )
         with pytest.raises(RuntimeError, match="exited 1"):
             search_vault("dukkha")
@@ -1885,7 +1919,7 @@ class TestSearchVaultErrorHandling:
         monkeypatch.setattr(
             subprocess,
             "run",
-            lambda *a, **kw: self._mock_run(""),
+            MagicMock(return_value=self._mock_run("")),
         )
         assert search_vault("dukkha") == []
 
@@ -1894,7 +1928,7 @@ class TestSearchVaultErrorHandling:
         monkeypatch.setattr(
             subprocess,
             "run",
-            lambda *a, **kw: self._mock_run("[]"),
+            MagicMock(return_value=self._mock_run("[]")),
         )
         assert search_vault("dukkha") == []
 
@@ -1904,7 +1938,7 @@ class TestSearchVaultErrorHandling:
         monkeypatch.setattr(
             subprocess,
             "run",
-            lambda *a, **kw: self._mock_run(payload),
+            MagicMock(return_value=self._mock_run(payload)),
         )
         hits = search_vault("dukkha")
         assert len(hits) == 1

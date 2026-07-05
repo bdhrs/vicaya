@@ -10,7 +10,8 @@ real same session. Context for this cycle: `64e074a` (2026-06-30) restricted
 vicaya from self-editing SKILL.md/tools, so runs from 07-01 onward carry
 "Improvement suggestions" instead of direct edits — none of this cycle's
 findings were fixed in-run by the runs themselves; #54 was picked and fixed
-as this triage's chosen issue. Prior triage
+as this triage's chosen issue, and #55 was picked as a follow-on and fixed
+the same session. Prior triage
 2026-06-22 (incremental, 1 run: 20260622-053000 — one new Low issue #53; one
 POSITIVE added to Working well). Prior triage 2026-06-20 (incremental, 1 run:
 20260620-133500 — no new global issues; one POSITIVE confirming #46). Prior
@@ -92,29 +93,11 @@ the premise behind dropped #5.
 | #50 `.doc` extraction fallback | done (2026-06-22) | `docs: add libreoffice .doc extraction row to Phase 3 table` — added a `.doc` row to the SKILL.md Phase 3 format/command table using `libreoffice --headless --convert-to txt`; added a note that `ebook-convert` fails silently on `.doc` files. (20260615-101237) |
 | #42 (part) EBC `"Sn N.N"` returns wrong sutta | done (2026-06-22) | `fix: get-ebc-overview tries SNP before SN for mixed-case "Sn" input` — `get_ebc_overview` now extracts the raw prefix before uppercasing; if it's mixed-case `sn` without trailing `p`, tries `SNP{tail}` first then `SN{tail}`, mirroring `_normalise_citation`; 4 regression tests in `TestGetEbcOverview`. dhammatalks AN URL residue stays open. (20260604-034355) |
 | #54 Placeholder-heuristic false positive — claimed fixed, never landed | done (2026-07-05) | `fix: word-boundary match placeholder patterns in scratch phase content check` — `_phase_content_issue` in `tools/scratch.py` now requires a trailing word boundary for word-final placeholder patterns (e.g. "would search" no longer false-matches "would searching" inside quoted canon translation text), via `re.search(re.escape(pat) + r"\b", low)`; patterns ending in punctuation (`<fill in>`) keep plain substring matching since they have no word-char tail to bound. New regression test `test_verify_ignores_placeholder_word_inside_inflected_text` reproduces the exact DN15 "would searching still be found" false positive from 20260630-040739/20260705-162000. The prior run's claim to have already made this fix was checked against `git log` and the live code during triage and found to be false — the fix had never actually landed; this closes that gap for real. All 260 tests pass. |
+| #55 Phase-pointer drift scrambles auto-log headings across multi-agent runs | done (2026-07-05) | `docs: mandate inline VICAYA_PHASE pin for sub-agent dispatch to fix phase drift` — root cause: the per-run active-phase pointer is a single shared, mutable state file, and `scratch-gate` advances it the instant any phase (yours or a sibling's) gates; SKILL.md previously told agents "there is nothing to pin or export," actively discouraging the one thing that makes filing immune to the race. Fix is documentation-first (the `VICAYA_PHASE` env override already existed in `tools/scratch.py`, unused by the dispatch flow): the "Three rules" list in Sub-agent dispatch is now four, rule 1 mandates `VICAYA_PHASE=<PHASE>` inline on every single helper call (not `export`, which doesn't survive between Bash calls); the dispatch prompt template shows the literal prefixed invocation; the Phase 0 exec-rule and the Auto-logging section both now distinguish "nothing to pin" (true only for the single-orchestrator Phase 0/1/5/6/7 flow) from the multi-sub-agent gather phases, where it's false. Defense-in-depth in `tools/scratch.py`: `_maybe_autolog` now appends a `phase-source: run-pointer` line whenever a call was NOT explicitly pinned, so a pointer-inferred (and therefore possibly-stale) entry is visible on inspection instead of silent; the orchestrator's post-agent spot-check step now includes `grep 'phase-source: run-pointer' <scratch>` — any hit means that sub-agent skipped the mandatory pin. 3 new regression tests for the marker (pinned vs. unpinned auto-log). Also fixed while touching the test file (project static-analysis rule): unused-parameter lint noise in `tests/test_research_sources.py` — replaced 7 throwaway `lambda *a, **kw: …` mocks with `MagicMock(return_value=…)`/`MagicMock(side_effect=…)` (no named params to flag) and one unused tuple-unpack (`_translator` → `_`). All 262 tests pass. |
 
 ## Remaining — prioritized
 
 ### High severity
-
-**#55 Phase-pointer drift scrambles auto-log headings across multi-agent
-runs.** When more than one gather sub-agent operates against a single
-scratch/run — parallel dispatch, or sequential dispatch where a thematic
-auto-skip advances the active-phase pointer before a sibling agent's content
-lands — auto-logged content files under whatever phase is currently "active"
-rather than the sub-agent's assigned phase. Content itself is preserved (nothing
-lost), but headings are scrambled, and in one run (20260701-205200) the
-resulting mis-filing caused `scratch-gate` to refuse with "no logged
-evidence," requiring a manual `VICAYA_PHASE` env override to recover. A
-related race: 4b/4c sub-agents gated ahead of a still-running 4a because
-gate ordering is global to the run, not per-agent (20260701-211500). Fix
-candidates (from the runs' own suggestions): either require every sub-agent
-sharing a run to pass an explicit `VICAYA_PHASE`, or have `scratch-gate`/
-auto-log reconcile the active-phase pointer against the highest gate actually
-*written* in the scratch rather than trusting the state-file pointer, or move
-gating authority to the orchestrator alone when phases run in parallel/shared
-on one run. (seen in 5 runs: 20260627-131724, 20260701-205200,
-20260701-211500, 20260702-064633, 20260704-230000)
 
 **#61 search-library-folders hangs indefinitely on stopword/long-phrase
 queries.** Reproduced twice: a 3+ word phrase query ("licking the bowl",
@@ -411,15 +394,21 @@ _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
    diff. #54 was picked as this triage's issue and fixed for real this
    session (word-boundary regex on word-final placeholder patterns, keeping
    plain substring matching for punctuation-final patterns like `<fill in>`).
-   The other dominant signal (#55, still open) is multi-agent-on-one-scratch
-   phase bookkeeping: when more than one gather sub-agent shares a run
-   (parallel dispatch, or thematic auto-skip advancing the pointer early),
-   auto-logged content files under the wrong phase heading — content
-   survives, but gates can refuse and require a manual `VICAYA_PHASE`
-   override. #55 is a candidate for a structural fix (gate-state
-   reconciliation against the highest gate actually written) in the same
-   "remove the failure mode, don't add a prose rule" tradition as prior
-   cycles, and as #54 turned out to be. "Ego (buddhism podcast)" (flagged 3
-   sightings in the prior cycle)
-   surfaced again — now past the promotion-evaluation threshold, still not
-   auto-promoted per the no-sightings-alone rule.
+   The other dominant signal, #55 (multi-agent-on-one-scratch phase
+   bookkeeping: auto-logged content filing under the wrong phase heading when
+   more than one gather sub-agent shares a run), was picked as a follow-on
+   issue and closed the same session. Root cause turned out to be simpler
+   than the candidate structural fixes floated at triage time (gate-state
+   reconciliation against the highest gate written, or moving gating
+   authority to the orchestrator): reconciling against the file's own gates
+   doesn't actually help, because the shared state file and the file's gates
+   are written together and agree by construction — the real gap was that
+   SKILL.md's own guidance ("there is nothing to pin or export") talked
+   sub-agents out of the one mechanism (`VICAYA_PHASE` pinned inline on every
+   helper call) that makes filing immune to the race regardless of dispatch
+   timing. Fixed by making that pin mandatory in the dispatch template, plus
+   a `phase-source: run-pointer` marker in `tools/scratch.py`'s auto-log so
+   any future unpinned call is visible to the post-agent spot-check instead
+   of silent. "Ego (buddhism podcast)" (flagged 3 sightings in the prior
+   cycle) surfaced again — now past the promotion-evaluation threshold, still
+   not auto-promoted per the no-sightings-alone rule.
