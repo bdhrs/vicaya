@@ -119,7 +119,25 @@ regressions, channel-tuning actions applied.
 
 Then ask the user to pick one (AskUserQuestion, top 4 as options with the
 "Why now" as description; the 5th and the rest are reachable via Other).
-Work on the chosen issue in the normal way.
+
+**Before implementing — test the hypothesis, don't just apply it.** A run's
+`Cause:`/`Fix:` text is one agent's in-the-moment guess, not a verified
+diagnosis. Before writing the fix:
+
+1. Trace the actual mechanism yourself — read the real code/SKILL.md section
+   the finding names. Don't implement a proposed fix on the strength of the
+   retrospective's prose alone.
+2. Check whether a fix that landed *after* that run already covers it at a
+   different layer. Don't assume "sounds similar" means "same mechanism" —
+   confirm it, e.g. by reading the intervening commit, before either
+   dropping the issue as stale or re-fixing something already fixed.
+3. If the run attributes the cause to something outside this repo (harness
+   behavior, platform quirk), confirm there is genuinely no lever in this
+   codebase before settling for a doc-only mitigation — don't default to
+   "just document it" without first checking whether the mechanism is
+   actually ours to fix.
+
+Then work on the chosen issue in the normal way.
 
 ## Phase 7 — Close the loop (automatic, do not wait to be asked)
 
