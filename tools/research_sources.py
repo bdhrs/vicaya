@@ -164,7 +164,7 @@ def search_vault(
             f"obsidian CLI exited {result.returncode}: {(result.stderr or result.stdout).strip()}"
         )
     stdout = result.stdout.strip()
-    if not stdout:
+    if not stdout or stdout == "No matches found.":
         return []
     try:
         data = json.loads(stdout)

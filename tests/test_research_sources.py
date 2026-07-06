@@ -2131,6 +2131,15 @@ class TestSearchVaultErrorHandling:
         )
         assert search_vault("dukkha") == []
 
+    def test_no_matches_sentinel_returns_empty_list(self, monkeypatch):
+        """CLI's literal zero-hit message → [], not a false 'app not running' error."""
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            MagicMock(return_value=self._mock_run("No matches found.")),
+        )
+        assert search_vault("dukkha") == []
+
     def test_valid_json_empty_returns_empty_list(self, monkeypatch):
         """Parsed empty JSON list → [] (genuine 0 hits)."""
         monkeypatch.setattr(

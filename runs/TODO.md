@@ -102,6 +102,7 @@ the premise behind dropped #5.
 | #56 search-youtube has no --quiet flag | done (2026-07-06) | `fix: add --quiet flag to search-youtube for parity with other search helpers` — `search-youtube`'s argparser was missing `--quiet` even though the sub-agent dispatch prompt instructs agents to pass it on every search helper call; calling it raised `unrecognized arguments: --quiet` (confirmed live against real yt-dlp/YouTube before and after the fix). Added the same `--quiet` argument + `_dump(result, quiet=...)` wiring already used by `search-vault`/`search-canon`/etc.; the existing `_compact()` truncation logic is unchanged and already covered by `TestCompactQuietOutput`. All 160 tests in `tests/test_research_sources.py` still pass. |
 | #59 validate_note.py's under-quoted-evidence heuristic conflated T1/T2 evidence footnotes with T3/T4 locator footnotes | done (2026-07-06) | `fix: scope under-quoted-evidence check to T1/T2 evidence-section footnotes` — the ratio check previously compared *every* footnote definition in the note (including T3/T4/Bibliography locators, which never carry a blockquote by design) against the total blockquote count, tripping false positives on citation-heavy but well-sourced notes. `tools/note_checks.py` now walks body sections, counting only footnote references (`[^id]`) that appear inline inside a heading matching `## * (T1)`/`## * (T2)` (e.g. `## Canon Evidence (T1)`, `## Commentary Evidence (T2)`, and tradition-specific variants like `## Biblical Evidence (T1)`), and only the blockquote lines inside those same sections; T3/T4/Bibliography footnotes no longer count toward the threshold. Existing tests rewritten to exercise scoped section content; new regression test `test_t3_t4_footnotes_do_not_trigger_under_quoted_evidence` reproduces the exact false-positive shape (fully-quoted T1 evidence + 3 unquoted T3 web footnotes) that previously tripped the check. All 270 tests pass; ruff and pyright clean on both touched files. |
 | #60 scratch-init silently reuses an existing slug's scratch | done (2026-07-06) | `fix: warn when scratch-init reuses an existing slug's dossier` — `_handle_scratch_init` in `tools/research_sources.py` now reads the target scratch file before calling `scratch_init`; if it already exists, the CLI's JSON response gets a `warning` field naming the slug, the highest gate already written (or "none"), and whether the vault note is already set, so re-running a question under a slug another agent already progressed (or finished) is visible immediately instead of silently attaching new Phase 1/2 content to the old dossier. `scratch_init` itself is unchanged (still idempotent, still never overwrites) — the fix is purely in what the CLI surfaces. Documented in `skill/vicaya/SKILL.md` (Phase 0 execution rule) and `skill/vicaya-quick/SKILL.md`. 2 regression tests: a slug with a gate and a set note produces the warning text; a brand-new slug has no `warning` key. All 271 tests pass; ruff and pyright clean on both touched files. |
+| #58 (part) search_vault raises on the literal "No matches found." sentinel | done (2026-07-06) | `fix: treat obsidian CLI's "No matches found." as zero hits, not an error` — `search_vault` in `tools/research_sources.py` special-cases the exact string `"No matches found."` (confirmed live against the real CLI: it prints this on stdout with exit 0 even when `format=json` is requested) to return `[]` before the JSON-parse/RuntimeError path, so a genuine zero-hit no longer reads as "Obsidian may not be running." New regression test `test_no_matches_sentinel_returns_empty_list`. All 272 tests pass. Residue (a distinct non-JSON installer-update banner, still correctly raises) tracked as new #68. |
 
 ## Remaining — prioritized
 
@@ -164,15 +165,14 @@ _(#38 moved to Done — WisdomLib skip clause added 2026-06-20)_
 _(#51 moved to Done — thematic gate-vs-work clarification added 2026-06-20)_
 _(#52 moved to Done — comparative-religion T1 section documented 2026-06-20)_
 _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
-- **#58 residue of Done #34: search_vault raises on the literal "No matches
-  found." sentinel** the same as on real non-JSON/app-down output. b1f71a7
-  (2026-06-10) fixed the raw-traceback half (raise a clear RuntimeError
-  instead of crashing on unparsed JSON); these two later runs ask for the
-  further refinement — special-case that exact sentinel to return `[]`
-  instead of raising, since a genuine zero-hit currently reads as "Obsidian
-  may not be running." (seen in 2 runs: 20260626-054300, 20260701-211500;
-  a related but distinct variant — an Obsidian installer-update banner also
-  producing non-JSON stdout — appeared once in 20260703-091816)
+- **#68 residue of #58: Obsidian installer-update banner also produces
+  non-JSON stdout on `search_vault`.** The zero-hit sentinel case is fixed
+  (see Done #58); a distinct variant — an installer-update banner printed
+  to stdout instead of JSON — still correctly raises `RuntimeError` today,
+  but the message ("app may not be running") is misleading for this cause.
+  No proposed fix text from the run beyond noting the distinct shape; needs
+  the actual banner text captured before a special-case can be written.
+  (seen in 1 run: 20260703-091816)
 - **#62 Project CLAUDE.md model override easy to miss on the first
   dispatch.** The project's Haiku-for-all-vicaya-sub-agents rule overrides
   the skill's own `model: "sonnet"` default, but it's easy to apply the
