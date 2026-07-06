@@ -81,13 +81,8 @@ uv run tools/research_sources.py scratch-init <short-kebab-slug> \
 # add --class thematic for non-sutta-anchored questions
 ```
 
-Auto-logging is now on: every `search-*`, `sc-*`, `get-ebc-overview`,
-`get-agama`, `fetch-transcript` call appends its full results to the dossier
-automatically. For web fetches / Read excerpts you want kept, log manually:
-`scratch-log 1 web "<url>" --summary "..."`. Do **not** advance phases or gate.
-If the slug already has a dossier, `scratch-init` reuses it and returns a
-`warning` field naming the last gate/note status — if this is meant to be an
-independent run of a question already handled, use a different slug instead.
+Auto-logging is now on: every `search-*`, `sc-*`, `get-ebc-overview`, `get-agama`, `fetch-transcript` call appends its full results to the dossier automatically. Entries file under whatever phase is currently active — Phase 1 by default, since `scratch-init` starts every run there and this workflow never gates or advances it — regardless of what kind of evidence the call turns up (a canon hit and a YouTube hit both land under the same "Phase 1" heading). This is expected, not a bug; don't be surprised by the heading when reading the dossier back. For web fetches / Read excerpts you want kept, log manually: `scratch-log 1 web "<url>" --summary "..."`. Do **not** advance phases or gate.
+If the slug already has a dossier, `scratch-init` reuses it and returns a `warning` field naming the last gate/note status — if this is meant to be an independent run of a question already handled, use a different slug instead.
 
 ### Step 2 — Search the chosen channels
 Run the picked helpers, in parallel where independent. Cast a wider net only if a

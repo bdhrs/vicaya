@@ -104,6 +104,7 @@ the premise behind dropped #5.
 | #60 scratch-init silently reuses an existing slug's scratch | done (2026-07-06) | `fix: warn when scratch-init reuses an existing slug's dossier` — `_handle_scratch_init` in `tools/research_sources.py` now reads the target scratch file before calling `scratch_init`; if it already exists, the CLI's JSON response gets a `warning` field naming the slug, the highest gate already written (or "none"), and whether the vault note is already set, so re-running a question under a slug another agent already progressed (or finished) is visible immediately instead of silently attaching new Phase 1/2 content to the old dossier. `scratch_init` itself is unchanged (still idempotent, still never overwrites) — the fix is purely in what the CLI surfaces. Documented in `skill/vicaya/SKILL.md` (Phase 0 execution rule) and `skill/vicaya-quick/SKILL.md`. 2 regression tests: a slug with a gate and a set note produces the warning text; a brand-new slug has no `warning` key. All 271 tests pass; ruff and pyright clean on both touched files. |
 | #58 (part) search_vault raises on the literal "No matches found." sentinel | done (2026-07-06) | `fix: treat obsidian CLI's "No matches found." as zero hits, not an error` — `search_vault` in `tools/research_sources.py` special-cases the exact string `"No matches found."` (confirmed live against the real CLI: it prints this on stdout with exit 0 even when `format=json` is requested) to return `[]` before the JSON-parse/RuntimeError path, so a genuine zero-hit no longer reads as "Obsidian may not be running." New regression test `test_no_matches_sentinel_returns_empty_list`. All 272 tests pass. Residue (a distinct non-JSON installer-update banner, still correctly raises) tracked as new #68. |
 | #62 Project CLAUDE.md model override easy to miss on the first dispatch | done (2026-07-06) | `docs: re-check project model override at first sub-agent dispatch` — `skill/vicaya/SKILL.md`'s Sub-agent dispatch section (the "Spawn each phase agent" Claude Code bullet, previously a bare `model: "sonnet"` default) now explicitly says a project `CLAUDE.md`/`AGENTS.md` or earlier session instruction naming a different sub-agent model wins over the skill default, and to re-check it at the *first* dispatch, not just once at session start. Docs-only change; `skill/vicaya-quick/SKILL.md` doesn't dispatch sub-agents so is unaffected. |
+| #67 vicaya-quick doesn't document which phase auto-logs land under | done (2026-07-06) | `docs: state auto-log phase default in vicaya-quick SKILL.md` — the auto-logging paragraph in `skill/vicaya-quick/SKILL.md` now explicitly states entries file under whatever phase is currently active (Phase 1 by default, since `scratch-init` starts there and the workflow never gates or advances it), regardless of the evidence's actual content type, so a canon hit and a YouTube hit landing under the same "Phase 1" heading is expected, not a bug. Also rejoined that paragraph's pre-existing hard-wrapped lines into single unwrapped lines per the project's no-hard-wrap convention for prose (was already the file's dominant style elsewhere; this one paragraph was the outlier). Docs-only change. |
 
 ## Remaining — prioritized
 
@@ -194,17 +195,6 @@ _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
   actual text/key claims, the review comes back non-substantive. Fix: the
   Phase 6 template should paste the synthesis text (or its key claims)
   directly into the cross-check prompt. (seen in 1 run: 20260705-162000)
-- **#67 vicaya-quick doesn't document which phase auto-logs land under.**
-  After `scratch-init`, the active phase defaults to Phase 1 ("Vault / EBC")
-  and every `search-*`/`sc-*`/etc. call auto-logs there regardless of what
-  kind of evidence it turns up — this is documented in the main
-  `skill/vicaya/SKILL.md` (line 21: "the run starts at Phase 1") but
-  `skill/vicaya-quick/SKILL.md`'s own auto-logging section never says so, so
-  canon-evidence-type findings from a quick run land under a "Phase 1"
-  heading the agent didn't expect, causing confusion during note synthesis.
-  Fix: add one line to vicaya-quick's auto-logging section stating explicitly
-  that auto-logs file under whatever phase is currently active (Phase 1 by
-  default), not a content-type heading. (seen in 1 run: 20260706-074500)
 
 ### Content-specific guidance (lower urgency)
 
@@ -422,4 +412,6 @@ _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
     lodging/maintenance questions). No regressions, no stale issues found,
     no channel-tuning actions this run. Closed #60 the same session
     (scratch-init now warns when a slug's dossier already exists, naming the
-    last gate and note status) — #67 remains open, not picked this round.
+    last gate and note status). #67 closed 2026-07-06 (vicaya-quick's
+    auto-logging paragraph now states the Phase-1 default explicitly).
+    #58 and #62 also closed 2026-07-06 (see Done table).
