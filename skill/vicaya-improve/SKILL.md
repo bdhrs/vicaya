@@ -109,8 +109,10 @@ file into `runs/processed/`. Use plain `mv`, not git commands. Do not move
 Rank the Remaining issues by: severity band first, then run-count weighted
 toward recent runs (post-refactor reports count full, older ones less), with
 a tie-break bonus for quick wins (small, self-contained fixes). Issues
-marked `(stale — verify)` rank below everything verified. Present a
-table:
+marked `(stale — verify)` rank below everything verified. Items under
+`### Parked` and `### Content-specific guidance` are never ranked or
+presented as pick candidates — they surface again only when a new run
+re-reports them. Present a table:
 
 | # | Issue | Severity | Runs | Why now |
 
@@ -172,9 +174,37 @@ run any git commands — the user commits):
 ## Style rules for TODO.md
 
 - Keep the existing structure: `## Done` table, `## Remaining — prioritized`
-  with High/Medium/Low subsections, `## Working well — preserve`,
-  `## Notes for the next session`.
+  with High/Medium/Low subsections, an optional `### Parked` subsection (see
+  below), `## Working well — preserve`, `## Notes for the next session`.
 - One issue = one bold-numbered paragraph, concrete fix suggestion included
   when the runs propose one.
 - Never delete an issue without moving it to Done or noting why it was
   dropped (e.g. "predates fix", "duplicate of #N").
+
+## Pruning the Low severity list
+
+A backlog only stays trustworthy if stale items get removed, not just
+accumulated. During Phase 3 (or whenever the user asks for a cleanup), sort
+each Low severity item into one of three buckets:
+
+- **Delete (move to Done as `dropped`)** — the item has *no remaining actual
+  evidence*: a single sighting that traces back to one old run and never
+  recurred across dozens of later runs, an item explicitly logged as
+  "no demand" over a large sample, or a friction that a later workflow
+  change resolved in practice even though nobody wrote a fix for it. Check
+  the archived run file before deleting (`grep` the term across
+  `runs/processed/`) so the deletion is evidenced, not just a guess.
+- **Park (move to `### Parked — minor, revive only if it resurfaces`)** —
+  the item has *real historical evidence* (multiple runs, or a clearly
+  described recurring friction) but current demand is dormant, often because
+  it's tied to a specific environment (e.g. macOS-only) that isn't being
+  exercised right now. Keep the one-line summary; drop it from Phase 6
+  ranking (Parked items are never presented as pick candidates) until a new
+  run reports the same thing, at which point pull it back into the ranked
+  Low severity list with the new run ID as fresh evidence.
+- **Keep ranked** — everything else: concrete, evidenced, and either
+  actionable now or genuinely still-relevant guidance.
+
+This is the same discipline as the hypothesis-testing rule in Phase 6 — a
+backlog item is a claim too, and an unverified one shouldn't sit in the list
+in forever just because nobody looked closely enough to remove it.

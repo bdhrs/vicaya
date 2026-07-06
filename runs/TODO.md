@@ -111,6 +111,10 @@ the premise behind dropped #5.
 | #53 Sub-agent notification cross-labelling | done (2026-07-06) | `docs: warn against trusting sub-agent notification phase claims` — added a new bullet to the "spot-check before spawning the next" list in `skill/vicaya/SKILL.md`'s Sub-agent dispatch section: a completion notification's own phase ID or status can cross-label (e.g. a Phase 2 agent's notification reporting Phase 3 status) even when the actual work is filed correctly, so ground truth must come from `grep -n '^## Phase' <scratch>` or `scratch-resume`, never the notification text alone. Placed alongside the existing misfiled-content and re-verify-citations bullets since it's the same "don't trust the surface signal" pattern. Docs-only change. |
 | #40 (part) nrf-table texts (Milindapañha) had no tier-classification guidance | done (2026-07-06) | `docs: split T1 into T1a (EBT) / T1b (later mula) evidence tiers` — verified the user's proposed mechanism against the sister dpd-db project's own EBT definition (`tools/pali_text_files.py: ebts` / `scripts/build/ebt_counter.py`) before writing anything, per the new vicaya-improve hypothesis-testing rule. `skill/vicaya/SKILL.md`'s Evidence tiers table now splits the old single T1 row into **T1a — EBT** (full DN/MN/SN/AN, Vinaya Suttavibhaṅga only, and the early Khuddaka texts through Theragāthā/Therīgāthā — the exact same file set dpd-db treats as EBT) and **T1b — later mūla, non-EBT** (Vinaya Khandhakas/Parivāra, later Khuddaka texts including Milindapañha, and the full Abhidhamma piṭaka). Milindapañha is now explicitly named as T1b, closing the classification gap. The note's `## Canon Evidence (T1)` heading stays singular (no validator/template/test changes needed — confirmed `_EVIDENCE_TIER_HEADING_RE` in `tools/note_checks.py` only matches headings ending exactly `(T1)`/`(T2)`, so an inline `(T1b)` tag on a citation doesn't collide); T1b citations get an inline `(T1b)` tag instead. Devil's Advocate question 5 extended: a claim about the *earliest* teaching needs T1a specifically, not just any T1. Docs-only. |
 | #40 (other part) general tier-relabelling allowance for non-doctrinal thematic runs | dropped (2026-07-06) | non-issue — verified against `tools/note_checks.py`: `## Canon Evidence (T1)` is already a soft/warning-only section when empty, and `## Commentary/Web/Talks Evidence (T2/T3/T4)` aren't in `REQUIRED_SECTIONS` at all, so a thematic run with no doctrinal canon already tolerates empty tier sections with zero validator friction — no relabelling mechanism needed. User confirmed: "keep things in these categories, just let them be empty ... its a non-issue." |
+| #17 Transcript-mining helper | dropped (2026-07-06) | no demand across 81 runs of observation — never once requested; cut rather than kept as permanent dead weight |
+| #18 Claim ledger output mode | dropped (2026-07-06) | traced to a single sighting (20260527-092930); never recurred across 40+ subsequent runs |
+| #20 Inline Python blocked by CLAUDE.md hook | dropped (2026-07-06) | resolved by practice, not by a skill change — the temp/-script workflow became routine after the early cycles that first hit this, so the friction no longer occurs |
+| #28 Movement-internal term mapping | dropped (2026-07-06) | traced to a single sighting (20260527-092930); never recurred across 40+ subsequent runs |
 
 ## Remaining — prioritized
 
@@ -144,17 +148,6 @@ shipped instead, 2026-07-05)_
 
 ### Low severity
 
-- **#10 residue: optional `vault-write` wrapper** — the disk fallback and
-  final-report declaration are documented (see Done); build the wrapper only
-  if macOS demand recurs. (was Medium; 8+ runs, all macOS)
-- **#17 Transcript-mining helper** — demoted from Medium: no demand in 81
-  runs.
-- **#18 Claim ledger output mode** — unchanged, no new demand.
-- **#20 Inline Python blocked by CLAUDE.md hook** — demoted: only early-cycle
-  sightings; the temp/-script workflow is now routine.
-- **#22 Obsidian vault path assumptions across machines** — ongoing
-  (iCloud path vs ~/MyFiles), handled per-run.
-- **#28 Movement-internal term mapping** — unchanged.
 _(#38 moved to Done — WisdomLib skip clause added 2026-06-20)_
 - **#42 residue: dhammatalks.org AN URL pattern** — AN URL structure on
   dhammatalks.org differs from the MN example in SKILL.md; agents construct
@@ -171,6 +164,17 @@ _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
   No proposed fix text from the run beyond noting the distinct shape; needs
   the actual banner text captured before a special-case can be written.
   (seen in 1 run: 20260703-091816)
+
+### Parked — minor, revive only if it resurfaces
+
+Real evidence exists but demand is currently dormant. Not ranked in Phase 6;
+pull back into the main Low severity list only if a new run reports it.
+
+- **#10 residue: optional `vault-write` wrapper** — disk fallback and
+  final-report declaration are already documented (see Done); build the
+  wrapper only if macOS demand recurs. (was Medium; 8+ runs, all macOS)
+- **#22 Obsidian vault path assumptions across machines** — ongoing
+  (iCloud path vs ~/MyFiles), handled per-run each time it comes up.
 
 ### Content-specific guidance (lower urgency)
 
