@@ -2122,7 +2122,7 @@ def _cli() -> int:
     def _handle_search_youtube(args):
         channels = {} if args.no_filter else None
         result = search_youtube(args.query, channels=channels, limit=args.limit)
-        _dump(result)
+        _dump(result, quiet=getattr(args, "quiet", False))
         return _done([args.query, "--limit", str(args.limit)], result)
 
     def _handle_fetch_transcript(args):
@@ -2384,6 +2384,7 @@ def _cli() -> int:
         action="store_true",
         help="Disable channel allowlist filtering (mostly for debug).",
     )
+    py.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
     py.set_defaults(func=_handle_search_youtube)
 
     pt = sub.add_parser("fetch-transcript")

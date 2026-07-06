@@ -97,6 +97,7 @@ the premise behind dropped #5.
 | #61 search-library-folders hangs indefinitely on stopword/long-phrase queries | done (2026-07-05) | `fix: abort FTS5 library-folders search on a wall-clock timeout` — root cause: `_search_rows` in `tools/library_folders.py` runs `ORDER BY bm25(document_fts) LIMIT ?` against a 12.8GB index; a stopword or one word of an unquoted multi-word phrase matches a huge fraction of the corpus, forcing SQLite to score and sort nearly the whole match set before LIMIT can trim it — minutes of CPU, not a query-syntax bug (the existing `_safe_fts_query` fallback only handles syntax errors, not this). Fix: `_search_rows` installs a `sqlite3.Connection.set_progress_handler` wall-clock deadline (default 20s, new `--timeout` flag on `search-library-folders`); on trip, the query is aborted and a new `LibraryFoldersSearchTimeout` is raised with a message naming the query and telling the caller to narrow it. The CLI handler (`_handle_search_library_folders`) catches it and prints a clean `error: … too broad` to stderr with exit 1 (no autolog), instead of the Bash tool call hanging past its own foreground timeout with zero diagnostic. SKILL.md documents the new flag and failure mode (helper table + "When something fails"). 3 regression tests: timeout raises with a tiny index + `_SEARCH_PROGRESS_STEPS` forced to 1 for determinism, a generous timeout still returns hits normally, and the CLI wiring prints the clean stderr message and exits 1. All 264 tests pass. |
 | #64 Phase 5 drafts thin relative to dossier size | re-scoped, done (2026-07-05) | `feat: add scratch-check-coverage to catch dropped library sources` — before implementing the original hypothesis (a full gathered-vs-cited coverage-diff tool), ran an empirical audit: hand-checked sri-lanka-forest-monks-galduwa (dossier vs. note) and forked a 6-note survey across late-June/July runs. Verdict: the broad "agent ignores most of the dossier" claim doesn't hold — raw `hits: N` counts are dominated by stem-search noise and near-duplicate stock passages (e.g. the same "brothers went forth" narrative repeated 5x in one commentary); once deduped, T1 canon citation rates against each note's own self-reported evidence funnel ran 62-87%, with explicit reasons logged in `## Sources Investigated, Not Used` for the rest. The one confirmed gap, in both the hand-check and the fork's sample: a library document with an on-topic snippet that appeared in neither the note's citations nor its rejection table — a bookkeeping miss, not wholesale under-use. The original flagship case (karuna-vs-christian-compassion) traces to a weak sub-agent model (north-mini-code) that the same retrospective flagged as doing "searches and gating but no analytical work" — a model-capability issue, not a general Phase 5 defect. Shipped instead: `scratch_check_coverage()` in `tools/scratch.py` + `scratch-check-coverage` CLI subcommand — greps every `document_id`-bearing JSON block logged across all phases, and flags any whose id doesn't appear as `calibre-<id>` / `Calibre #<id>` anywhere in the vault note. Advisory only (not wired into `scratch_gate`/`scratch_verify`), run after `scratch-set-note` and before the self-audit. SKILL.md Phase 7 documents the new step and the id-tagging convention for `## Sources Investigated, Not Used` entries. 4 regression tests (`TestScratchCheckCoverage`). All 269 tests pass. |
 | #57 External subprocess dispatches killed by Bash's ~120s foreground timeout | done (2026-07-05) | `docs: launch cross-check and external-CLI gather dispatch in the background from the first attempt` — the cross-check helper's own `--timeout` defaults to 180s, longer than the Bash tool's ~120s foreground cap, so a long synthesis silently truncated the call before the review file was written even though the model request would have succeeded; Phase 6 now says to launch it with `run_in_background: true` from the first attempt, not only after a foreground failure. Same fix documented in the sub-agent dispatch section's "Any other environment" line for external-CLI gather dispatch (e.g. `opencode run -m <model>`), where search calls and auto-logging could complete while only the final `scratch-gate` call got truncated. Added a related "When something fails" bullet: if a backgrounded sub-agent's completion notification never arrives (e.g. after a session restart), check the task's output file directly and confirm ground truth via `scratch-resume`/gate state rather than waiting indefinitely. Docs-only change; all 269 tests still pass. (seen in 4 runs: 20260626-054300, 20260630-040739, 20260705-074650, 20260705-162000) |
+| #56 search-youtube has no --quiet flag | done (2026-07-06) | `fix: add --quiet flag to search-youtube for parity with other search helpers` — `search-youtube`'s argparser was missing `--quiet` even though the sub-agent dispatch prompt instructs agents to pass it on every search helper call; calling it raised `unrecognized arguments: --quiet` (confirmed live against real yt-dlp/YouTube before and after the fix). Added the same `--quiet` argument + `_dump(result, quiet=...)` wiring already used by `search-vault`/`search-canon`/etc.; the existing `_compact()` truncation logic is unchanged and already covered by `TestCompactQuietOutput`. All 160 tests in `tests/test_research_sources.py` still pass. |
 
 ## Remaining — prioritized
 
@@ -117,13 +118,7 @@ footgun) is the remaining concrete instance.
 
 _(#49 moved to Done — see Done table above)_
 
-**#56 search-youtube has no --quiet flag.** Confirmed in code
-(`research_sources.py`'s search-youtube `add_parser` block has no `--quiet`
-argument) though the sub-agent dispatch prompt instructs agents to pass
-`--quiet` "on EVERY search helper call." Either add the flag for consistency
-with search-canon/search-library-folders/etc., or carve out an explicit
-exception in the dispatch wording. (seen in 4 runs: 20260625-035310,
-20260701-210500, 20260702-064633, 20260705-162000)
+_(#56 moved to Done — --quiet flag added and verified live 2026-07-06)_
 
 **#59 validate_note.py's under-quoted-evidence heuristic conflates evidence
 footnotes with locator footnotes.** The check compares total footnote
@@ -404,3 +399,20 @@ _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
    check whether it used a weak/cheap sub-agent model first (the one
    confirmed severe case did) before assuming the general Phase 5 flow
    regressed.
+
+9. `/vicaya-improve` run 2026-07-06 (no unprocessed runs; picked from the
+   existing backlog): closed #56 (`search-youtube` missing `--quiet`).
+   Verified live against real yt-dlp/YouTube calls, not mocked: `main`
+   raised `unrecognized arguments: --quiet` (exit 2), the fix accepts the
+   flag and returns identical, valid JSON. A first attempt at a mocked
+   `--quiet` regression test was dropped mid-session — it broadly
+   monkeypatched `subprocess.run` on the shared stdlib module object, which
+   also intercepted the internal `ps` call inside `tools.scratch._run_key()`
+   (a `functools.cache`d function keyed to the OS session) and permanently
+   poisoned the cached run-key for the rest of the pytest process, causing
+   11 unrelated `TestScratchDossier` failures. Lesson: when mocking
+   `subprocess.run` broadly for one helper's test, scope the fake to the
+   specific command (e.g. check `cmd[0]`) rather than replacing it
+   unconditionally — anything else in-process sharing the same `subprocess`
+   module object is affected too, and a `functools.cache`d caller can lock
+   in the corruption for the rest of the run.
