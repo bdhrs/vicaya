@@ -399,8 +399,9 @@ uv run tools/research_sources.py scratch-set-note "Vicaya/${TODAY} - ${SLUG}.md"
 # Resume after compaction or restart; explicit slug wins
 uv run tools/research_sources.py scratch-resume <slug>
 
-# Ad-hoc: print this run's active scratch path (for shell variables in code blocks)
-uv run tools/research_sources.py scratch-which
+# Ad-hoc: print this run's active scratch path — JSON `{"path": ...}` by default like
+# every other subcommand; add --raw for a bare string when assigning to a shell variable
+uv run tools/research_sources.py scratch-which --raw
 ```
 
 **Auto-logging is on as soon as `scratch-init` has run.** The active scratch path
@@ -1390,7 +1391,7 @@ uv run tools/research_sources.py search-library-folders "<term>" --limit 20
 txt, AZW3, or others. Never assume epub. Per-format extraction:
 
 ```bash
-SCRATCH="$(uv run tools/research_sources.py scratch-which)"
+SCRATCH="$(uv run tools/research_sources.py scratch-which --raw)"
 RUN_TEMP="temp/$(basename "${SCRATCH%.md}")"
 mkdir -p temp
 ```
@@ -1665,7 +1666,7 @@ Pipe your synthesis to a second model for an independent review:
 Write the prompt to scratch-local files, then pipe it in (avoids all shell quoting hazards):
 
 ```bash
-SCRATCH="$(uv run tools/research_sources.py scratch-which)"
+SCRATCH="$(uv run tools/research_sources.py scratch-which --raw)"
 CROSS_CHECK_PROMPT="${SCRATCH%.md}.cross-check-prompt.txt"
 CROSS_CHECK_REVIEW="${SCRATCH%.md}.cross-check-review.txt"
 
@@ -2134,7 +2135,7 @@ A sync failure is never fatal — the note is already saved to the vault.
 After both sync commands have been attempted, clean only this run's disposable repo-local temp directory; never remove `data/scratch/` or scratch-local draft/review files:
 
 ```bash
-SCRATCH="$(uv run tools/research_sources.py scratch-which)"
+SCRATCH="$(uv run tools/research_sources.py scratch-which --raw)"
 RUN_TEMP="temp/$(basename "${SCRATCH%.md}")"
 case "$RUN_TEMP" in
   temp/*)
@@ -2191,7 +2192,7 @@ If fewer than 10, omit this section entirely.
 - **Obsidian create fails**: print the rendered markdown to the terminal so the user can save it manually.
 - **PDF URL — WebFetch returns garbled or empty content**: WebFetch cannot decode PDF binary. Instead, save the file under this run's repo-local temp directory and extract with `pdftotext`:
   ```bash
-  SCRATCH="$(uv run tools/research_sources.py scratch-which)"
+  SCRATCH="$(uv run tools/research_sources.py scratch-which --raw)"
   RUN_TEMP="temp/$(basename "${SCRATCH%.md}")"
   mkdir -p "$RUN_TEMP" && curl -sL "<url>" -o "$RUN_TEMP/source.pdf" && pdftotext "$RUN_TEMP/source.pdf" -
   ```

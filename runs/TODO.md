@@ -107,6 +107,7 @@ the premise behind dropped #5.
 | #67 vicaya-quick doesn't document which phase auto-logs land under | done (2026-07-06) | `docs: state auto-log phase default in vicaya-quick SKILL.md` — the auto-logging paragraph in `skill/vicaya-quick/SKILL.md` now explicitly states entries file under whatever phase is currently active (Phase 1 by default, since `scratch-init` starts there and the workflow never gates or advances it), regardless of the evidence's actual content type, so a canon hit and a YouTube hit landing under the same "Phase 1" heading is expected, not a bug. Also rejoined that paragraph's pre-existing hard-wrapped lines into single unwrapped lines per the project's no-hard-wrap convention for prose (was already the file's dominant style elsewhere; this one paragraph was the outlier). Docs-only change. |
 | #66 Cross-check prompt describes the synthesis instead of including its text | done (2026-07-06) | `docs: instruct cross-check prompt to paste literal synthesis text` — Phase 6's heredoc template in `skill/vicaya/SKILL.md` uses `<the question>`/`<the synthesis>` placeholders; a new bolded line right after the code block now states explicitly that these must be replaced with the literal polished question and the full current draft verbatim, not a paraphrase, since the cross-check model has no other access to the note and a description produces a non-substantive review. Docs-only change. |
 | #65 Injected/garbled transcript replay | done (2026-07-06) | `docs: name injected-transcript replay as a known failure mode` — added a new bullet to `skill/vicaya/SKILL.md`'s "When something fails" section naming the corrupted "[Since your last turn…]" block pattern (describing phases that never ran, an apparent harness/session-replay artifact) and the recovery already used successfully: never trust it at face value, re-verify via `scratch-which`/`scratch-resume` and the real gate state, then tell the user plainly what's real vs. corrupted. Docs-only change. |
+| #63 scratch-which returns a plain path string, not JSON, unlike every other subcommand | done (2026-07-06) | `fix: make scratch-which print JSON by default, add --raw for shell use` — `_handle_scratch_which` in `tools/research_sources.py` now prints `{"path": ...}` via the same `_dump()` path every other subcommand uses, matching the uniform-JSON assumption an orchestrator script can safely make; a new `--raw` flag opts into the old bare-path-string behavior for the 4 `SCRATCH="$(...)"` shell-embedding call sites in `skill/vicaya/SKILL.md`, all updated to pass it. Chose "make it JSON for consistency" over "document the exception" after review — consistency fixes the root cause instead of asking every future caller to remember a special case. 2 new regression tests (`TestScratchWhich`): default prints valid JSON with the right path, `--raw` prints the bare path. Verified live against the real CLI. All 274 tests pass. |
 
 ## Remaining — prioritized
 
@@ -177,10 +178,6 @@ _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
   No proposed fix text from the run beyond noting the distinct shape; needs
   the actual banner text captured before a special-case can be written.
   (seen in 1 run: 20260703-091816)
-- **#63 scratch-which returns a plain path string, not JSON**, unlike every
-  other helper subcommand — caused a `JSONDecodeError` when an orchestrator
-  script assumed JSON output uniformly. Document the exception, or make it
-  JSON for consistency. (seen in 1 run: 20260705-162000)
 
 ### Content-specific guidance (lower urgency)
 

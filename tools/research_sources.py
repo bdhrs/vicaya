@@ -2340,13 +2340,17 @@ def _cli() -> int:
         _dump(result)
         return _done(exit_code=0 if result.get("ok") else 1, autolog=False)
 
-    def _handle_scratch_which(_args):
+    def _handle_scratch_which(args):
         try:
-            print(_scratch_path())
-            return _done(autolog=False)
+            path = str(_scratch_path())
         except ValueError as e:
             print(e, file=sys.stderr)
             return _done(exit_code=1, autolog=False)
+        if args.raw:
+            print(path)
+        else:
+            _dump({"path": path})
+        return _done(autolog=False)
 
     def _handle_verify_citation(args):
         result = verify_citation(args.ref)
@@ -2673,7 +2677,12 @@ def _cli() -> int:
 
     psw = sub.add_parser(
         "scratch-which",
-        help="Print this run's active scratch path (resolved from run state).",
+        help="Print this run's active scratch path.",
+    )
+    psw.add_argument(
+        "--raw",
+        action="store_true",
+        help='Print a bare path string instead of JSON — for shell variable assignment, e.g. SCRATCH="$(... scratch-which --raw)".',
     )
     psw.set_defaults(func=_handle_scratch_which)
 

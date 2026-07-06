@@ -1557,6 +1557,33 @@ class TestPhaseAlias:
         assert "## Phase 4 — Web" in path.read_text(encoding="utf-8")
 
 
+class TestScratchWhich:
+    """scratch-which prints JSON by default like every other subcommand; --raw opts into a bare path string for shell variable assignment."""
+
+    def test_default_prints_json(self, tmp_path, monkeypatch, capsys):
+        import json
+
+        import tools.research_sources as rs
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = rs.scratch_init("test-which-json")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        monkeypatch.setattr(sys, "argv", ["research_sources", "scratch-which"])
+        assert rs._cli() == 0
+        out = json.loads(capsys.readouterr().out)
+        assert out["path"] == str(path)
+
+    def test_raw_prints_bare_path(self, tmp_path, monkeypatch, capsys):
+        import tools.research_sources as rs
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = rs.scratch_init("test-which-raw")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        monkeypatch.setattr(sys, "argv", ["research_sources", "scratch-which", "--raw"])
+        assert rs._cli() == 0
+        assert capsys.readouterr().out.strip() == str(path)
+
+
 class TestScratchSetNote:
     """scratch-set-note records the vault note path the Phase 7 gate scans."""
 
