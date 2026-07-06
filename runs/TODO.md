@@ -93,7 +93,7 @@ the premise behind dropped #5.
 | #48 sync_notes.py strands commits — no pull before push | done (2026-06-20) | `fix: rebase notes onto remote before push so commits aren't stranded` — after committing the note by pathspec, `sync_notes.py` now runs `git pull --rebase --autostash origin <branch>` (branch detected via `rev-parse`, falls back to `main`) then pushes `HEAD:refs/heads/<branch>` explicitly, fixing both the non-fast-forward stranding (inverse of Done #21) and the "must fully qualify the ref (src HEAD)" error; `--autostash` keeps other in-flight vault edits from blocking the rebase; a rebase failure aborts cleanly (`git rebase --abort`) and falls back to commit-saved-locally, preserving the best-effort push contract; `main()` now takes `argv` for testability; 2 real-git regression tests (remote-advanced, dirty-tree) |
 | #35 lookup-book broken — cst_book_translator import fails | done (2026-06-20) | `fix: stub ProjectPaths with TSV path for dpd-db cst_book_translator` — dpd-db's translator was changed (06-15) to read `ProjectPaths().cst_book_translator_tsv_path` at import time; the loader's `lambda: None` stub turned that into `None.attr` and broke every lookup-book call. Stub now returns a SimpleNamespace pointing at the TSV beside the module (+ `cst_xml_dir` placeholder). 6 `TestLookupBook` tests green again. The original "add a path candidate" proposal was a misdiagnosis — the path matched; the stub was the gap. |
 | #50 `.doc` extraction fallback | done (2026-06-22) | `docs: add libreoffice .doc extraction row to Phase 3 table` — added a `.doc` row to the SKILL.md Phase 3 format/command table using `libreoffice --headless --convert-to txt`; added a note that `ebook-convert` fails silently on `.doc` files. (20260615-101237) |
-| #42 (part) EBC `"Sn N.N"` returns wrong sutta | done (2026-06-22) | `fix: get-ebc-overview tries SNP before SN for mixed-case "Sn" input` — `get_ebc_overview` now extracts the raw prefix before uppercasing; if it's mixed-case `sn` without trailing `p`, tries `SNP{tail}` first then `SN{tail}`, mirroring `_normalise_citation`; 4 regression tests in `TestGetEbcOverview`. dhammatalks AN URL residue stays open. (20260604-034355) |
+| #42 (part) EBC `"Sn N.N"` returns wrong sutta | done (2026-06-22) | `fix: get-ebc-overview tries SNP before SN for mixed-case "Sn" input` — `get_ebc_overview` now extracts the raw prefix before uppercasing; if it's mixed-case `sn` without trailing `p`, tries `SNP{tail}` first then `SN{tail}`, mirroring `_normalise_citation`; 4 regression tests in `TestGetEbcOverview`. dhammatalks AN URL residue later dropped as a misdiagnosis, see Done. (20260604-034355) |
 | #54 Placeholder-heuristic false positive — claimed fixed, never landed | done (2026-07-05) | `fix: word-boundary match placeholder patterns in scratch phase content check` — `_phase_content_issue` in `tools/scratch.py` now requires a trailing word boundary for word-final placeholder patterns (e.g. "would search" no longer false-matches "would searching" inside quoted canon translation text), via `re.search(re.escape(pat) + r"\b", low)`; patterns ending in punctuation (`<fill in>`) keep plain substring matching since they have no word-char tail to bound. New regression test `test_verify_ignores_placeholder_word_inside_inflected_text` reproduces the exact DN15 "would searching still be found" false positive from 20260630-040739/20260705-162000. The prior run's claim to have already made this fix was checked against `git log` and the live code during triage and found to be false — the fix had never actually landed; this closes that gap for real. All 260 tests pass. |
 | #55 Phase-pointer drift scrambles auto-log headings across multi-agent runs | done (2026-07-05) | `docs: mandate inline VICAYA_PHASE pin for sub-agent dispatch to fix phase drift` — root cause: the per-run active-phase pointer is a single shared, mutable state file, and `scratch-gate` advances it the instant any phase (yours or a sibling's) gates; SKILL.md previously told agents "there is nothing to pin or export," actively discouraging the one thing that makes filing immune to the race. Fix is documentation-first (the `VICAYA_PHASE` env override already existed in `tools/scratch.py`, unused by the dispatch flow): the "Three rules" list in Sub-agent dispatch is now four, rule 1 mandates `VICAYA_PHASE=<PHASE>` inline on every single helper call (not `export`, which doesn't survive between Bash calls); the dispatch prompt template shows the literal prefixed invocation; the Phase 0 exec-rule and the Auto-logging section both now distinguish "nothing to pin" (true only for the single-orchestrator Phase 0/1/5/6/7 flow) from the multi-sub-agent gather phases, where it's false. Defense-in-depth in `tools/scratch.py`: `_maybe_autolog` now appends a `phase-source: run-pointer` line whenever a call was NOT explicitly pinned, so a pointer-inferred (and therefore possibly-stale) entry is visible on inspection instead of silent; the orchestrator's post-agent spot-check step now includes `grep 'phase-source: run-pointer' <scratch>` — any hit means that sub-agent skipped the mandatory pin. 3 new regression tests for the marker (pinned vs. unpinned auto-log). Also fixed while touching the test file (project static-analysis rule): unused-parameter lint noise in `tests/test_research_sources.py` — replaced 7 throwaway `lambda *a, **kw: …` mocks with `MagicMock(return_value=…)`/`MagicMock(side_effect=…)` (no named params to flag) and one unused tuple-unpack (`_translator` → `_`). All 262 tests pass. |
 | #61 search-library-folders hangs indefinitely on stopword/long-phrase queries | done (2026-07-05) | `fix: abort FTS5 library-folders search on a wall-clock timeout` — root cause: `_search_rows` in `tools/library_folders.py` runs `ORDER BY bm25(document_fts) LIMIT ?` against a 12.8GB index; a stopword or one word of an unquoted multi-word phrase matches a huge fraction of the corpus, forcing SQLite to score and sort nearly the whole match set before LIMIT can trim it — minutes of CPU, not a query-syntax bug (the existing `_safe_fts_query` fallback only handles syntax errors, not this). Fix: `_search_rows` installs a `sqlite3.Connection.set_progress_handler` wall-clock deadline (default 20s, new `--timeout` flag on `search-library-folders`); on trip, the query is aborted and a new `LibraryFoldersSearchTimeout` is raised with a message naming the query and telling the caller to narrow it. The CLI handler (`_handle_search_library_folders`) catches it and prints a clean `error: … too broad` to stderr with exit 1 (no autolog), instead of the Bash tool call hanging past its own foreground timeout with zero diagnostic. SKILL.md documents the new flag and failure mode (helper table + "When something fails"). 3 regression tests: timeout raises with a tiny index + `_SEARCH_PROGRESS_STEPS` forced to 1 for determinism, a generous timeout still returns hits normally, and the CLI wiring prints the clean stderr message and exits 1. All 264 tests pass. |
@@ -115,6 +115,7 @@ the premise behind dropped #5.
 | #18 Claim ledger output mode | dropped (2026-07-06) | traced to a single sighting (20260527-092930); never recurred across 40+ subsequent runs |
 | #20 Inline Python blocked by CLAUDE.md hook | dropped (2026-07-06) | resolved by practice, not by a skill change — the temp/-script workflow became routine after the early cycles that first hit this, so the friction no longer occurs |
 | #28 Movement-internal term mapping | dropped (2026-07-06) | traced to a single sighting (20260527-092930); never recurred across 40+ subsequent runs |
+| #42 dhammatalks.org AN URL pattern | dropped (2026-07-06) | misdiagnosed premise, not a real bug — the original run was logged `Scope: local` (should never have been promoted to a global backlog item) and its own proposed fix was a documentation caveat, not a URL fix; live-tested against the real site: `AN/AN7_6.html` and `AN/AN7_80.html` (translated) both return 200, `AN/AN7_55.html` returns 404 only because Ṭhānissaro never translated that sutta. The URL pattern already matches the MN scheme exactly; there is no pattern bug to fix. |
 
 ## Remaining — prioritized
 
@@ -125,13 +126,6 @@ _(#61 moved to Done — FTS5 search now aborts on a wall-clock timeout instead o
 ### Medium severity
 
 _(#7 moved to Done — gate content check added 2026-06-20)_
-
-**#8 Scope lock for user-named seeds.** Unchanged; no new violations this
-cycle (seed-note handoff worked well in 20260606-110638).
-
-**#19 Weak-model design — explicit control points.** Unchanged direction;
-#29, #31, #33, and #6 were closed structurally; #45 (resolve-citation input
-footgun) is the remaining concrete instance.
 
 _(#49 moved to Done — see Done table above)_
 
@@ -149,10 +143,6 @@ shipped instead, 2026-07-05)_
 ### Low severity
 
 _(#38 moved to Done — WisdomLib skip clause added 2026-06-20)_
-- **#42 residue: dhammatalks.org AN URL pattern** — AN URL structure on
-  dhammatalks.org differs from the MN example in SKILL.md; agents construct
-  the wrong URL and get 404s (20260605-082000). EBC Sn/SNP code mismatch
-  fixed 2026-06-22 (see Done).
 _(#51 moved to Done — thematic gate-vs-work clarification added 2026-06-20)_
 _(#52 moved to Done — comparative-religion T1 section documented 2026-06-20)_
 _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
@@ -175,6 +165,18 @@ pull back into the main Low severity list only if a new run reports it.
   wrapper only if macOS demand recurs. (was Medium; 8+ runs, all macOS)
 - **#22 Obsidian vault path assumptions across machines** — ongoing
   (iCloud path vs ~/MyFiles), handled per-run each time it comes up.
+- **#8 Scope lock for user-named seeds** (was Medium) — original proposal
+  (20260527-092930): a Phase 5 checklist confirming every user-named seed
+  source was processed or explicitly deferred. Never actually built, and no
+  confirmed violation has recurred since the single 2026-05-27 sighting; its
+  only other citation was logged `Scope: local`, which shouldn't have counted
+  as backlog evidence at all. Revive only if a real violation is reported.
+- **#19 Weak-model design — explicit control points** (was Medium) — a
+  standing direction, not a single bug: #29, #31, #33, #6, and #45 were all
+  closed under this umbrella and #45 (the last-named concrete instance) has
+  been Done since 2026-06-20. No live instance remains. Revive if a new
+  weak-model-design gap is reported; don't reopen on the strength of this
+  stale text alone.
 
 ### Content-specific guidance (lower urgency)
 
@@ -270,8 +272,9 @@ pull back into the main Low severity list only if a new run reports it.
    restructure is shelved unless context complaints recur. The heading-based
    routing is now guarded by `tests/test_skill_routes.py`. #36's doc gaps are
    closed. #19 (structural control points — #33 closed 2026-06-11 with
-   `scratch-set-note`, #6 closed 2026-06-11 with `scratch-self-audit`, #45 is
-   next) remains the live direction for prose-rule sprawl.
+   `scratch-set-note`, #6 closed 2026-06-11 with `scratch-self-audit`, #45
+   closed 2026-06-20) has no live instance left as of 2026-07-06 — parked,
+   see Remaining.
 
 4. The 2026-06-11 verification sweep (log: `temp/issue-verify-20260611.md`)
    closed #9, #16, #23/#24, #25, #34, #39, the doc halves of #10, and the

@@ -181,30 +181,42 @@ run any git commands — the user commits):
 - Never delete an issue without moving it to Done or noting why it was
   dropped (e.g. "predates fix", "duplicate of #N").
 
-## Pruning the Low severity list
+## Pruning the backlog — every severity, not just Low
 
 A backlog only stays trustworthy if stale items get removed, not just
-accumulated. During Phase 3 (or whenever the user asks for a cleanup), sort
-each Low severity item into one of three buckets:
+accumulated, and staleness isn't a Low-severity-only problem — a Medium item
+can sit unpruned just as easily (e.g. a "standing direction" issue whose text
+still names a concrete instance as pending when that instance closed weeks
+ago). During Phase 3 (or whenever the user asks for a cleanup), sort *every*
+Remaining item, High through Low, into one of three buckets:
 
 - **Delete (move to Done as `dropped`)** — the item has *no remaining actual
   evidence*: a single sighting that traces back to one old run and never
   recurred across dozens of later runs, an item explicitly logged as
-  "no demand" over a large sample, or a friction that a later workflow
-  change resolved in practice even though nobody wrote a fix for it. Check
-  the archived run file before deleting (`grep` the term across
-  `runs/processed/`) so the deletion is evidenced, not just a guess.
+  "no demand" over a large sample, a friction that a later workflow change
+  resolved in practice even though nobody wrote a fix for it, or a "standing
+  direction" item whose every named concrete instance has already closed (so
+  it currently points at nothing real, even if the general category could
+  recur later — that's what Park is for). Check the archived run file before
+  deleting (`grep` the term across `runs/processed/`) so the deletion is
+  evidenced, not just a guess. If an item cites another issue number as its
+  live evidence, check that cited issue's *current* status in the Done table
+  before trusting the citation — it may have closed since the citing item's
+  text was last touched.
 - **Park (move to `### Parked — minor, revive only if it resurfaces`)** —
   the item has *real historical evidence* (multiple runs, or a clearly
-  described recurring friction) but current demand is dormant, often because
-  it's tied to a specific environment (e.g. macOS-only) that isn't being
-  exercised right now. Keep the one-line summary; drop it from Phase 6
-  ranking (Parked items are never presented as pick candidates) until a new
-  run reports the same thing, at which point pull it back into the ranked
-  Low severity list with the new run ID as fresh evidence.
+  described recurring friction, or a standing design direction likely to
+  spawn new concrete instances later) but nothing currently live: demand is
+  dormant (often tied to a specific environment, e.g. macOS-only, that isn't
+  being exercised right now), or every previously-named instance has closed.
+  Keep a corrected one-line summary — don't carry forward a stale claim just
+  because it's shorter to copy than to fix; drop it from Phase 6 ranking
+  (Parked items are never presented as pick candidates) until a new run
+  reports the same thing, at which point pull it back into the ranked list
+  at its original severity with the new run ID as fresh evidence.
 - **Keep ranked** — everything else: concrete, evidenced, and either
   actionable now or genuinely still-relevant guidance.
 
 This is the same discipline as the hypothesis-testing rule in Phase 6 — a
 backlog item is a claim too, and an unverified one shouldn't sit in the list
-in forever just because nobody looked closely enough to remove it.
+forever just because nobody looked closely enough to remove it.
