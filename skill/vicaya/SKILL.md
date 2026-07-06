@@ -978,7 +978,7 @@ The only datum each prompt must carry is the **scratch slug** — `uv run tools/
 
 **Spawn** each phase agent:
 
-- **Claude Code:** Use the Agent tool with `model: "sonnet"` (only environment where a cheaper model can be selected). Every other environment inherits the parent model — context isolation is the benefit, not cost savings.
+- **Claude Code:** Use the Agent tool with `model: "sonnet"` (only environment where a cheaper model can be selected) — but check first: if the project's `CLAUDE.md`/`AGENTS.md` or an instruction given earlier this session names a different sub-agent model, that override wins over this default. Re-check it right here, at the *first* dispatch — noting an override once at session start isn't enough; the skill's own default is easy to apply out of habit on the very first spawn even when the override was already noted. Every other environment inherits the parent model — context isolation is the benefit, not cost savings.
 - **Any other environment:** Use that environment's sub-agent mechanism. If dispatching a gather phase via an external CLI subprocess (e.g. `opencode run -m <model>`), launch it with `run_in_background: true` from the *first* call, never foreground: the CLI's streaming latency alone can exceed the Bash tool's ~120s foreground cap and silently cut the process off mid-phase — search calls and auto-logging can complete while only the final `scratch-gate` call gets truncated, which is worse than an obvious failure because it looks like a clean phase from the scratch alone.
 
 **Four rules keep each agent light and correctly filed — state all four in every dispatch prompt:**
