@@ -85,6 +85,9 @@ Auto-logging is now on: every `search-*`, `sc-*`, `get-ebc-overview`,
 `get-agama`, `fetch-transcript` call appends its full results to the dossier
 automatically. For web fetches / Read excerpts you want kept, log manually:
 `scratch-log 1 web "<url>" --summary "..."`. Do **not** advance phases or gate.
+If the slug already has a dossier, `scratch-init` reuses it and returns a
+`warning` field naming the last gate/note status — if this is meant to be an
+independent run of a question already handled, use a different slug instead.
 
 ### Step 2 — Search the chosen channels
 Run the picked helpers, in parallel where independent. Cast a wider net only if a

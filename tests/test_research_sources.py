@@ -823,6 +823,64 @@ class TestScratchDossier:
         assert "Should be ignored" not in text
         assert "### PHASE 0 EXIT GATE" not in text
 
+    def test_cli_init_on_slug_with_progress_warns(self, tmp_path, monkeypatch, capsys):
+        # Issue #60: re-running scratch-init on a slug that already has gates
+        # and a note set must not silently reattach without a warning.
+        import json
+
+        import tools.research_sources as rs
+        from tools.research_sources import (
+            scratch_gate,
+            scratch_init,
+            scratch_log,
+            scratch_set_note,
+        )
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        path = scratch_init(
+            "reused-slug",
+            question_polished="q",
+            scope_assumptions="s",
+            ambiguity="clear",
+        )
+        scratch_log("1", "search-vault", summary="hit", scratch=path)
+        scratch_gate("1", scratch=path)
+        note_path = path.parent / "note.md"
+        note_path.write_text("# note", encoding="utf-8")
+        result = scratch_set_note(str(note_path), scratch=path)
+        assert result["ok"] is True
+
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["research_sources", "scratch-init", "reused-slug"],
+        )
+        assert rs._cli() == 0
+        out = json.loads(capsys.readouterr().out)
+        assert out["ok"] is True
+        assert "warning" in out
+        assert "reused-slug" in out["warning"]
+        assert "last gate: 1" in out["warning"]
+        assert "note set" in out["warning"]
+
+    def test_cli_init_fresh_slug_has_no_warning(self, tmp_path, monkeypatch, capsys):
+        import json
+
+        import tools.research_sources as rs
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["research_sources", "scratch-init", "brand-new-slug"],
+        )
+        assert rs._cli() == 0
+        out = json.loads(capsys.readouterr().out)
+        assert out["ok"] is True
+        assert "warning" not in out
+
     def test_init_creates_date_prefixed_filename(self, tmp_path, monkeypatch):
         import re as _re
 

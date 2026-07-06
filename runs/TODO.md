@@ -1,7 +1,9 @@
 # Vicaya skill improvements — work in progress
 
 This file replaces the run-by-run reflection backlog. Processed reflections
-live in `runs/processed/`. Last triage: 2026-07-05, covering 21 runs from
+live in `runs/processed/`. Last triage: 2026-07-06 (incremental, 1 run:
+20260706-074500 — one new Low issue #67; one POSITIVE confirmation added to
+Working well). Prior triage 2026-07-05, covering 21 runs from
 2026-06-22 to 2026-07-05 — 13 new issues (#54-#66; 3 High, 6 Medium, 5 Low),
 zero regressions. Dominant new signal: multi-agent-on-one-scratch phase
 bookkeeping (#55) and a previously-claimed-fixed bug (#54) that was verified
@@ -99,6 +101,7 @@ the premise behind dropped #5.
 | #57 External subprocess dispatches killed by Bash's ~120s foreground timeout | done (2026-07-05) | `docs: launch cross-check and external-CLI gather dispatch in the background from the first attempt` — the cross-check helper's own `--timeout` defaults to 180s, longer than the Bash tool's ~120s foreground cap, so a long synthesis silently truncated the call before the review file was written even though the model request would have succeeded; Phase 6 now says to launch it with `run_in_background: true` from the first attempt, not only after a foreground failure. Same fix documented in the sub-agent dispatch section's "Any other environment" line for external-CLI gather dispatch (e.g. `opencode run -m <model>`), where search calls and auto-logging could complete while only the final `scratch-gate` call got truncated. Added a related "When something fails" bullet: if a backgrounded sub-agent's completion notification never arrives (e.g. after a session restart), check the task's output file directly and confirm ground truth via `scratch-resume`/gate state rather than waiting indefinitely. Docs-only change; all 269 tests still pass. (seen in 4 runs: 20260626-054300, 20260630-040739, 20260705-074650, 20260705-162000) |
 | #56 search-youtube has no --quiet flag | done (2026-07-06) | `fix: add --quiet flag to search-youtube for parity with other search helpers` — `search-youtube`'s argparser was missing `--quiet` even though the sub-agent dispatch prompt instructs agents to pass it on every search helper call; calling it raised `unrecognized arguments: --quiet` (confirmed live against real yt-dlp/YouTube before and after the fix). Added the same `--quiet` argument + `_dump(result, quiet=...)` wiring already used by `search-vault`/`search-canon`/etc.; the existing `_compact()` truncation logic is unchanged and already covered by `TestCompactQuietOutput`. All 160 tests in `tests/test_research_sources.py` still pass. |
 | #59 validate_note.py's under-quoted-evidence heuristic conflated T1/T2 evidence footnotes with T3/T4 locator footnotes | done (2026-07-06) | `fix: scope under-quoted-evidence check to T1/T2 evidence-section footnotes` — the ratio check previously compared *every* footnote definition in the note (including T3/T4/Bibliography locators, which never carry a blockquote by design) against the total blockquote count, tripping false positives on citation-heavy but well-sourced notes. `tools/note_checks.py` now walks body sections, counting only footnote references (`[^id]`) that appear inline inside a heading matching `## * (T1)`/`## * (T2)` (e.g. `## Canon Evidence (T1)`, `## Commentary Evidence (T2)`, and tradition-specific variants like `## Biblical Evidence (T1)`), and only the blockquote lines inside those same sections; T3/T4/Bibliography footnotes no longer count toward the threshold. Existing tests rewritten to exercise scoped section content; new regression test `test_t3_t4_footnotes_do_not_trigger_under_quoted_evidence` reproduces the exact false-positive shape (fully-quoted T1 evidence + 3 unquoted T3 web footnotes) that previously tripped the check. All 270 tests pass; ruff and pyright clean on both touched files. |
+| #60 scratch-init silently reuses an existing slug's scratch | done (2026-07-06) | `fix: warn when scratch-init reuses an existing slug's dossier` — `_handle_scratch_init` in `tools/research_sources.py` now reads the target scratch file before calling `scratch_init`; if it already exists, the CLI's JSON response gets a `warning` field naming the slug, the highest gate already written (or "none"), and whether the vault note is already set, so re-running a question under a slug another agent already progressed (or finished) is visible immediately instead of silently attaching new Phase 1/2 content to the old dossier. `scratch_init` itself is unchanged (still idempotent, still never overwrites) — the fix is purely in what the CLI surfaces. Documented in `skill/vicaya/SKILL.md` (Phase 0 execution rule) and `skill/vicaya-quick/SKILL.md`. 2 regression tests: a slug with a gate and a set note produces the warning text; a brand-new slug has no `warning` key. All 271 tests pass; ruff and pyright clean on both touched files. |
 
 ## Remaining — prioritized
 
@@ -124,16 +127,7 @@ _(#56 moved to Done — --quiet flag added and verified live 2026-07-06)_
 _(#59 moved to Done — under-quoted-evidence check now scopes to T1/T2
 evidence-section footnotes only, 2026-07-06)_
 
-**#60 scratch-init silently reuses an existing slug's scratch.** Re-running a
-question another agent already completed attached the new run's Phase 1/2
-onto the *other* agent's finished dossier (gates through Phase 5, vault note
-already on disk) with no warning — only caught by a manual gate-state
-spot-check after several turns of confusion. This is the tool-level gap
-behind the standing user rule that independent runs need their own distinct
-slug; fixing it structurally (scratch-init warns or refuses when the slug
-already has any gate written, prints "slug exists; last gate N; note set")
-would remove the need to remember the rule at all. (seen in 1 run:
-20260626-044732)
+_(#60 moved to Done — scratch-init now surfaces a reuse warning, 2026-07-06)_
 
 _(#64 moved to Done — re-scoped after empirical audit found the broad
 "thin drafts" hypothesis unsupported; a narrower library-coverage check
@@ -206,6 +200,17 @@ _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
   actual text/key claims, the review comes back non-substantive. Fix: the
   Phase 6 template should paste the synthesis text (or its key claims)
   directly into the cross-check prompt. (seen in 1 run: 20260705-162000)
+- **#67 vicaya-quick doesn't document which phase auto-logs land under.**
+  After `scratch-init`, the active phase defaults to Phase 1 ("Vault / EBC")
+  and every `search-*`/`sc-*`/etc. call auto-logs there regardless of what
+  kind of evidence it turns up — this is documented in the main
+  `skill/vicaya/SKILL.md` (line 21: "the run starts at Phase 1") but
+  `skill/vicaya-quick/SKILL.md`'s own auto-logging section never says so, so
+  canon-evidence-type findings from a quick run land under a "Phase 1"
+  heading the agent didn't expect, causing confusion during note synthesis.
+  Fix: add one line to vicaya-quick's auto-logging section stating explicitly
+  that auto-logs file under whatever phase is currently active (Phase 1 by
+  default), not a content-type heading. (seen in 1 run: 20260706-074500)
 
 ### Content-specific guidance (lower urgency)
 
@@ -232,6 +237,10 @@ _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
   `pañcanīvaraṇa`) (20260605-023426)
 - **Saṃyutta-anchored topics**: grep the EBC catalogue TSV first; enumerate
   the whole saṃyutta/vagga before citing (20260603-000323, 20260603-004752)
+- **Vinaya lodging/monastery-maintenance questions**: search
+  "senāsanacārika" (the lodging-inspector term) as a cross-reference target
+  — structurally essential but easy to miss since it's only found
+  serendipitously via general senāsana searches (20260706-074500)
 
 ## Working well — preserve
 
@@ -272,7 +281,7 @@ _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
   template for any two-tradition question (20260702-064633, 20260704-230000).
 - **vicaya-quick → full-note promotion**: continues to work cleanly across
   multiple runs — scratch-resume reattaches prior auto-logs and gathered
-  evidence without loss (20260625-035310, 20260701-205200).
+  evidence without loss (20260625-035310, 20260701-205200, 20260706-074500).
 - **Direct id-range / anapatti-clause SQL reads beat search-canon snippets**
   for close philological or statistical questions: surfaced the Sekhiya 53
   anapatti-clause asymmetry that a keyword search alone would likely have
@@ -408,3 +417,15 @@ _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
    unconditionally — anything else in-process sharing the same `subprocess`
    module object is affected too, and a `functools.cache`d caller can lock
    in the corruption for the rest of the run.
+
+10. `/vicaya-improve` run 2026-07-06 (1 unprocessed run: 20260706-074500, a
+    vicaya-quick → full-note promotion for a Vinaya monastery-maintenance
+    question): added #67 (vicaya-quick's own SKILL.md never states that
+    auto-logs file under whatever phase is active — Phase 1 by default —
+    regardless of evidence type, which the main SKILL.md documents but
+    vicaya-quick's doesn't inherit into its own text) and one
+    content-specific guidance line (search "senāsanacārika" for Vinaya
+    lodging/maintenance questions). No regressions, no stale issues found,
+    no channel-tuning actions this run. Closed #60 the same session
+    (scratch-init now warns when a slug's dossier already exists, naming the
+    last gate and note status) — #67 remains open, not picked this round.

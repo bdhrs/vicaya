@@ -2235,6 +2235,12 @@ def _cli() -> int:
         )
 
     def _handle_scratch_init(args):
+        pre_existing_path = _scratch_path(args.slug)
+        pre_existing_text = (
+            pre_existing_path.read_text(encoding="utf-8")
+            if pre_existing_path.exists()
+            else None
+        )
         path = scratch_init(
             args.slug,
             run_class=args.run_class,
@@ -2244,6 +2250,23 @@ def _cli() -> int:
             ambiguity=args.ambiguity,
         )
         gate0_written = "### PHASE 0 EXIT GATE" in path.read_text(encoding="utf-8")
+        reuse_warning = None
+        if pre_existing_text is not None:
+            last_gate = None
+            for pid, _title, _evidence in _SCRATCH_PHASES:
+                if _gate_marker(pid) in pre_existing_text:
+                    last_gate = pid
+            note_match = _re.search(r"\*\*Vault note:\*\*\s*(.+)", pre_existing_text)
+            note_val = note_match.group(1).strip() if note_match else ""
+            note_set = bool(note_val) and note_val != "<set at Phase 7>"
+            reuse_warning = (
+                f"slug '{args.slug}' already exists at {path}; "
+                f"last gate: {last_gate or 'none'}; "
+                f"note {'set' if note_set else 'not set'}. "
+                "If this is an independent run of a question another agent "
+                "already handled, pick a different slug — this call reused "
+                "the existing dossier instead of starting a new one."
+            )
         _dump(
             {
                 "ok": True,
@@ -2260,6 +2283,7 @@ def _cli() -> int:
                     "auto-logging is isolated to this run (keyed to the agent "
                     "process); parallel runs never collide — nothing to pin or export"
                 ),
+                **({"warning": reuse_warning} if reuse_warning else {}),
             }
         )
         return _done()
