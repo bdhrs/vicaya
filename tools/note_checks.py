@@ -45,6 +45,12 @@ _SERIES_HEADING_RE = re.compile(
 # Hints appended to missing-section errors that series runs hit repeatedly:
 # the fixed series body replaces the evidence sections but never the
 # scaffolding, and agents kept re-deriving that rule from sibling notes.
+# T1/T2 sections carry the mandatory verbatim-blockquote sources (Rule P1);
+# T3/T4 and Bibliography footnotes are locators only and never quoted, so the
+# under-quoted-evidence ratio must only count footnotes cited within a T1/T2
+# section, not every footnote definition in the note.
+_EVIDENCE_TIER_HEADING_RE = re.compile(r"^##\s+.*\(T[12]\)\s*$")
+
 _SECTION_HINTS = {
     "## Question": (
         "fixed-format/series notes keep `## Question` above the custom body"
@@ -228,27 +234,29 @@ def _validate_body(body: str, issues: list[ValidationIssue], frontmatter: str) -
         )
 
     footer_index = _final_footer_index(lines)
-    footnote_defs = 0
-    blockquote_lines = 0
     for index, line in enumerate(lines):
-        if re.match(r"^\[\^[^\]]+\]:", line):
-            footnote_defs += 1
-            if index < footer_index:
-                issues.append(
-                    ValidationIssue(
-                        "invalid-footnote-placement",
-                        "footnote definitions must appear after the final footer area",
-                        index + 1 + line_offset,
-                    )
+        if re.match(r"^\[\^[^\]]+\]:", line) and index < footer_index:
+            issues.append(
+                ValidationIssue(
+                    "invalid-footnote-placement",
+                    "footnote definitions must appear after the final footer area",
+                    index + 1 + line_offset,
                 )
-        elif line.lstrip().startswith(">"):
-            blockquote_lines += 1
+            )
 
-    if footnote_defs >= 3 and blockquote_lines < footnote_defs:
+    evidence_footnote_refs, evidence_blockquote_lines = (
+        _evidence_section_footnote_and_blockquote_counts(lines)
+    )
+    if (
+        evidence_footnote_refs >= 3
+        and evidence_blockquote_lines < evidence_footnote_refs
+    ):
         issues.append(
             ValidationIssue(
                 "under-quoted-evidence",
-                f"note has {footnote_defs} footnote definitions but only {blockquote_lines} blockquote lines (under-quoted evidence)",
+                f"T1/T2 evidence sections cite {evidence_footnote_refs} footnotes "
+                f"but contain only {evidence_blockquote_lines} blockquote lines "
+                "(under-quoted evidence)",
                 1 + line_offset,
                 "error",
             )
@@ -328,3 +336,24 @@ def _final_footer_index(lines: list[str]) -> int:
         if lines[index].strip() == "---":
             return index
     return len(lines)
+
+
+def _evidence_section_footnote_and_blockquote_counts(
+    lines: list[str],
+) -> tuple[int, int]:
+    footnote_refs: set[str] = set()
+    blockquote_lines = 0
+    in_evidence_section = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            in_evidence_section = bool(_EVIDENCE_TIER_HEADING_RE.match(stripped))
+            continue
+        if not in_evidence_section:
+            continue
+        if line.lstrip().startswith(">"):
+            blockquote_lines += 1
+        footnote_refs.update(
+            match.group(1) for match in re.finditer(r"\[\^([^\]]+)\](?!:)", line)
+        )
+    return len(footnote_refs), blockquote_lines

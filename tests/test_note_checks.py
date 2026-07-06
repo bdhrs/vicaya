@@ -76,6 +76,13 @@ def issue_codes(text: str) -> set[str]:
     return {issue.code for issue in note_checks.validate_note_text(text)}
 
 
+def _replace_canon_section(text: str, replacement: str) -> str:
+    return text.replace(
+        "## Canon Evidence (T1)\n\n- MN 21 gives the relevant example.\n",
+        replacement,
+    )
+
+
 def test_resolve_vicaya_prefixed_note_path() -> None:
     vault_path = Path("/tmp/vault")
 
@@ -243,30 +250,91 @@ def test_early_footnote_definition_is_invalid() -> None:
 
 
 def test_under_quoted_evidence_error() -> None:
-    # 3 footnote definitions, 0 blockquotes -> error
-    text = valid_note_text() + "\n[^2]: Def 2.\n[^3]: Def 3.\n"
+    # 3 footnote refs inside Canon Evidence (T1), 0 blockquotes there -> error
+    text = (
+        _replace_canon_section(
+            valid_note_text(),
+            "## Canon Evidence (T1)\n\n"
+            "- MN 21 gives the relevant example.[^1]\n"
+            "- SN 12.15 supports it.[^2]\n"
+            "- AN 4.170 supports it.[^3]\n",
+        )
+        + "\n[^2]: Def 2.\n[^3]: Def 3.\n"
+    )
     issues = note_checks.validate_note_text(text)
     assert any(
         i.code == "under-quoted-evidence" and i.severity == "error" for i in issues
     )
 
-    # 3 footnote definitions, 3 blockquotes -> no error
-    text_with_quotes = text + "\n> Quote 1\n> Quote 2\n> Quote 3\n"
+    # same 3 refs, each backed by a blockquote inside the section -> no error
+    text_with_quotes = (
+        _replace_canon_section(
+            valid_note_text(),
+            "## Canon Evidence (T1)\n\n"
+            "- MN 21 gives the relevant example.[^1]\n"
+            "> Quote 1\n"
+            "- SN 12.15 supports it.[^2]\n"
+            "> Quote 2\n"
+            "- AN 4.170 supports it.[^3]\n"
+            "> Quote 3\n",
+        )
+        + "\n[^2]: Def 2.\n[^3]: Def 3.\n"
+    )
     issues_clean = note_checks.validate_note_text(text_with_quotes)
     assert not any(i.code == "under-quoted-evidence" for i in issues_clean)
 
-    # 2 footnote definitions, 0 blockquotes -> no error (below threshold floor of 3)
-    text_below_floor = valid_note_text() + "\n[^2]: Def 2.\n"
+    # 2 refs, 0 blockquotes -> no error (below threshold floor of 3)
+    text_below_floor = (
+        _replace_canon_section(
+            valid_note_text(),
+            "## Canon Evidence (T1)\n\n"
+            "- MN 21 gives the relevant example.[^1]\n"
+            "- SN 12.15 supports it.[^2]\n",
+        )
+        + "\n[^2]: Def 2.\n"
+    )
     issues_below = note_checks.validate_note_text(text_below_floor)
     assert not any(i.code == "under-quoted-evidence" for i in issues_below)
 
 
 def test_under_quoted_evidence_counts_indented_blockquotes() -> None:
-    # 3 footnote definitions, 3 indented blockquotes (e.g. nested in a list) -> no error
+    # 3 refs inside Canon Evidence (T1), 3 indented blockquotes there -> no error
     text = (
-        valid_note_text()
+        _replace_canon_section(
+            valid_note_text(),
+            "## Canon Evidence (T1)\n\n"
+            "- MN 21 gives the relevant example.[^1]\n"
+            "  > Quote 1\n"
+            "- SN 12.15 supports it.[^2]\n"
+            "  > Quote 2\n"
+            "- AN 4.170 supports it.[^3]\n"
+            "  > Quote 3\n",
+        )
         + "\n[^2]: Def 2.\n[^3]: Def 3.\n"
-        + "\n  > Quote 1\n  > Quote 2\n  > Quote 3\n"
+    )
+    issues = note_checks.validate_note_text(text)
+    assert not any(i.code == "under-quoted-evidence" for i in issues)
+
+
+def test_t3_t4_footnotes_do_not_trigger_under_quoted_evidence() -> None:
+    # T1 evidence is fully quoted (1 footnote, 1 blockquote); 3 more footnotes
+    # cite T3 web sources elsewhere and carry no blockquote, which is correct
+    # per Rule P1 and must not trip the ratio check (issue #59).
+    text = (
+        _replace_canon_section(
+            valid_note_text(),
+            "## Canon Evidence (T1)\n\n"
+            "- MN 21 gives the relevant example.[^1]\n"
+            "> Quote 1\n",
+        ).replace(
+            "## Sources Investigated, Not Used",
+            "## Web Evidence (T3)\n\n"
+            "- A blog post touches on this.[^2]\n"
+            "- Another article discusses it.[^3]\n"
+            "- A third source mentions it.[^4]\n\n"
+            "## Sources Investigated, Not Used",
+        )
+        + "\n[^2]: Def 2.\n[^3]: Def 3.\n[^4]: Def 4.\n"
     )
     issues = note_checks.validate_note_text(text)
     assert not any(i.code == "under-quoted-evidence" for i in issues)
