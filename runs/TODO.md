@@ -108,6 +108,7 @@ the premise behind dropped #5.
 | #66 Cross-check prompt describes the synthesis instead of including its text | done (2026-07-06) | `docs: instruct cross-check prompt to paste literal synthesis text` — Phase 6's heredoc template in `skill/vicaya/SKILL.md` uses `<the question>`/`<the synthesis>` placeholders; a new bolded line right after the code block now states explicitly that these must be replaced with the literal polished question and the full current draft verbatim, not a paraphrase, since the cross-check model has no other access to the note and a description produces a non-substantive review. Docs-only change. |
 | #65 Injected/garbled transcript replay | done (2026-07-06) | `docs: name injected-transcript replay as a known failure mode` — added a new bullet to `skill/vicaya/SKILL.md`'s "When something fails" section naming the corrupted "[Since your last turn…]" block pattern (describing phases that never ran, an apparent harness/session-replay artifact) and the recovery already used successfully: never trust it at face value, re-verify via `scratch-which`/`scratch-resume` and the real gate state, then tell the user plainly what's real vs. corrupted. Docs-only change. |
 | #63 scratch-which returns a plain path string, not JSON, unlike every other subcommand | done (2026-07-06) | `fix: make scratch-which print JSON by default, add --raw for shell use` — `_handle_scratch_which` in `tools/research_sources.py` now prints `{"path": ...}` via the same `_dump()` path every other subcommand uses, matching the uniform-JSON assumption an orchestrator script can safely make; a new `--raw` flag opts into the old bare-path-string behavior for the 4 `SCRATCH="$(...)"` shell-embedding call sites in `skill/vicaya/SKILL.md`, all updated to pass it. Chose "make it JSON for consistency" over "document the exception" after review — consistency fixes the root cause instead of asking every future caller to remember a special case. 2 new regression tests (`TestScratchWhich`): default prints valid JSON with the right path, `--raw` prints the bare path. Verified live against the real CLI. All 274 tests pass. |
+| #53 Sub-agent notification cross-labelling | done (2026-07-06) | `docs: warn against trusting sub-agent notification phase claims` — added a new bullet to the "spot-check before spawning the next" list in `skill/vicaya/SKILL.md`'s Sub-agent dispatch section: a completion notification's own phase ID or status can cross-label (e.g. a Phase 2 agent's notification reporting Phase 3 status) even when the actual work is filed correctly, so ground truth must come from `grep -n '^## Phase' <scratch>` or `scratch-resume`, never the notification text alone. Placed alongside the existing misfiled-content and re-verify-citations bullets since it's the same "don't trust the surface signal" pattern. Docs-only change. |
 
 ## Remaining — prioritized
 
@@ -161,12 +162,6 @@ _(#38 moved to Done — WisdomLib skip clause added 2026-06-20)_
   dhammatalks.org differs from the MN example in SKILL.md; agents construct
   the wrong URL and get 404s (20260605-082000). EBC Sn/SNP code mismatch
   fixed 2026-06-22 (see Done).
-- **#53 Sub-agent notification cross-labelling.** Sub-agent completion
-  notifications can carry a wrong phase ID (Phase 2 id reported Phase 3
-  status). Never trust the notification summary for phase id/status — always
-  verify via `grep '^### ' scratch.md` or `scratch-resume` output. Impact was
-  cosmetic (caught nothing lost) but the rule is load-bearing for correctness.
-  (seen in 1 run: 20260622-053000)
 _(#51 moved to Done — thematic gate-vs-work clarification added 2026-06-20)_
 _(#52 moved to Done — comparative-religion T1 section documented 2026-06-20)_
 _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
