@@ -1,11 +1,11 @@
 ---
 name: vicaya-pre
-description: Search existing Obsidian vault notes to check if any already partially answer the research question before starting a full /vicaya run.
+description: Search existing Obsidian vault notes to check if any already answer the research question, and recommend /vicaya-quick or /vicaya based on question depth and existing coverage.
 ---
 
 # Vault pre-check
 
-Quick scan of the user's Obsidian vault for notes that already partially or fully address the research question. Run this before committing to a full `/vicaya` session.
+Quick scan of the user's Obsidian vault for notes that already partially or fully address the research question. Routes to `/vicaya-quick` or `/vicaya` depending on question depth, prior coverage, and whether the answer warrants a permanent vault note.
 
 ## Input
 
@@ -63,6 +63,23 @@ rg -l "<term>" "$VICAYA_VAULT_PATH/Vicaya" --glob "*.md"
 
 Merge results with Step 1 findings before reporting.
 
+**2.5. Depth assessment** — classify the question's scope before recommending a research path.
+
+Use these heuristics to decide whether the question is narrow (`/vicaya-quick` territory) or broad (`/vicaya` territory):
+
+| Narrow — `/vicaya-quick` | Broad — `/vicaya` |
+|---|---|
+| Single-term definition ("what does X mean?") | Doctrinal dispute with competing positions |
+| Factual lookup ("how many khandhas?") | Multi-angle (canon + commentary + academic + modern) |
+| Yes/no existence ("does the Buddha mention X?") | Cross-school comparison (Theravāda vs Mahāyāna, Āgama) |
+| Single-source attestation ("find a sutta where X appears") | Practical/applied dimension |
+| Transient — no lasting vault reference value | Note-worthy — produces reference material you'd want in the vault |
+| Answerable in 2–3 helper calls | Requires multiple phases and sub-agents |
+
+Tiebreaker: when the question could reasonably go either way, default to `/vicaya-quick`. It is cheaper and always promotable to a full note later.
+
+Apply this classification to the question **before** choosing a verdict below. A narrow question with partial prior coverage → "Review first, then `/vicaya-quick`". A broad question with partial prior coverage → "Review first, then `/vicaya`".
+
 **3. Report findings** using this format:
 
 ---
@@ -85,26 +102,46 @@ Merge results with Step 1 findings before reporting.
 
 One of:
 
-- **Proceed with `/vicaya`** — no meaningful prior coverage.
-- **Review first** — `[[Note Title]]` partially covers this; the `/vicaya` run should build on it rather than duplicate it. Link the existing note as a seed.
-- **May already be answered** — `[[Note Title]]` directly addresses this question. Consider reviewing it before starting a full research run.
-- **Survey complete** — (survey mode only) no single topic to research; here are the existing notes that best fit the stated audience/constraints. No `/vicaya` run needed unless a specific gap is chosen.
+- **Quick answer from vault** — `[[Note Title]]` directly addresses this question. No research run needed; review the existing note.
+- **Review first, then `/vicaya-quick`** — `[[Note Title]]` partially covers this narrow question. Review it, then run a fast cited answer that builds on the existing note.
+- **`/vicaya-quick` recommended** — narrow question, no existing coverage. Fast chat answer with citations; no vault note written.
+- **Review first, then `/vicaya`** — `[[Note Title]]` partially covers this substantive question. Review it, then run full multi-source research to produce a permanent linked vault note that builds on the existing note.
+- **`/vicaya` recommended** — substantive question, no meaningful prior coverage. Full multi-source research → permanent linked vault note.
+- **Survey complete** — (survey mode only) no single topic to research; here are the existing notes that best fit the stated audience/constraints. No research run needed unless a specific gap is chosen.
 
 ### Suggested new research message
 
-Include a copy-ready message only when new research should proceed:
+Include a copy-ready message only when new research should proceed.
+
+For `/vicaya-quick` verdicts:
+
+```text
+/vicaya-quick <clear research question>
+```
+
+For `/vicaya` verdicts:
 
 ```text
 /vicaya <clear research question>
 ```
 
-If the verdict is **Review first**, include the existing note in the message as context to build on, not as a separate command flag:
+If the verdict includes **Review first**, include the existing note in the message as context to build on:
+
+```text
+/vicaya-quick <clear research question>. Build on [[Note Title]] and avoid duplicating its existing coverage.
+```
+
+or
 
 ```text
 /vicaya <clear research question>. Build on [[Note Title]] and avoid duplicating its existing coverage.
 ```
 
-If the verdict is **Survey complete**, omit the suggested message unless the user wants to drill into a specific gap identified during triage.
+When recommending `/vicaya-quick`, append a promotion note so the user knows the option exists:
+
+> To turn this into a permanent linked vault note later, run `/vicaya` and resume the quick-run dossier (`scratch-resume <slug>`). It reuses everything gathered here.
+
+If the verdict is **Quick answer from vault** or **Survey complete**, omit the suggested message unless the user wants to drill into a specific gap.
 
 ---
 
@@ -116,3 +153,5 @@ If the verdict is **Survey complete**, omit the suggested message unless the use
 - Never cap search results below the corpus count. If `--limit` is needed, set it to the corpus size or higher.
 - If the question is ambiguous (e.g. speech-to-text corruption), search for the most plausible interpretation and name it in the verdict.
 - Use the user's original wording for the suggested message when clear; otherwise use the plausible clarified question named in the verdict.
+- When the depth is ambiguous — the question could reasonably go either way — default to `/vicaya-quick`. It is cheaper, faster, and can always be promoted to a full note later. Name the tiebreaker rationale in the verdict.
+- When recommending `/vicaya-quick`, include the promotion note so the user knows a full vault note is available later without re-searching.
