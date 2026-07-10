@@ -2,21 +2,13 @@
 
 A research tool for Pāḷi and Buddhist topics.
 
-You ask a question. The tool searches your Obsidian vault, the Pāḷi canon
-(suttas, Vinaya, Abhidhamma, commentaries, sub-commentaries), your library
-folders, YouTube talks, and the open web. It drafts an answer with full
-citations, has a second model review the draft, and saves a single Markdown
-note into your vault under `Vicaya/`. Notes link back to existing notes
-on related topics, so the vault accumulates as a connected body of work.
+Three commands handle research at different depths:
 
-The main skill is invoked as `/vicaya <your question>` inside Claude Code (or
-any agent that reads a Markdown skill file). It runs as a single orchestrating
-session that delegates the high-volume evidence-gathering phases to a gather
-sub-agent — the sub-agent searches the sources and writes findings to a shared
-scratch file, keeping the main session's context clear for synthesis and
-review. No manual stage switching is needed. `skill/vicaya/SKILL.md` remains the
-behavioral source of truth. For periodic maintenance, use `vicaya-improve` to
-process run retrospectives into the improvement backlog.
+- `/vicaya-pre <topic>` — scans your vault for existing coverage and recommends whether a fast answer (`/vicaya-quick`) or a full research note (`/vicaya`) is the right fit.
+- `/vicaya-quick <question>` — searches your sources and answers directly in chat with full citations. No vault note, no gates — fast and direct.
+- `/vicaya <question>` — full multi-source research across your vault, the Pāḷi canon, library folders, YouTube, and the open web. Produces a single curated Markdown note with citations, a cross-check review, and a bibliography, saved into your vault under `Vicaya/`. Notes link back to existing related notes, so the vault accumulates as a connected body of work.
+
+All three are invoked as slash commands inside Claude Code, OpenCode, or any agent that reads a Markdown skill file. `/vicaya` runs as a single orchestrating session that delegates evidence-gathering phases to sub-agents — each sub-agent writes findings to a shared scratch file, keeping the main session's context clear for synthesis and review. `skill/vicaya/SKILL.md` is the behavioral source of truth for all three. For periodic maintenance, use `/vicaya-improve` to process run retrospectives into the improvement backlog.
 
 ## Sources
 
