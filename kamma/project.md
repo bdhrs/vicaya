@@ -11,6 +11,11 @@ GRETIL Sanskrit corpus, YouTube Dhamma talks, and the open web — in that order
 structured Markdown note into the vault. The goal is to make deep Pāḷi research
 fast, citation-complete, and cumulative.
 
+Two lighter-weight sibling modes exist: `/vicaya-quick <question>` answers
+directly in chat with citations (no vault note, no gates), and
+`/vicaya-pre <topic>` checks existing vault coverage first to recommend
+which mode fits.
+
 ## Who it's for
 A single user: a practitioner with a local Obsidian vault, library folders
 of Buddhist texts, and the CST canon database.

@@ -2,8 +2,12 @@
 
 ## Tools & Platforms
 - **Runtime:** Python 3.13+, managed with `uv`
-- **Agent integration:** Claude Code skill (Markdown skill file at `skill/vicaya/SKILL.md`),
-  symlinked to `~/.claude/skills/vicaya/`
+- **Agent integration:** Markdown skill files under `skill/*/SKILL.md`, symlinked into each
+  agent's skills directory (Claude Code, OpenCode, Antigravity, Pi coding agent — see README
+  Setup). Pi additionally needs `~/.pi/agent/prompts/<name>.md` pointed at a small stub in
+  `config/pi/prompts/<name>.md` (not directly at `SKILL.md`), so its bare `/name <args>` form
+  forwards the typed argument via Pi's `$ARGUMENTS` placeholder. `just sync` keeps both symlink
+  sets current and prefers a stub when one exists.
 - **Canon search:** SQLite (`tipitaka-translation-data.db`) via stdlib `sqlite3`
 - **Vault I/O:** Obsidian CLI v1.12.7+ (subcommand-style; requires desktop app running)
 - **Library folders search:** one or more document trees (including Calibre libraries) indexed into a user-controlled local SQLite FTS5 database via `tools/library_folders.py`. When a folder contains `metadata.db` it is recognised as a Calibre library and author/tag metadata is prepended to each book's FTS text automatically. Refresh walks all configured roots and extracts stdlib-supported text (incl. `.mht`/`.mhtml` via the `email` module and `.pptx` via the zip reader) plus optional local tools (`pdftotext`, `textutil`, `antiword`, `catdoc`, and `ebook-convert` for the Kindle/Mobipocket family — `.mobi`/`.azw3`/`.azw`/`.prc`/`.lit`/`.pdb`/`.chm` — plus `.rtf`). `.zip`, `.bz2`, and `.7z` archives are indexed as one document each by routing every text-bearing member back through the same extractor dispatch and concatenating the result, bounded by per-archive caps of 5,000 members, 2 GB uncompressed, and 300 s wall-clock (noise/encrypted/nested-archive members are skipped). Normal search queries the local index only. Refresh skips files with unchanged size+mtime, so after adding extractor support the previously-failed rows must be retried with `library-folders-refresh --retry-failed` (re-extracts only docs whose status is not `ok`; steady-state refresh stays instant).

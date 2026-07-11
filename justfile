@@ -38,6 +38,7 @@ sync:
     #!/usr/bin/env bash
     set -euo pipefail
     src="$(pwd)/skill"
+    stubs="$(pwd)/config/pi/prompts"
     skills_dir="$HOME/.pi/agent/skills"
     prompts_dir="$HOME/.pi/agent/prompts"
     mkdir -p "$skills_dir" "$prompts_dir"
@@ -45,6 +46,14 @@ sync:
         name="$(basename "$dir")"
         [ -f "$dir/SKILL.md" ] || continue
         ln -sfn "${dir%/}" "$skills_dir/$name"
-        ln -sfn "${dir}SKILL.md" "$prompts_dir/$name.md"
+        stub="$stubs/$name.md"
+        if [ -f "$stub" ]; then
+            # Prompt-template forms (bare /name <args>) only substitute $ARGUMENTS-style
+            # placeholders, which SKILL.md files don't contain — a stub is required to
+            # forward the typed argument instead of silently dropping it.
+            ln -sfn "$stub" "$prompts_dir/$name.md"
+        else
+            ln -sfn "${dir}SKILL.md" "$prompts_dir/$name.md"
+        fi
         echo "synced: $name"
     done

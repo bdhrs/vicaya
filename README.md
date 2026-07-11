@@ -66,6 +66,17 @@ Each source is optional — if the tool or path isn't configured it is silently 
    done
    ```
 
+   **Pi coding agent:**
+   ```bash
+   just sync
+   ```
+   Symlinks every skill under `skill/` into both `~/.pi/agent/skills/` (for the
+   `/skill:name` form) and `~/.pi/agent/prompts/` (for the bare `/name` form,
+   pointed at the matching stub in `config/pi/prompts/` rather than directly at
+   `SKILL.md` — Pi's bare-slash form only forwards arguments via literal
+   `$ARGUMENTS` substitution, which `SKILL.md` files don't contain). Re-run
+   after pulling changes or adding a new skill.
+
    Open a fresh agent session after adding a new skill symlink; skill discovery
    happens when the session starts.
 
@@ -441,6 +452,17 @@ ln -sf "$(pwd)/skill/vicaya-quick" ~/.claude/skills/vicaya-quick
 ln -sf "$(pwd)/skill/align" ~/.claude/skills/align
 ```
 
+**For Pi coding agent:**
+
+```bash
+just sync
+```
+
+This symlinks every skill under `skill/` into both `~/.pi/agent/skills/`
+(for the `/skill:name` form) and `~/.pi/agent/prompts/` (for the bare
+`/name` form, pointed at the matching stub in `config/pi/prompts/` rather
+than directly at `SKILL.md`, so typed arguments aren't silently dropped).
+
 **Verification:**
 
 ```bash
@@ -457,6 +479,10 @@ ls ~/.claude/skills/vicaya-improve/SKILL.md
 ls ~/.claude/skills/vicaya-pre/SKILL.md
 ls ~/.claude/skills/vicaya-quick/SKILL.md
 ls ~/.claude/skills/align/SKILL.md
+
+# Check Pi — should point at config/pi/prompts/, not skill/*/SKILL.md
+readlink ~/.pi/agent/prompts/vicaya.md
+readlink ~/.pi/agent/prompts/vicaya-quick.md
 ```
 
 If you ever move or rename this repository, you will need to re-run these
