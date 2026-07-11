@@ -15,6 +15,13 @@ complement the global rules and the canonical `/vicaya` workflow in
 - Always run the relevant tests after a change, and add regression coverage for
   any bug you fix or behaviour you add.
 
+## Database edits
+
+- **Never modify dpd.db or any SQLite database unless explicitly asked.**
+  Answer questions about data, suggest edits, analyse entries — but do not
+  execute INSERT, UPDATE, DELETE, or DDL without a direct instruction from
+  the user.
+
 ## Static analysis
 
 - **Fix every diagnostic in every file you touch.** When the linter or type
