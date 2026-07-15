@@ -1975,13 +1975,40 @@ name, and **never copy the agent string from the template example above or from 
 vault note**. Template examples are illustrations, not your identity. If you genuinely
 cannot determine your identity, write `unknown agent` in both places rather than fabricating.
 
-To find your identity: read your system prompt for statements like "You are powered by the model
-named X" or "You are Claude, an AI assistant made by Anthropic." Use exactly what it reports.
+**Do not trust self-report on every harness.** Claude Code injects an explicit identity line
+into the system prompt every turn ("You are powered by the model named X. The exact model ID
+is Y."), so reading the system prompt is reliable there. Other harnesses only *log* the active
+model externally — they never put it back in-context — so a model asked to "self-identify" on
+one of these harnesses is guessing from training bias, not reading anything real. This is why
+GLM/Gemini sessions have mislabeled themselves `Claude` or `unknown agent` in past notes: there
+was nothing true to read. Use a harness-specific lookup instead whenever you are not running
+under Claude Code:
+
+- **pi**: the current session's model is logged in its own transcript. Run:
+  `ls -t ~/.pi/agent/sessions/*/*.jsonl | head -1 | xargs grep -o '"model":"[^"]*"' | tail -1`
+  This returns the zai/OpenRouter model id (e.g. `glm-5.2`) actually serving the session —
+  translate it to family+version form (`glm-5.2` → `GLM-5.2`).
+- **opencode**: the current session's model is recorded on every assistant message. Run:
+  `(find ~/.local/share/opencode/storage/message ~/.local/share/opencode/project -name '*.json' -path '*message*' -printf '%T@ %p\n' 2>/dev/null) | sort -rn | head -1 | cut -d' ' -f2- | xargs grep -E '"(modelID|providerID)"'`
+  (scans both storage roots, since project-scoped invocations write to a different path than
+  global ones, and takes the newest message file by mtime). Translate `modelID` to family+version
+  form (`gemini-3-pro-preview` → `Gemini 3 Pro`).
+- **agy / Codex CLI / other**: check that CLI's own session/log storage for an equivalent
+  per-turn model record before falling back to self-report.
+- **Claude Code**: self-report from the system prompt is reliable — use it directly, per the
+  paragraph above.
+
+If the harness-specific lookup fails (file not found, empty result, ambiguous multi-session
+directory) and self-report is not trustworthy for this harness, write `unknown agent` rather
+than guessing — do not fall back to assuming "Claude" just because that is a common default
+guess for models with no real identity signal.
 
 Examples (do not copy — look up your own):
 
 - Claude Code: `"Claude Opus 4.7 (Claude Code)"`, `"Claude Sonnet 4.6 (Claude Code)"`.
 - Gemini running in Antigravity: `"Gemini 3.5 Flash (Antigravity)"` — not `(gemini-3.5-flash)`.
+- GLM running in pi: `"GLM 5.2 (pi)"` — looked up from the session transcript, not self-reported.
+- Gemini running in opencode: `"Gemini 3 Pro (opencode)"` — looked up from message storage.
 - agy: `"Gemini 2.5 Pro (agy)"` or whatever the CLI reports as its own host name.
 - Codex / GPT-based: `"GPT-5.4 (Codex CLI)"` or equivalent.
 - Other: `"<Model name as the runtime reports it> (<host app as the runtime reports it>)"`.
