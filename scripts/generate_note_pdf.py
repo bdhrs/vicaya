@@ -39,15 +39,15 @@ def main(argv: list[str] | None = None) -> int:
 
     env = {**note_checks.load_dotenv(Path(".env")), **os.environ}
     note_arg = str(args.note)
-    pdf_dir_value = env.get("VICAYA_PDF_PATH", "").strip()
-    if not pdf_dir_value:
+    pdf_enabled = env.get("VICAYA_PDF_PATH", "").strip()
+    if not pdf_enabled:
         print("PDF generation skipped: VICAYA_PDF_PATH is unset")
         print(f"input: {note_arg}")
         return 0
 
     try:
         note_path = note_checks.resolve_existing_note(note_arg, env)
-        pdf_dir = Path(pdf_dir_value).expanduser()
+        pdf_dir = note_path.parent / "PDF"
         pdf_dir.mkdir(parents=True, exist_ok=True)
         output_path = pdf_dir / f"{note_path.stem}.pdf"
         body = note_checks.strip_frontmatter(note_path.read_text(encoding="utf-8"))

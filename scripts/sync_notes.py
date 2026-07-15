@@ -68,14 +68,12 @@ def main(argv: list[str] | None = None):
         sys.exit(1)
 
     # Always commit the note's matching PDF alongside it when one exists inside
-    # the notes repo. The PDF (generate_note_pdf.py) is written to
-    # VICAYA_PDF_PATH and named after the note stem.
+    # the notes repo. generate_note_pdf.py writes it to a PDF/ subfolder next to
+    # the note itself, named after the note stem.
     pathspecs = [filename]
-    pdf_dir_raw = os.environ.get("VICAYA_PDF_PATH", "").strip()
-    if pdf_dir_raw:
-        pdf_path = (
-            Path(pdf_dir_raw).expanduser() / f"{Path(filename).stem}.pdf"
-        ).resolve()
+    pdf_enabled = os.environ.get("VICAYA_PDF_PATH", "").strip()
+    if pdf_enabled:
+        pdf_path = (note_path.parent / "PDF" / f"{note_path.stem}.pdf").resolve()
         if pdf_path.exists():
             try:
                 pathspecs.append(str(pdf_path.relative_to(notes_repo.resolve())))

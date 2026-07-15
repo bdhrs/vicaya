@@ -308,8 +308,9 @@ find ~ -maxdepth 8 -path "*/dpd-db/resources/sc-data" -type d 2>/dev/null | head
 # VICAYA_USER — short label for this user (used in run-report sync commits)
 # Choose any short name, e.g. your first name or a hostname.
 
-# VICAYA_PDF_PATH — recommended: <VICAYA_VAULT_PATH>/Vicaya/PDF
-# Derive from the vault path found above, e.g. ~/Obsidian/Vicaya/PDF
+# VICAYA_PDF_PATH — any non-empty value turns PDF generation on (leave blank to skip).
+# The PDF always lands in a PDF/ subfolder next to the note itself, mirroring the
+# note's own vault subfolder — this value is not used as the output directory.
 ```
 
 **Canon DB and DPD DB — choose one:**
@@ -398,7 +399,8 @@ VICAYA_GRETIL_PATH=
 VICAYA_EBC_VAULT_PATH=
 # Use path found in step 2 (inside dpd-db), or <repo>/resources/sc-data if cloned there
 VICAYA_SC_DATA_PATH=
-# Recommended: <VICAYA_VAULT_PATH>/Vicaya/PDF (leave blank to skip PDF generation)
+# Any non-empty value turns PDF generation on (leave blank to skip). The PDF is
+# written to a PDF/ subfolder next to the note itself, not to this value.
 VICAYA_PDF_PATH=
 VICAYA_CROSS_CHECK_CHAIN=
 ```

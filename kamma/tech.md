@@ -53,7 +53,7 @@
 - DPD DB: `<dpd-db>/dpd.db` — used by `resolve_citation` to map CST codes → human refs via `sutta_info` table
 - CST book translator: `<dpd-db>/tools/cst_book_translator.py` + `.tsv` — used by `lookup_book` to translate between cst_filename / SQLite table name / Pāḷi title / gui code / DPD code. Live-imported via file path.
 - Vault: path in `$VICAYA_VAULT_PATH`, vault name `$VICAYA_VAULT_NAME`
-- Optional PDF output: path in `$VICAYA_PDF_PATH`
+- Optional PDF output: `$VICAYA_PDF_PATH` is an on/off toggle (any non-empty value enables it); the PDF is always written to a `PDF/` subfolder next to the source note, mirroring the note's own vault subfolder — this var is not read as an output path (fixed in `kamma/archive/20260715_vicaya-pdf-folder-cleanup`, previously all notes wrote to one flat directory regardless of subfolder)
 - Library folders: one or more source paths (pipe-separated) in `$VICAYA_LIBRARY_FOLDERS`; index: local SQLite path in `$VICAYA_LIBRARY_FOLDERS_INDEX`; optional comma-separated skip list in `$VICAYA_LIBRARY_FOLDERS_EXCLUDE`
 - YouTube cache: `data/youtube_cache/` (gitignored, grows over time)
 - Channel allowlist: `data/youtube_channels.md`
