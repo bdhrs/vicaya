@@ -123,6 +123,7 @@ the premise behind dropped #5.
 | #63 scratch-which returns a plain path string, not JSON, unlike every other subcommand | done (2026-07-06) | `fix: make scratch-which print JSON by default, add --raw for shell use` — `_handle_scratch_which` in `tools/research_sources.py` now prints `{"path": ...}` via the same `_dump()` path every other subcommand uses, matching the uniform-JSON assumption an orchestrator script can safely make; a new `--raw` flag opts into the old bare-path-string behavior for the 4 `SCRATCH="$(...)"` shell-embedding call sites in `skill/vicaya/SKILL.md`, all updated to pass it. Chose "make it JSON for consistency" over "document the exception" after review — consistency fixes the root cause instead of asking every future caller to remember a special case. 2 new regression tests (`TestScratchWhich`): default prints valid JSON with the right path, `--raw` prints the bare path. Verified live against the real CLI. All 274 tests pass. |
 | #53 Sub-agent notification cross-labelling | done (2026-07-06) | `docs: warn against trusting sub-agent notification phase claims` — added a new bullet to the "spot-check before spawning the next" list in `skill/vicaya/SKILL.md`'s Sub-agent dispatch section: a completion notification's own phase ID or status can cross-label (e.g. a Phase 2 agent's notification reporting Phase 3 status) even when the actual work is filed correctly, so ground truth must come from `grep -n '^## Phase' <scratch>` or `scratch-resume`, never the notification text alone. Placed alongside the existing misfiled-content and re-verify-citations bullets since it's the same "don't trust the surface signal" pattern. Docs-only change. |
 | #40 (part) nrf-table texts (Milindapañha) had no tier-classification guidance | done (2026-07-06) | `docs: split T1 into T1a (EBT) / T1b (later mula) evidence tiers` — verified the user's proposed mechanism against the sister dpd-db project's own EBT definition (`tools/pali_text_files.py: ebts` / `scripts/build/ebt_counter.py`) before writing anything, per the new vicaya-improve hypothesis-testing rule. `skill/vicaya/SKILL.md`'s Evidence tiers table now splits the old single T1 row into **T1a — EBT** (full DN/MN/SN/AN, Vinaya Suttavibhaṅga only, and the early Khuddaka texts through Theragāthā/Therīgāthā — the exact same file set dpd-db treats as EBT) and **T1b — later mūla, non-EBT** (Vinaya Khandhakas/Parivāra, later Khuddaka texts including Milindapañha, and the full Abhidhamma piṭaka). Milindapañha is now explicitly named as T1b, closing the classification gap. The note's `## Canon Evidence (T1)` heading stays singular (no validator/template/test changes needed — confirmed `_EVIDENCE_TIER_HEADING_RE` in `tools/note_checks.py` only matches headings ending exactly `(T1)`/`(T2)`, so an inline `(T1b)` tag on a citation doesn't collide); T1b citations get an inline `(T1b)` tag instead. Devil's Advocate question 5 extended: a claim about the *earliest* teaching needs T1a specifically, not just any T1. Docs-only. |
+| #78 pi-harness fallbacks undocumented (+#79 doc half) (7+ runs) | done (2026-07-17) | `docs: add harness-fallbacks block for pi and other non-Claude-Code hosts` — new bolded block at the end of Sub-agent dispatch consolidating what every pi run had been re-deriving: inline gather as the pi default (generic planner/reviewer/scout/worker agents can't carry the dispatch prompt; subagent tool aborts/~120s cap) with the concrete inline recipe (inline VICAYA_PHASE pin, --quiet, id-window pulls, gate per phase, context-budget caveat); small enrichment runs (≤5 gaps) inline-by-choice anywhere; curl for server-rendered pages when the harness has no WebSearch/WebFetch (SuttaCentral stays unfetchable); SELF_REVIEW as the expected cross-check outcome on hosts without opencode/agy; and the #79 doc half — `VICAYA_SCRATCH=data/scratch/<slug>.md` inline pin (or same-invocation scratch-resume) when scratch-gate/scratch-which lose the state file across fresh shells (override precedence verified against `_scratch_path`: explicit slug > env > state file). Same three failure modes added as "When something fails" bullets. #79's CLI `--slug` nicety kept as residue. Docs-only; all 278 tests pass. (seen in 7+ runs: 20260715-054137, -054645, -061945, -064135, -071232, +5 more) |
 | #77 (doc half) scratch-check-coverage ergonomics on broad FTS sweeps (8 runs) | done (2026-07-17) | `docs: sanction consolidated rejection rows for library FTS-noise tails` — the coverage-check section now states the per-id match rule explicitly (a grouped `Calibre #1944/#27645` row credits only the first id — one token per individually rejected doc) and adds a "Large FTS tails don't need per-row accounting" paragraph: name the load-bearing near-misses individually, account for the remainder with one consolidated row, and treat a reviewed nonzero residual as an acceptable advisory outcome, not a gate failure. The Phase 7 template's rejection-table example now shows both forms (a `Calibre #6294`-tagged T3 row and a consolidated "~180 further hits" row) so the format the checker needs is the one the template demonstrates — closing the exact template/checker mismatch the taṇhā run hit. Tool-side residue (investigated-vs-raw distinction) split off as #89. Docs-only; all 278 tests pass. (seen in 8 runs: 20260715-074500, -061945, -063715, -064135, -140000, -162827, sokaparideva, visuddhimagga, 20260716-224915) |
 | #70 Āgama parallel codes cited from metadata without a content check | done (2026-07-17) | `docs: require content-check of every Āgama parallel before citing it` — new IRON RULE in Phase 2's EBC parallel-evidence pull: parallel codes are claims, not facts — read the retrieved translation text and confirm it matches the target sutta's actual content (protagonists, similes, argument — not broad theme) before citing; on mismatch, don't cite, log the discrepancy in scratch + `## Sources Investigated, Not Used`, and treat the sutta as having no confirmed parallel or substitute a verified one. Names the real failure instances (EA50.8/MA193/MA200 listed for MN21 but carrying MN22 material; MA152 listed for MN135 but matching MN99). Phase 2.5 gets a matching "content-check before citing" paragraph; the EBC vault "When to reach for EBC" item 1 gets a pointer line so the rule is seen at the first parallels touchpoint. Docs-only; all 278 tests pass. (seen in 1 run with 3 instances: 20260711-083537) |
 | #69 sc-parallels returns [] for range-stored uids (2 runs) | done (2026-07-17) | `fix: resolve sc-parallels range-stored uids by member expansion` — `parallels.json` stores some suttas only under a range uid (`sn12.1-2`, `an3.183-352`, 692 range uids total, max width 169); `_sc_load_parallels_index` keyed by bare uid only, so `sc-parallels sn12.2` returned `[]` (reproduced live before the fix). New `_sc_expand_range_uid` expands numeric-tail range uids into member uids (guards: no digits-before-hyphen forms like the `ea-2.x` collection names, inverted ranges, widths > 400) and the index now registers each member; `sc_parallels` also skips the range uid that carries the query itself so `sn12.1-2` is not reported as its own parallel. Verified live after: `sn12.2` → 11 parallels incl. `sa298`/`ea49.5`, exactly the set the runs expected. SKILL.md Phase 2.5 documents the membership resolution + the `get-ebc-overview` fallback for a residual `[]`. 3 regression tests (expansion table, synthetic range-index round-trip, real-archive sn12.2). All 278 tests pass; ruff + pyright clean. |
@@ -248,33 +249,16 @@ _(#77 doc half moved to Done — consolidated-row convention + per-id token
 rule documented in the coverage-check section and mirrored in the Phase 7
 template example, 2026-07-17; tool residue split off as #89)_
 
-- **#78 Non-Claude-Code harness fallbacks (pi) are undocumented — every pi
-  run re-derives them.** Seven-plus runs on pi independently worked out:
-  gather phases inline (pi's generic planner/reviewer/scout/worker agents
-  can't take the vicaya dispatch prompt; the subagent tool aborts or hits
-  a ~120s cap), curl for WisdomLib/dhammatalks/ATI (no WebSearch/WebFetch
-  tools), SELF_REVIEW as the expected cross-check outcome when
-  opencode/agy aren't authenticated. Fix (doc): one short "harness
-  fallbacks" block — inline-gather recipe (pin VICAYA_PHASE, --quiet,
-  id-window pulls, gate per phase), curl fallback for server-rendered
-  pages, "SELF_REVIEW is expected on hosts without the chain", and a note
-  that small enrichment runs (≤5 clear gaps) may run inline by choice.
-  (seen in 7+ runs: 20260715-054137, -054645, -061945, -064135, -071232,
-  20260715-060744, -063715, sankhara, visuddhimagga, 20260715-092000)
+_(#78 moved to Done — harness-fallbacks block added to Sub-agent dispatch
+plus three "When something fails" bullets, 2026-07-17)_
 
-- **#79 Per-run scratch state is not rediscovered across fresh shells on
-  pi — gates fail "no scratch path" while auto-log works.** `_run_key()`
-  keys state to the parent of the POSIX session leader; on pi that
-  apparently varies across isolated Bash invocations, so `scratch-gate`/
-  `scratch-which` come up empty and each gate needed a preceding
-  scratch-resume (one run's `scratch-which --raw` returned empty and broke
-  an `&&` chain). The deterministic override already exists:
-  `VICAYA_SCRATCH=data/scratch/<slug>.md` is checked before the state
-  file. Fix: doc the VICAYA_SCRATCH inline pin as the standard recipe on
-  harnesses with unstable process keys; optionally add a `--slug` arg to
-  scratch-gate/scratch-log mirroring scratch-resume (the Python functions
-  already accept a scratch path — only the CLI doesn't expose it). (seen
-  in 2 runs: 20260715-060744, 20260715-064135)
+- **#79 (residue) expose a `--slug` arg on scratch-gate/scratch-log.** The
+  doc half closed with #78 (the `VICAYA_SCRATCH` inline pin is now the
+  documented recipe for hosts with unstable process keys, verified against
+  `_scratch_path`'s env-before-state precedence). Remaining nicety: the
+  Python functions already accept a scratch path — only the CLI doesn't
+  expose it; a `--slug` arg mirroring scratch-resume would make the pin
+  unnecessary. (seen in 2 runs: 20260715-060744, 20260715-064135)
 
 - **#80 Citation-hygiene doc cluster — three verify-before-citing rules
   that each nearly shipped a wrong claim.** (a) Never cite a specific
@@ -689,4 +673,6 @@ pull back into the main Low severity list only if a new run reports it.
     items from this triage are now done. #77's doc half also closed the same
     session (consolidated-row convention + per-id token rule + template
     example fix); its tool residue is #89, parked behind a design decision
-    on what "investigated" means mechanically.
+    on what "investigated" means mechanically. #78 closed the same session
+    too (harness-fallbacks block, folding in #79's doc half; #79's residue
+    is the optional CLI --slug arg).
