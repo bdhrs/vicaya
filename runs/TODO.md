@@ -123,6 +123,7 @@ the premise behind dropped #5.
 | #63 scratch-which returns a plain path string, not JSON, unlike every other subcommand | done (2026-07-06) | `fix: make scratch-which print JSON by default, add --raw for shell use` — `_handle_scratch_which` in `tools/research_sources.py` now prints `{"path": ...}` via the same `_dump()` path every other subcommand uses, matching the uniform-JSON assumption an orchestrator script can safely make; a new `--raw` flag opts into the old bare-path-string behavior for the 4 `SCRATCH="$(...)"` shell-embedding call sites in `skill/vicaya/SKILL.md`, all updated to pass it. Chose "make it JSON for consistency" over "document the exception" after review — consistency fixes the root cause instead of asking every future caller to remember a special case. 2 new regression tests (`TestScratchWhich`): default prints valid JSON with the right path, `--raw` prints the bare path. Verified live against the real CLI. All 274 tests pass. |
 | #53 Sub-agent notification cross-labelling | done (2026-07-06) | `docs: warn against trusting sub-agent notification phase claims` — added a new bullet to the "spot-check before spawning the next" list in `skill/vicaya/SKILL.md`'s Sub-agent dispatch section: a completion notification's own phase ID or status can cross-label (e.g. a Phase 2 agent's notification reporting Phase 3 status) even when the actual work is filed correctly, so ground truth must come from `grep -n '^## Phase' <scratch>` or `scratch-resume`, never the notification text alone. Placed alongside the existing misfiled-content and re-verify-citations bullets since it's the same "don't trust the surface signal" pattern. Docs-only change. |
 | #40 (part) nrf-table texts (Milindapañha) had no tier-classification guidance | done (2026-07-06) | `docs: split T1 into T1a (EBT) / T1b (later mula) evidence tiers` — verified the user's proposed mechanism against the sister dpd-db project's own EBT definition (`tools/pali_text_files.py: ebts` / `scripts/build/ebt_counter.py`) before writing anything, per the new vicaya-improve hypothesis-testing rule. `skill/vicaya/SKILL.md`'s Evidence tiers table now splits the old single T1 row into **T1a — EBT** (full DN/MN/SN/AN, Vinaya Suttavibhaṅga only, and the early Khuddaka texts through Theragāthā/Therīgāthā — the exact same file set dpd-db treats as EBT) and **T1b — later mūla, non-EBT** (Vinaya Khandhakas/Parivāra, later Khuddaka texts including Milindapañha, and the full Abhidhamma piṭaka). Milindapañha is now explicitly named as T1b, closing the classification gap. The note's `## Canon Evidence (T1)` heading stays singular (no validator/template/test changes needed — confirmed `_EVIDENCE_TIER_HEADING_RE` in `tools/note_checks.py` only matches headings ending exactly `(T1)`/`(T2)`, so an inline `(T1b)` tag on a citation doesn't collide); T1b citations get an inline `(T1b)` tag instead. Devil's Advocate question 5 extended: a claim about the *earliest* teaching needs T1a specifically, not just any T1. Docs-only. |
+| #73–#76 + #80 doc-cluster batch (5 issues, 11 runs) | done (2026-07-17) | `docs: batch the five prose-drift and citation-hygiene doc clusters` — one docs commit closing the remaining Medium doc items. **#73**: "Calling the helpers" now scopes the bare form precisely (safe only before any gather sub-agent is dispatched, and only for the phase the orchestrator currently owns) and mandates the orchestrator's own inline `VICAYA_PHASE` pin for any call belonging to a delegated phase. **#74**: new spot-check bullet — verify sub-agent summary sentences against the raw logged JSON (grep the scratch for the supporting tool call; a claim with no logged entry is false until re-run), with the four real drift instances named. **#75**: Phase 6 paragraph — reviewer factual-accuracy findings are necessary-not-sufficient (no DB access → false positives AND false negatives, real instances named); verify every reviewer content claim against the mūla; post-integration `resolve-citation` pass over every approximate/unresolved book-code citation regardless of flags. **#76**: Phase 5 "Draft durability" rule — full draft body to `data/scratch/<slug>.phase5-draft.md` before Phase 6, that file (never the dossier) feeds the cross-check, and it can be pre-validated via an ABSOLUTE path to validate_note.py. **#80**: never cite a verse/page ref from training memory (verify or soften to tradition-level attribution); series Section-2 negative claims verified against the canon DB before assertion (added to both the Phase 7 series spec and skill/what-the-suttas-say/SKILL.md); citations reused from prior vault notes re-verified via resolve-citation/verify-citation (enrichment paragraph). Docs-only; all 283 tests pass. |
 | #71 cross-check subprocess hangs past its own --timeout (2 runs) | done (2026-07-17) | `fix: kill the whole process group when a cross-check chain entry times out` — root cause verified before coding: `subprocess.run(capture_output=True, timeout=…)` kills only the direct child, and opencode's node grandchildren keep the inherited stdout pipe open, blocking the post-kill drain indefinitely (a run observed 5m37s past `--timeout 260` with no output and no sentinel). New `_run_chain_subprocess` launches each chain entry with `start_new_session=True` and SIGKILLs the process group on TimeoutExpired, with a 5s bounded drain; `_run_opencode`/`_run_agy` delegate to it (existing name-level monkeypatch tests unaffected). Regression test spawns a real bash child with a backgrounded 30s grandchild holding stdout — returns None in ~1s instead of blocking. Phase 6 doc adds the two related gotchas: `--timeout` bounds each chain entry (N-entry chain → N× total), and a chained `>file >/dev/null 2>&1` redirect eats the review and masquerades as SELF_REVIEW. 4 new tests; all 283 pass; ruff + pyright clean. (seen in 2 runs: 20260711-211836, 20260715-162827) |
 | #72 Phase 6 structurally skippable — gate 6 had no content requirement (2 runs) | done (2026-07-17) | `fix: require a logged Phase 6 entry before gate 6 is written` — "6" added to `_CONTENT_PHASES` in `tools/scratch.py`, so `scratch-gate 6` now refuses with "no logged evidence" until the phase holds a real logged block (the cross-check helper auto-logs; the self-review fallback records via `scratch-log 6 …`), closing the near-miss where a run went straight from synthesis to the vault write (caught only at self-audit Q6 in one run, self-caught post-set-note in another). The refusal message is phase-appropriate ("run the cross-check (or record the self-review) and log it"). Side effect: `scratch-verify --through 6/7` now content-checks Phase 6 too — consistent with the gate. Phases 0, 5, 7 stay exempt. SKILL.md Phase 6 exit line documents the refusal. 4 existing loop tests updated to log before gating 6; new regression test `test_gate_6_refuses_without_logged_cross_check`. All 279 tests pass; ruff + pyright clean. (seen in 2 runs: 20260715-054137, 20260711-113434) |
 | #78 pi-harness fallbacks undocumented (+#79 doc half) (7+ runs) | done (2026-07-17) | `docs: add harness-fallbacks block for pi and other non-Claude-Code hosts` — new bolded block at the end of Sub-agent dispatch consolidating what every pi run had been re-deriving: inline gather as the pi default (generic planner/reviewer/scout/worker agents can't carry the dispatch prompt; subagent tool aborts/~120s cap) with the concrete inline recipe (inline VICAYA_PHASE pin, --quiet, id-window pulls, gate per phase, context-budget caveat); small enrichment runs (≤5 gaps) inline-by-choice anywhere; curl for server-rendered pages when the harness has no WebSearch/WebFetch (SuttaCentral stays unfetchable); SELF_REVIEW as the expected cross-check outcome on hosts without opencode/agy; and the #79 doc half — `VICAYA_SCRATCH=data/scratch/<slug>.md` inline pin (or same-invocation scratch-resume) when scratch-gate/scratch-which lose the state file across fresh shells (override precedence verified against `_scratch_path`: explicit slug > env > state file). Same three failure modes added as "When something fails" bullets. #79's CLI `--slug` nicety kept as residue. Docs-only; all 278 tests pass. (seen in 7+ runs: 20260715-054137, -054645, -061945, -064135, -071232, +5 more) |
@@ -171,58 +172,7 @@ documented in Phase 6, 2026-07-17)_
 
 _(#72 moved to Done — phase 6 added to the gate content check, 2026-07-17)_
 
-- **#73 Orchestrator's own unpinned helper calls misfile once the shared
-  pointer moves.** Two runs had orchestrator ad-hoc verification searches
-  land under the wrong phase heading (2 calls under Phase 4 instead of 3;
-  ~15 min of Phase-2 follow-up under Phase 3) because SKILL.md's "bare
-  calls are fine for the orchestrating session" reads as blanket
-  permission. It is only true while no sub-agent has gated anything. Fix
-  (doc): in Calling the helpers + Sub-agent dispatch, state that once any
-  sub-agent has been dispatched — or whenever the orchestrator does work
-  belonging to a phase it doesn't currently own — the orchestrator must
-  pin `VICAYA_PHASE=<n>` inline too. (seen in 2 runs: 20260710-091726,
-  20260711-094116)
-
-- **#74 Sub-agent summary prose drifts from the raw data it claims to
-  summarize.** Recurring across the curation-series runs: a false
-  "confirmed EA43.8 parallel for MN51" (raw sc-parallels JSON has no such
-  ref), AN2.120 conflated with AN2.31/32, fabricated content descriptions
-  for SN37.23/AN4.212, and one claimed-but-never-run transcript fetch.
-  Every catch came from the orchestrator re-checking the raw JSON/scratch
-  rather than trusting the completion report. Fix (doc): promote "verify
-  sub-agent summary sentences against the raw logged JSON they describe —
-  not just the headline sutta selections" to an explicit bullet in the
-  post-agent spot-check list. (seen in 4 runs: 20260711-152351,
-  20260711-211836, 20260711-094116, 20260710-091726)
-
-- **#75 Cross-check reviewer content claims need mūla verification in both
-  directions — the label pipeline only covers citation existence.** Four
-  runs hit reviewer false positives (correct citations doubted: MN12/MN9/
-  SN35.154, AN3.62, SN15.10, MN38's chain, DN15's fourfold list, a wrong
-  "KN 14" placement) and one hit false negatives (two real DN16 mislabels
-  the reviewer never flagged — it has no DB access). All were handled
-  correctly by the runs, but the discipline is implicit. Fix (doc): Phase 6
-  states explicitly that the reviewer's factual-accuracy section is
-  necessary-not-sufficient — (a) verify every reviewer content claim
-  against the mūla before integrating, including claims with no citation
-  tag; (b) after cross-check, run an orchestrator resolve-citation pass
-  over every draft citation that used an approximate/unresolved book-code
-  label, regardless of whether the reviewer flagged it. (seen in 4 runs:
-  20260712-000000, 20260715-074500, 20260715-092000, 20260715-071232)
-
-- **#76 Phase 5 draft handling cluster: durability + what feeds the
-  cross-check.** One run's full draft lived only in the session temp
-  scratchpad across a compaction boundary (survived by luck); another
-  piped the whole 263KB scratch dossier to cross-check instead of the
-  draft. Fix (doc, three lines in Phase 5/6): (a) the full draft body must
-  be written to `data/scratch/<slug>.phase5-draft.md` as the first action
-  after drafting, before any Phase 6 work (generalize the existing
-  deferred-draft rule); (b) the cross-check prompt body is the draft
-  file's contents, never the scratch dossier; (c) a draft can be
-  pre-validated before the vault write by passing validate_note.py an
-  ABSOLUTE path (repo-relative resolves against the vault and fails —
-  verified doc gap, 20260716-224915). (seen in 3 runs: 20260712-000000,
-  20260715-060744, 20260716-224915)
+_(#73, #74, #75, #76 moved to Done — batched docs commit, 2026-07-17)_
 
 _(#77 doc half moved to Done — consolidated-row convention + per-id token
 rule documented in the coverage-check section and mirrored in the Phase 7
@@ -239,21 +189,7 @@ plus three "When something fails" bullets, 2026-07-17)_
   expose it; a `--slug` arg mirroring scratch-resume would make the pin
   unnecessary. (seen in 2 runs: 20260715-060744, 20260715-064135)
 
-- **#80 Citation-hygiene doc cluster — three verify-before-citing rules
-  that each nearly shipped a wrong claim.** (a) Never cite a specific
-  verse/page reference from training memory — one run drafted a Yoga-Sūtra
-  4.28 citation that GRETIL could not attest (caught by self-review);
-  soften to tradition-level attribution unless verified by a helper.
-  (b) Series Section-2 "the EBTs don't say X" claims must be verified
-  against the canon DB before assertion — one run nearly called the mirage
-  simile a later Mahāyāna trope when SN22.95 uses it for saññā.
-  (c) Citations reused from prior vault notes must be re-verified with
-  resolve-citation/verify-citation — one run found two citation errors in
-  a prior note's frontmatter. Fix (doc): add (a) to the Devil's Advocate /
-  Hard Rules, (b) to the series spec in the what-the-suttas-say skill +
-  Phase 7 series paragraph, (c) to Phase 1 enrichment/vault-context
-  guidance. (seen in 3 runs: 20260715-sankhara, 20260715-063715,
-  20260715-000000)
+_(#80 moved to Done — batched docs commit, 2026-07-17)_
 
 ### Low severity
 
@@ -659,5 +595,7 @@ pull back into the main Low severity list only if a new run reports it.
     structurally unskippable (the same structural-over-prose pattern as #7).
     #71 closed the same session: cross-check chain entries now run in their
     own process group and are group-killed on timeout, ending the
-    pipe-held-by-grandchildren hang; remaining Medium items are all doc
-    clusters (#73, #74, #75, #76, #80).
+    pipe-held-by-grandchildren hang. The five remaining Medium doc clusters
+    (#73, #74, #75, #76, #80) were batched into one docs commit the same
+    session — every Medium from this triage is now closed; the backlog is
+    all Low (#68, #79 residue, #81–#89).

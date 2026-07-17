@@ -106,9 +106,14 @@ uv run tools/research_sources.py <subcommand> [args...]
 
 **If you are a per-phase gather sub-agent** (see **Sub-agent dispatch**), prefix
 every call below with `VICAYA_PHASE=<your-assigned-phase>` — this is mandatory,
-not the bare form shown here. The bare form is only safe for the single
-orchestrating session (Phase 0/1/5/6/7), which is never running concurrently
-with anything else.
+not the bare form shown here. The bare form is only safe for the orchestrating
+session **before any gather sub-agent has been dispatched, and only for calls
+belonging to the phase it currently owns**. Once delegation starts, the shared
+phase pointer moves whenever any agent gates, so the orchestrator must also pin
+`VICAYA_PHASE=<n>` on every direct helper call it makes for a delegated phase —
+e.g. re-checking a sub-agent's negative library result during a later phase.
+Two real runs misfiled orchestrator searches under the wrong phase heading by
+treating "bare calls are fine for the orchestrator" as blanket permission.
 
 Subcommands (each prints JSON to stdout):
 
@@ -960,6 +965,11 @@ its filename and `date`; add the new entries, then update the frontmatter refs,
 bibliography, and footer to match) rather than writing a near-duplicate sibling.
 When adding entries to a numbered series note, check every cross-reference
 between entries after renumbering — they do not update themselves.
+**Citations reused from a prior note are claims, not facts:** re-verify every
+canon reference you carry over with `resolve-citation`/`verify-citation` before
+citing it again — a real run found two citation errors in a prior note's
+frontmatter (SN22.56 that was actually SN22.57; an "SN22.79" paranum resolving
+to SN30.17-46), which would have propagated silently on trust.
 
 **EBC seed lookup** — if the question is anchored on one or more specific suttas (named in the user's question, or surfaced by the vault search), call `get-ebc-overview <code>` once per sutta. The returned `parallels_agama` and `parallels_partial` lists feed directly into the perspective map and the Phase 3 parallel-evidence search; the `themes`, `formula`, and `training` fields can suggest related suttas you might otherwise miss. This costs nothing and replaces a SuttaCentral parallel-table lookup.
 
@@ -1062,6 +1072,7 @@ Steps:
 - **No WebSearch/WebFetch tools (pi):** use `curl` for server-rendered pages (WisdomLib, dhammatalks.org, accesstoinsight.org). JS-only sites (SuttaCentral) remain unfetchable — cite via the canon DB / EBC vault instead. Log each `curl` fetch with `scratch-log` exactly as documented for `WebFetch`.
 - **Cross-check returning `# SELF_REVIEW:` is the expected outcome on hosts where `opencode`/`agy` aren't installed or authenticated** — run the embedded checklist per Phase 6 and record `cross-check: self-review`; it is not a failure.
 - **Per-run scratch state can fail to resolve across fresh shells on hosts with unstable process keys** (seen on pi: `scratch-gate`/`scratch-which` return "no scratch path" while auto-logging works). The deterministic fix is the existing override: prefix `VICAYA_SCRATCH=data/scratch/<slug>.md` inline on the affected `scratch-*` calls, or run `scratch-resume <slug>` in the same Bash invocation before the gate.
+- **Verify summary sentences against the raw logged JSON they claim to describe — not just the headline conclusions.** A sub-agent's prose reliably *sounds* right while drifting from the data underneath: real runs caught a "confirmed EA43.8 parallel for MN51" that appears nowhere in the logged sc-parallels JSON, fabricated content descriptions for real suttas (SN37.23 "five precepts", AN4.212 "ingratitude"), a web summary conflating AN2.120 with AN2.31/32, and a claimed transcript fetch with no `fetch-transcript` call anywhere in the scratch. For each load-bearing claim in a completion report, grep the scratch for the tool call and payload that would support it; a claim with no matching logged entry is treated as false until re-run.
 - **Re-verify the top cited suttas before spawning the next agent.** A sub-agent's completion report names the suttas it found — run `verify-citation` on the 2–3 highest-priority ones before accepting them. A sub-agent can report evidence not actually in the scratch (context-exhausted hallucination), name suttas without having run `resolve-citation`, or get 0 hits from a wrong book code and silently log them as absent. The re-verify step catches all three before the next phase builds on the error. Log the result in the orchestrator's working notes ("verified: MN60 ✓, AN4.1 ✗ not found in sutta_info — re-run phase 2 for this book"); if a cited sutta fails, treat it as a content issue and backfill, same as an empty phase.
 
 After the last phase, run `uv run tools/research_sources.py scratch-verify`:
@@ -1620,6 +1631,8 @@ When a term has both a Pāḷi form and a Sanskrit IAST form, fetch **both** —
 
 Draft the answer in your working notes. Cite as you go — never make a claim without a reference.
 
+**Never cite a specific verse, paragraph, or page reference from training memory.** Any reference not verified through a helper during this run (`search-canon`/`resolve-citation`/`verify-citation`, GRETIL `search-sanskrit`, a library extraction, a fetched page) either gets verified now or gets softened to tradition-level attribution ("the Yogasūtra tradition holds…", no verse number). A real run drafted a Yoga-Sūtra verse citation from memory that GRETIL could not attest — plausible-looking numbers from memory are precisely the ones that slip through review.
+
 **Before drafting, read the "Pāḷi/English presentation" rules in the Style notes section.** Those rules govern how every Pāḷi quote and every inline Pāḷi term is rendered in the final vault note. Apply them from the first draft so you don't have to retrofit on the final pass.
 
 **Source completeness check before you write.** Review your perspective map from Phase 1. For every named position, ask: do I have the canon passages that establish it, a secondary source that analyses it, and a web or talk source where the user could learn more? If any position is thin on sources, loop back to Phases 2–4 before synthesising. More prose does not fix missing sources — only more searching does.
@@ -1666,6 +1679,8 @@ should be complete. Organize entries into the five subsections as you write them
 Secondary Sources alphabetically by author surname. See the `## Bibliography` section
 above for format rules.
 
+**Draft durability — the full draft body lives in `data/scratch/`, always.** As the first action after drafting (before any Phase 6 work), write the complete draft body to `data/scratch/<slug>.phase5-draft.md` and log the path with `scratch-log 5`. Model context and session temp directories do not survive every interruption — a real run's draft lived only in the session scratchpad across a compaction boundary and survived by luck. This same file is what Phase 6 pipes to the cross-check (the draft, never the accumulating scratch dossier), and it can be pre-validated before the vault write by passing `validate_note.py` its ABSOLUTE path (a repo-relative path resolves against the vault and fails).
+
 **Deferred-draft handoff (very large dossiers).** When the dossier is too large
 to draft in the remaining context, do not gate Phase 5 on a rushed draft.
 Instead: (1) record a compact synthesis plan via
@@ -1710,7 +1725,7 @@ uv run tools/research_sources.py scratch-log 6 cross-check-review "$CROSS_CHECK_
   --summary "Raw Phase 6 cross-check output saved in the scratch-local review file and integrated before the Phase 6 gate."
 ```
 
-**Paste the actual text, not a description.** `<the question>` and `<the synthesis>` must be replaced with the literal content — the polished research question and the full current draft of the vault note's body, verbatim — not a paraphrase of what it argues. The cross-check model has no other access to the note; describing the synthesis instead of pasting it gives the reviewer nothing concrete to check against and produces a non-substantive review (issue #66).
+**Paste the actual text, not a description.** `<the question>` and `<the synthesis>` must be replaced with the literal content — the polished research question and the full current draft of the vault note's body, verbatim — not a paraphrase of what it argues. The cross-check model has no other access to the note; describing the synthesis instead of pasting it gives the reviewer nothing concrete to check against and produces a non-substantive review (issue #66). The draft body is the Phase 5 draft file (`data/scratch/<slug>.phase5-draft.md`) — never pipe the accumulating scratch dossier, which buries the draft in hundreds of KB of raw search logs.
 
 **Run this in the background from the first attempt** (e.g. `run_in_background: true` on the Bash call), not only after a foreground timeout. The helper's own `--timeout` defaults to 180s, longer than the Bash tool's ~120s foreground cap — on a long synthesis, opencode/agy latency alone silently truncates the call before `$CROSS_CHECK_REVIEW` is written, even though the underlying model request would have succeeded.
 
@@ -1719,6 +1734,8 @@ Two timing/shell gotchas: (1) `--timeout` bounds each chain entry, not the whole
 The `cross-check` helper tries each `app:model` entry in `VICAYA_CROSS_CHECK_CHAIN` (env) in order via subprocess (`opencode run -m <model>` or `agy --print ... --model <model>`), returns the first one that succeeds, and falls back to the `# SELF_REVIEW:` sentinel if the chain is empty or every entry fails. **If the scratch-local review file begins with `# SELF_REVIEW:`**, no chain entry succeeded (or the chain was empty). In that case, run the embedded five-point checklist on your own synthesis: read each numbered item, audit your synthesis against it, and apply fixes the same way you would for an external review. Do not write anything in the note acknowledging the self-review fallback; it is still subject to the IRON RULE below. The terminal report in Phase 7 records `cross-check: self-review` instead of a model name.
 
 **Citation pre-annotation.** Every sutta reference in the helper's output arrives already labelled `[VERIFIED]`, `[REJECTED — not in sutta_info]`, or `[UNVERIFIABLE — …]` (existence check against `dpd.db sutta_info`). The label is existence-only: `[VERIFIED]` means the citation is a real sutta, **not** that the reviewer's content claim about it is correct. Pāḷi-quote misreads (e.g. `asantasanto` confused with `asanta`) and conceptual conflations are *not* caught by this — those still need scholarly judgement during integration. **Drop every `[REJECTED]` claim entirely; do not paraphrase, do not retain.** A `[REJECTED]` tag anywhere in the final vault note will cause `scratch-gate 7` to refuse, so they must be excised cleanly.
+
+**The reviewer's factual-accuracy findings are necessary, not sufficient — verify in both directions.** The reviewer has no database access, so it reasons about citations probabilistically and errs both ways: real runs saw it doubt correct citations (MN12/MN9/SN35.154, AN3.62's wording, MN38's 12-link chain, DN15's fourfold list — all verified fine against the mūla) *and* miss real errors it never flagged (two passages footnoted as "DN22-adjacent"/"DN14-adjacent" that were actually both DN16). Two consequences: (1) every reviewer content claim — flagged, suggested, or corrective, with or without a citation tag — must be verified against the mūla before integration; integrating a reviewer "correction" on trust has introduced errors. (2) After integrating, run your own `resolve-citation` pass over every draft citation that used an approximate or unresolved book-code label (e.g. `s0102m_mul` cited loosely as "DN22-adjacent"), regardless of whether the reviewer flagged it — the reviewer cannot catch what it has no means to check.
 
 The verifier understands range-stored books (Dhp verses, AN ones/twos, peyyāla blocks resolve by containment), hyphenated ranges (`SN48.9-10` verifies via its endpoints), and the Thag/Thig/Kp code aliases. Global verse numbers in Suttanipāta/Theragāthā/Therīgāthā (`Sn 925`, `Thag 591`) have no per-verse rows in `sutta_info` and are labelled `[UNVERIFIABLE — …]`: this is **not** evidence of fabrication. If you pulled the verse verbatim from the canon DB, keep it and cite by chapter.sutta (`Snp 4.14`, `Thag 16.1`) or CST table+para; if it came only from the reviewer, substantiate it against the canon DB before integrating.
 
@@ -1766,6 +1783,13 @@ paragraph is the spec; do not reverse-engineer the shape from sibling notes.
 - Keep the standard tail: `## Sources Investigated, Not Used`,
   `## Critical Gaps`, `## Bibliography`, and `## Angles Not Pursued` when
   applicable.
+- **Negative claims ("the EBTs don't say X", "image X is a later trope") are
+  the highest-risk claims in a series note — verify each against the canon DB
+  before asserting it.** Run the absence search (stem + synonyms, all T1a
+  books, Hard Rule 12 book-code check) and treat the 0-hit as the evidence.
+  A real run nearly called the mirage simile a later Mahāyāna development
+  when SN22.95 uses it for saññā — the miss came from searching prose stems
+  only and skipping the aggregate-simile verse.
 
 **Comparative-religion questions (non-Buddhist tradition as primary subject).** When the research question centres on a tradition with no canon-DB primary text (e.g. Christianity, Islam, Judaism, Stoicism), replace `## Canon Evidence (T1)` with a tradition-appropriate heading — `## Biblical Evidence (T1)`, `## Quranic Evidence (T1)`, `## Stoic Sources (T1)`, etc. The validator accepts any `## * Evidence (T1)` heading and does not warn. Use the same blockquote + citation discipline as the standard Canon Evidence section: verbatim primary-text quotes with source attribution, not paraphrase. The Buddhist canon evidence (if any parallel is relevant) goes in a separate `## Canon Evidence (T1)` section alongside.
 

@@ -37,6 +37,7 @@ A thin wrapper around the canonical `/vicaya` workflow. This file defines only t
     - Surface contradictions. If the suttas contradict each other, include it and flag it explicitly — do not smooth it over.
     - Section 1 is earliest strata only — the main skill's **T1a** tier. Anything traceable to later strata (T1b, T2, or later school developments) goes in Section 2, with a note on which stratum it likely comes from.
     - Prefer primary textual evidence over interpretation; keep commentary brief and grounded in the quote.
+    - Section 2's negative claims ("the EBTs don't say X", "image X is a later trope") are the highest-risk claims in the note — verify each against the canon DB before asserting it (stem + synonym absence search across all T1a books, including verse texts, with the Hard Rule 12 book-code check). A real run nearly called the mirage simile a later Mahāyāna development when SN22.95 uses it for saññā.
 
 - Make sure to include **all** sutta information on this topic — no skimping. Sweep the whole T1a corpus (all four Nikāyas, the Suttavibhaṅga, and the early Khuddaka texts), not just the first hits.
 
