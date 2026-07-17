@@ -303,6 +303,9 @@ Nikāya prefixes used in `<NIK>` and `<code>`: `MN`, `DN`, `SN`, `AN`, `DHP`,
    resolves each `parallels_agama` code to its Patton or BDK translation file and
    returns the full text. **Always call both — do not stop at the overview.**
    Codes with no file on disk appear in `parallels_missing`; note those as gaps.
+   The listed codes are metadata, not verified matches — before citing any
+   parallel, read its retrieved text and confirm it matches the target sutta's
+   content (see the IRON RULE in Phase 2's EBC parallel-evidence pull).
 2. **Cite the translation** → quote as *Madhyamāgama 98, trans. Charles Patton, §<n>*
    (Patton paragraphs are numbered). BDK translations cite as *Dīrghāgama 10,
    trans. BDK English Tripiṭaka*.
@@ -1333,6 +1336,8 @@ For every sutta cited from the Pāḷi canon in Phase 2, pull the matching paral
 
 Pāḷi names in EBC use exact diacritics, same as the canon db. The overview-card paths are absolute — copy them directly into `Read`. If a named parallel has no file (rare), note it as a known gap rather than silently dropping the parallel.
 
+**⚠️ IRON RULE — parallel codes are claims, not facts: content-check every parallel before citing it.** The `parallels_agama` metadata (and `sc-parallels` listings) can be wrong — a real run found EA50.8/MA193/MA200 listed for MN21 whose retrieved text was unmistakably MN22 material, and MA152 listed for MN135 when its content matches MN99. Before citing any parallel, read the retrieved translation text and confirm it discusses the same content as the target sutta (same protagonists, similes, argument — not just the same broad theme). On a mismatch: do not cite the parallel, log the discrepancy in the scratch and in `## Sources Investigated, Not Used`, and treat the sutta as having no confirmed parallel (or substitute a verified one).
+
 → **EBC pulls:** auto-log already captures the helper calls. For `Read`s of EBC translation files that you cite, run `scratch-log 2 read <path> --summary "<one line>"` so the dossier still has them.
 
 ### Phase 2.5 — SuttaCentral offline parallel search
@@ -1353,6 +1358,8 @@ if it is non-empty, the parallel exists but its text is not in the archive; log 
 as a known gap in Critical Gaps rather than silently omitting.
 
 Suttas that `parallels.json` stores under a range uid (e.g. `sn12.1-2`) resolve by membership — `sc-parallels sn12.2` finds the group. If a lookup still returns `[]` for a sutta you expect to have parallels, fall back to `get-ebc-overview <code>` — its `parallels_agama` list is an independent parallel source, and a genuine `[]` from both is reportable evidence of no known parallel.
+
+**Content-check before citing.** The Phase 2 IRON RULE applies here identically: a listed parallel is a claim until its retrieved text is read and confirmed to match the target sutta's actual content. Parallel-metadata mismatches are a documented, recurring failure mode — never cite a parallel code on the listing alone.
 
 For comparative/Āgama-focused questions, search the Chinese Āgama root texts directly:
 
