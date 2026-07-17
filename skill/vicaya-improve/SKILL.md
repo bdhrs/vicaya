@@ -121,6 +121,12 @@ regressions, channel-tuning actions applied.
 
 Then ask the user to pick one (AskUserQuestion, top 4 as options with the
 "Why now" as description; the 5th and the rest are reachable via Other).
+Write every option description in plain English, not code-speak: describe
+what went wrong and what the fix does as you would to a non-programmer —
+no flag names, function names, file paths, or jargon in the descriptions
+(the issue number in the label is enough for cross-reference). The user
+has asked for this explicitly; a technical description forces them to ask
+for a translation before they can pick.
 
 **Before implementing — test the hypothesis, don't just apply it.** A run's
 `Cause:`/`Fix:` text is one agent's in-the-moment guess, not a verified

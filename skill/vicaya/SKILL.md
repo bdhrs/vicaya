@@ -996,12 +996,13 @@ The only datum each prompt must carry is the **scratch slug** — `uv run tools/
 - **Claude Code:** Use the Agent tool with `model: "sonnet"` (only environment where a cheaper model can be selected) — but check first: if the project's `CLAUDE.md`/`AGENTS.md` or an instruction given earlier this session names a different sub-agent model, that override wins over this default. Re-check it right here, at the *first* dispatch — noting an override once at session start isn't enough; the skill's own default is easy to apply out of habit on the very first spawn even when the override was already noted. Every other environment inherits the parent model — context isolation is the benefit, not cost savings.
 - **Any other environment:** Use that environment's sub-agent mechanism. If dispatching a gather phase via an external CLI subprocess (e.g. `opencode run -m <model>`), launch it with `run_in_background: true` from the *first* call, never foreground: the CLI's streaming latency alone can exceed the Bash tool's ~120s foreground cap and silently cut the process off mid-phase — search calls and auto-logging can complete while only the final `scratch-gate` call gets truncated, which is worse than an obvious failure because it looks like a clean phase from the scratch alone.
 
-**Four rules keep each agent light and correctly filed — state all four in every dispatch prompt:**
+**Five rules keep each agent light and correctly filed — state all five in every dispatch prompt:**
 
 1. **Pin `VICAYA_PHASE=<PHASE>` inline on EVERY helper call, no exceptions.** This is not advisory and it is not the same as exporting it once — `export` does not survive between Bash calls, and even if it did, the shared per-run active-phase pointer moves the instant any phase (yours or a sibling's) gates, so relying on it is a race (issue #55: it has scrambled which phase auto-logged content lands under, and once caused `scratch-gate` to refuse with "no logged evidence"). Prefix every single `search-*`/`sc-*`/`get-*`/`fetch-*` call: `VICAYA_PHASE=<PHASE> uv run tools/research_sources.py search-canon ... --quiet`. An unpinned call is visible after the fact as a `phase-source: run-pointer` line in the scratch — there should be none inside a phase sub-agent's own log entries.
 2. **Read only the briefing, never the dossier.** Read the Phase 0/1 briefing block at the TOP of the scratch (question, angle triage, perspective map, seeds) — never the accumulating evidence blocks below it. Auto-log already persists every hit; re-reading them is what fills the context.
 3. **Pass `--quiet` on every search helper call** (`search-canon`, `search-library-folders`, `search-ebc`, `search-sanskrit`, `sc-parallels`, `sc-search`, `get-agama`). The full result still goes to the scratch dossier; only the agent's stdout is compacted to a snippet — that compaction is what keeps the agent's context from filling. (The dossier and the synthesised note are unaffected: full text always lands in the scratch.)
 4. **Read only the SKILL sections for its one phase** (table below), plus the shared preamble.
+5. **Every citation in the agent's final mapping/summary must copy the human ref verbatim from a `resolve-citation` call in its own log — never from memory of which sutta a hit "was in".** An agent that summarises from its recollection of hit context will misattribute (issue #90: two DN refs labelled one sutta off in a single consolidated mapping — nivātavutti filed under DN33 when it is DN31, asantuṭṭhitā under DN34 when it is DN33). If a ref was never resolved, resolve it before writing it down, or write the raw `book_code:paranum` and say so.
 
 **Phase 4b transcript rule.** The YouTube agent collects video **details** (titles, channels, URLs, tiers) for the candidate set and pulls a transcript **only** for a video clearly relevant to the question — never bulk-fetch transcripts. A full transcript is ~4,000 lines and is the single largest context killer; one is plenty, zero is fine when the titles already settle relevance.
 
@@ -1052,6 +1053,11 @@ Steps:
    still go to the scratch; only your stdout shrinks).
    (Phase 4b only: collect video details; fetch a transcript ONLY if a video is
    clearly relevant — never bulk-fetch transcripts.)
+   CITATIONS: any human ref (e.g. "DN 31", "MN 10") you write in a mapping or
+   summary note MUST be copied verbatim from a resolve-citation call in YOUR OWN
+   log this session — never from your memory of which sutta a hit "was in".
+   If you didn't resolve it, resolve it now or write the raw book_code:paranum
+   and flag it unresolved.
 5. Gate it: uv run tools/research_sources.py scratch-gate <PHASE>
 6. Return a 2–3 line report: source counts, gate status, and anything you could
    NOT do (0-hit bodies you expected to find, missing files) so the orchestrator

@@ -77,5 +77,6 @@ Prune dead links periodically.
 - Buddha Speaks
 - Buddha's Wisdom
 - Buddhism Podcast
+- Dalai Lama & Laurence Freeman dialogues
 
 ## excluded

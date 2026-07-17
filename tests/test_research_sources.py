@@ -328,7 +328,12 @@ class TestSearchCanonNormalisation:
 class TestSearchVault:
     def test_search_returns_list(self):
         # We don't know what's in the vault; just verify the call shape works.
-        hits = search_vault("the", limit=3)
+        try:
+            hits = search_vault("the", limit=3)
+        except RuntimeError as e:
+            if "unable to find Obsidian" in str(e):
+                pytest.skip("Obsidian app not running")
+            raise
         assert isinstance(hits, list)
         for h in hits:
             assert isinstance(h, VaultHit)
@@ -637,7 +642,7 @@ class TestGetEbcOverviewQuietFlag:
         # (argparse exits 2 on an unrecognized argument).
         import tools.research_sources as rs
 
-        monkeypatch.setattr(rs, "get_ebc_overview", lambda code: None)
+        monkeypatch.setattr(rs, "get_ebc_overview", lambda _code: None)
         monkeypatch.setattr(
             sys, "argv", ["research_sources.py", "get-ebc-overview", "XX99", "--quiet"]
         )

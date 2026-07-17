@@ -1,7 +1,11 @@
 # Vicaya skill improvements — work in progress
 
 This file replaces the run-by-run reflection backlog. Processed reflections
-live in `runs/processed/`. Last triage: 2026-07-17, covering 25 runs from
+live in `runs/processed/`. Last triage: 2026-07-17 (second pass, 1 run:
+20260717-140500 — two new issues #90/#91, one POSITIVE added to Working well;
+the run postdates all of the same day's fixes, so nothing was stale and
+nothing regressed; #90 was picked and closed the same session, leaving #91
+open). Prior triage: 2026-07-17, covering 25 runs from
 2026-07-10 to 2026-07-16 — 20 new issues (#69–#88; 2 High, 10 Medium, 8 Low),
 zero regressions. Every tool-behavior claim was verified against the current
 code before merging (per the hypothesis-testing rule): confirmed real — the
@@ -131,6 +135,7 @@ the premise behind dropped #5.
 | #77 (doc half) scratch-check-coverage ergonomics on broad FTS sweeps (8 runs) | done (2026-07-17) | `docs: sanction consolidated rejection rows for library FTS-noise tails` — the coverage-check section now states the per-id match rule explicitly (a grouped `Calibre #1944/#27645` row credits only the first id — one token per individually rejected doc) and adds a "Large FTS tails don't need per-row accounting" paragraph: name the load-bearing near-misses individually, account for the remainder with one consolidated row, and treat a reviewed nonzero residual as an acceptable advisory outcome, not a gate failure. The Phase 7 template's rejection-table example now shows both forms (a `Calibre #6294`-tagged T3 row and a consolidated "~180 further hits" row) so the format the checker needs is the one the template demonstrates — closing the exact template/checker mismatch the taṇhā run hit. Tool-side residue (investigated-vs-raw distinction) split off as #89. Docs-only; all 278 tests pass. (seen in 8 runs: 20260715-074500, -061945, -063715, -064135, -140000, -162827, sokaparideva, visuddhimagga, 20260716-224915) |
 | #70 Āgama parallel codes cited from metadata without a content check | done (2026-07-17) | `docs: require content-check of every Āgama parallel before citing it` — new IRON RULE in Phase 2's EBC parallel-evidence pull: parallel codes are claims, not facts — read the retrieved translation text and confirm it matches the target sutta's actual content (protagonists, similes, argument — not broad theme) before citing; on mismatch, don't cite, log the discrepancy in scratch + `## Sources Investigated, Not Used`, and treat the sutta as having no confirmed parallel or substitute a verified one. Names the real failure instances (EA50.8/MA193/MA200 listed for MN21 but carrying MN22 material; MA152 listed for MN135 but matching MN99). Phase 2.5 gets a matching "content-check before citing" paragraph; the EBC vault "When to reach for EBC" item 1 gets a pointer line so the rule is seen at the first parallels touchpoint. Docs-only; all 278 tests pass. (seen in 1 run with 3 instances: 20260711-083537) |
 | #69 sc-parallels returns [] for range-stored uids (2 runs) | done (2026-07-17) | `fix: resolve sc-parallels range-stored uids by member expansion` — `parallels.json` stores some suttas only under a range uid (`sn12.1-2`, `an3.183-352`, 692 range uids total, max width 169); `_sc_load_parallels_index` keyed by bare uid only, so `sc-parallels sn12.2` returned `[]` (reproduced live before the fix). New `_sc_expand_range_uid` expands numeric-tail range uids into member uids (guards: no digits-before-hyphen forms like the `ea-2.x` collection names, inverted ranges, widths > 400) and the index now registers each member; `sc_parallels` also skips the range uid that carries the query itself so `sn12.1-2` is not reported as its own parallel. Verified live after: `sn12.2` → 11 parallels incl. `sa298`/`ea49.5`, exactly the set the runs expected. SKILL.md Phase 2.5 documents the membership resolution + the `get-ebc-overview` fallback for a residual `[]`. 3 regression tests (expansion table, synthetic range-index round-trip, real-archive sn12.2). All 278 tests pass; ruff + pyright clean. |
+| #90 Sub-agents cite from memory of hit context, not from resolve output | done (2026-07-17) | `docs: mandate resolve-log-verbatim citations in gather dispatch` — a Phase 2 gather agent's consolidated mapping misattributed two citations (nivātavutti labelled DN33, actually DN31 Siṅgāla; asantuṭṭhitā labelled DN34, actually DN33) because it summarised from memory of which sutta a hit "was in"; the orchestrator-side spot-check (#74) caught both, but the errors shouldn't be produced at all. The Sub-agent dispatch "Four rules" list is now five: rule 5 requires every citation in the agent's final mapping/summary to copy the human ref verbatim from a resolve-citation call in its own log (never from memory; unresolved refs stay as raw book_code:paranum and are flagged). The dispatch prompt template gains a matching CITATIONS block in step 4 so every spawned agent sees the rule verbatim. Same commit: TestSearchVault's live-Obsidian test now skips cleanly when the app isn't running (pre-existing suite red herring), and the vicaya-improve SKILL.md Phase 6 questionnaire must be written in plain English per user request. All 284 tests pass (1 env skip); ruff + pyright clean. (seen in 1 run with 2 instances: 20260717-140500) |
 | #40 (other part) general tier-relabelling allowance for non-doctrinal thematic runs | dropped (2026-07-06) | non-issue — verified against `tools/note_checks.py`: `## Canon Evidence (T1)` is already a soft/warning-only section when empty, and `## Commentary/Web/Talks Evidence (T2/T3/T4)` aren't in `REQUIRED_SECTIONS` at all, so a thematic run with no doctrinal canon already tolerates empty tier sections with zero validator friction — no relabelling mechanism needed. User confirmed: "keep things in these categories, just let them be empty ... its a non-issue." |
 | #17 Transcript-mining helper | dropped (2026-07-06) | no demand across 81 runs of observation — never once requested; cut rather than kept as permanent dead weight |
 | #18 Claim ledger output mode | dropped (2026-07-06) | traced to a single sighting (20260527-092930); never recurred across 40+ subsequent runs |
@@ -192,6 +197,9 @@ plus three "When something fails" bullets, 2026-07-17)_
 
 _(#80 moved to Done — batched docs commit, 2026-07-17)_
 
+_(#90 moved to Done — resolve-log-verbatim citation rule added to the
+dispatch rules list and the dispatch prompt template, 2026-07-17)_
+
 ### Low severity
 
 _(#38 moved to Done — WisdomLib skip clause added 2026-06-20)_
@@ -240,6 +248,14 @@ _(#85 moved to Done — obsidian create gotchas documented in Phase 7, 2026-07-1
   mechanically before any code. (residue of the 8-run evidence under #77)
 
 _(#88 moved to Done — search-craft one-liners folded into Phase 2 and Hard Rule 9, 2026-07-17)_
+
+- **#91 resolve-citation rejects --quiet, unlike the search helpers.** A
+  pinned-prefix call template that appends `--quiet` uniformly fails with
+  exit 2 on resolve-citation (verified against the current parser — no
+  `--quiet` argument), costing a failed call cycle. Fix: accept `--quiet`
+  as a silent no-op on resolve-citation (and audit the other non-search
+  subcommands for the same gap) so uniform call templates don't error.
+  (seen in 1 run: 20260717-140500)
 
 ### Parked — minor, revive only if it resurfaces
 
@@ -314,6 +330,13 @@ pull back into the main Low severity list only if a new run reports it.
   (20260711-094116, 20260711-042246)
 
 ## Working well — preserve
+
+- **Explicit target taxonomy in the dispatch prompt for enumerable
+  questions**: when the question decomposes into enumerable parts (e.g. the
+  8 Beatitudes), naming each part as an explicit search target in the gather
+  agent's dispatch prompt produced one consolidated mapping note with
+  resolve-checked anchors per part, making synthesis nearly mechanical.
+  (20260717-140500)
 
 - **Per-phase gather sub-agent + parent-synthesis split (#46)**: confirmed
   live 2026-06-20 (20260620-133500) — the gatherer/parent division of labour
@@ -554,3 +577,16 @@ pull back into the main Low severity list only if a new run reports it.
     closed #81–#85 and #88 the same session (one small code fix + docs).
     Everything remaining is either parked pending capture/design (#68, #87,
     #89), a nicety (#79 --slug, #86 scratch-init --force), or dormant.
+
+12. Second pass 2026-07-17 (1 run: 20260717-140500, the Beatitudes
+    comparative run): two new issues — #90 (gather agent misattributed two
+    DN citations by summarising from memory instead of its resolve log;
+    caught by the #74 orchestrator spot-check, so the net works) and #91
+    (resolve-citation rejects --quiet, verified against the current parser).
+    #90 was picked and closed the same session: dispatch rule 5 + a CITATIONS
+    block in the dispatch prompt template make resolve-log-verbatim citation
+    mandatory for every gather agent. Also this session, per user request:
+    the vicaya-improve Phase 6 questionnaire must now be written in plain
+    English (rule added to that SKILL.md). One new probationary channel
+    recorded (Dalai Lama & Laurence Freeman dialogues — no transcripts, low
+    citation value on first sighting).
