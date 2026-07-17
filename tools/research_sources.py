@@ -2338,6 +2338,9 @@ def _cli() -> int:
         )
         return _done()
 
+    def _slug_scratch(args):
+        return _scratch_path(args.slug) if args.slug else None
+
     def _handle_scratch_log(args):
         try:
             path = scratch_log(
@@ -2347,6 +2350,7 @@ def _cli() -> int:
                 summary=args.summary,
                 results_file=args.results,
                 hits=args.hits,
+                scratch=_slug_scratch(args),
             )
         except (FileNotFoundError, ValueError) as e:
             _dump({"ok": False, "error": str(e)})
@@ -2356,32 +2360,36 @@ def _cli() -> int:
 
     def _handle_scratch_gate(args):
         try:
-            result = scratch_gate(args.phase)
+            result = scratch_gate(args.phase, scratch=_slug_scratch(args))
         except (FileNotFoundError, ValueError) as e:
             result = {"ok": False, "error": str(e)}
         _dump(result)
         return _done(exit_code=0 if result.get("ok") else 1, autolog=False)
 
     def _handle_scratch_set_note(args):
-        result = scratch_set_note(args.note_path, pdf=args.pdf)
+        result = scratch_set_note(
+            args.note_path, pdf=args.pdf, scratch=_slug_scratch(args)
+        )
         _dump(result)
         return _done(exit_code=0 if result.get("ok") else 1, autolog=False)
 
     def _handle_scratch_self_audit(args):
         try:
-            result = scratch_self_audit(answers=args.answer)
+            result = scratch_self_audit(
+                answers=args.answer, scratch=_slug_scratch(args)
+            )
         except (FileNotFoundError, ValueError) as e:
             result = {"ok": False, "error": str(e)}
         _dump(result)
         return _done(exit_code=0 if result.get("ok") else 1, autolog=False)
 
     def _handle_scratch_verify(args):
-        result = scratch_verify(through=args.through)
+        result = scratch_verify(through=args.through, scratch=_slug_scratch(args))
         _dump(result)
         return _done(exit_code=0 if result.get("ok") else 1, autolog=False)
 
-    def _handle_scratch_check_coverage(_args):
-        result = scratch_check_coverage()
+    def _handle_scratch_check_coverage(args):
+        result = scratch_check_coverage(scratch=_slug_scratch(args))
         _dump(result)
         return _done(exit_code=0 if result.get("ok") else 1, autolog=False)
 
@@ -2392,7 +2400,7 @@ def _cli() -> int:
 
     def _handle_scratch_which(args):
         try:
-            path = str(_scratch_path())
+            path = str(_scratch_path(args.slug))
         except ValueError as e:
             print(e, file=sys.stderr)
             return _done(exit_code=1, autolog=False)
@@ -2418,6 +2426,11 @@ def _cli() -> int:
         "Compact stdout: truncate long text fields to a snippet. The FULL result "
         "is still written to the scratch dossier — use in gather sub-agents to "
         "keep context small."
+    )
+    _SLUG_HELP = (
+        "Target the scratch by slug (same resolution as scratch-resume), "
+        "bypassing VICAYA_SCRATCH and the per-process state file — use on "
+        "hosts where run state doesn't survive between shells."
     )
 
     pv = sub.add_parser("search-vault")
@@ -2653,6 +2666,7 @@ def _cli() -> int:
         help="Path to a JSON file whose contents will be embedded verbatim.",
     )
     psl.add_argument("--hits", default=None, type=int)
+    psl.add_argument("--slug", default=None, help=_SLUG_HELP)
     psl.set_defaults(func=_handle_scratch_log)
 
     psg = sub.add_parser(
@@ -2661,6 +2675,7 @@ def _cli() -> int:
     psg.add_argument(
         "phase", help="Phase id: 0, 1, 2, 2.5, 3, 3b, 4 (alias: 4a), 4b, 4c, 5, 6, 7"
     )
+    psg.add_argument("--slug", default=None, help=_SLUG_HELP)
     psg.set_defaults(func=_handle_scratch_gate)
 
     pssn = sub.add_parser(
@@ -2678,6 +2693,7 @@ def _cli() -> int:
         default=None,
         help="PDF path, or 'skipped' if PDF generation was skipped.",
     )
+    pssn.add_argument("--slug", default=None, help=_SLUG_HELP)
     pssn.set_defaults(func=_handle_scratch_set_note)
 
     psa = sub.add_parser(
@@ -2693,6 +2709,7 @@ def _cli() -> int:
         help="One answer per checklist question, in order; run with "
         "no --answer flags to print the questions.",
     )
+    psa.add_argument("--slug", default=None, help=_SLUG_HELP)
     psa.set_defaults(func=_handle_scratch_self_audit)
 
     psv = sub.add_parser(
@@ -2704,6 +2721,7 @@ def _cli() -> int:
         default=None,
         help="Check gates through this phase id; default = highest gate written.",
     )
+    psv.add_argument("--slug", default=None, help=_SLUG_HELP)
     psv.set_defaults(func=_handle_scratch_verify)
 
     pscc = sub.add_parser(
@@ -2712,6 +2730,7 @@ def _cli() -> int:
         "note's citations or its Sources Investigated, Not Used table. "
         "Advisory — run before the Phase 7 gate, not a hard blocker.",
     )
+    pscc.add_argument("--slug", default=None, help=_SLUG_HELP)
     pscc.set_defaults(func=_handle_scratch_check_coverage)
 
     psr = sub.add_parser(
@@ -2735,6 +2754,7 @@ def _cli() -> int:
         action="store_true",
         help='Print a bare path string instead of JSON — for shell variable assignment, e.g. SCRATCH="$(... scratch-which --raw)".',
     )
+    psw.add_argument("--slug", default=None, help=_SLUG_HELP)
     psw.set_defaults(func=_handle_scratch_which)
 
     pvc = sub.add_parser(

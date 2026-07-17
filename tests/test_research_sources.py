@@ -979,6 +979,84 @@ class TestScratchDossier:
         assert result["ok"]
         assert result["path"] == str(path)
 
+    def test_cli_slug_flag_targets_scratch_without_env_or_state(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        # Issue #79: on hosts where the per-process state file doesn't survive
+        # between shells (pi), scratch-log/gate/which must be addressable by
+        # slug alone, without VICAYA_SCRATCH or the state pointer.
+        import json
+
+        import tools.research_sources as rs
+        from tools.research_sources import scratch_init
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        path = scratch_init(
+            "slug-flag-run",
+            question_polished="q",
+            scope_assumptions="s",
+            ambiguity="clear",
+        )
+        # Simulate a fresh shell: no env, no surviving state.
+        monkeypatch.setattr("tools.scratch._read_state", lambda: {})
+
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "research_sources",
+                "scratch-log",
+                "1",
+                "search-vault",
+                "--summary",
+                "hit",
+                "--slug",
+                "slug-flag-run",
+            ],
+        )
+        assert rs._cli() == 0
+        out = json.loads(capsys.readouterr().out)
+        assert out["ok"] is True
+        assert out["path"] == str(path)
+
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["research_sources", "scratch-gate", "1", "--slug", "slug-flag-run"],
+        )
+        assert rs._cli() == 0
+        out = json.loads(capsys.readouterr().out)
+        assert out["ok"] is True
+        assert "### PHASE 1 EXIT GATE" in path.read_text(encoding="utf-8")
+
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["research_sources", "scratch-which", "--slug", "slug-flag-run"],
+        )
+        assert rs._cli() == 0
+        out = json.loads(capsys.readouterr().out)
+        assert out["path"] == str(path)
+
+    def test_cli_without_slug_fails_when_state_is_gone(self, tmp_path, monkeypatch):
+        # Companion to the --slug test: the same fresh-shell condition without
+        # the flag must still fail, proving the flag is what makes it work.
+        import tools.research_sources as rs
+        from tools.research_sources import scratch_init
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        monkeypatch.delenv("VICAYA_SCRATCH", raising=False)
+        scratch_init(
+            "slug-flag-lost",
+            question_polished="q",
+            scope_assumptions="s",
+            ambiguity="clear",
+        )
+        monkeypatch.setattr("tools.scratch._read_state", lambda: {})
+        monkeypatch.setattr(sys, "argv", ["research_sources", "scratch-gate", "1"])
+        assert rs._cli() == 1
+
     def test_gate_refusal_message_says_what_to_run(self, tmp_path, monkeypatch):
         # Issue #31, second half: the refusal must name the exact command,
         # not just describe the missing gate.
