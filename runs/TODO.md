@@ -4,8 +4,8 @@ This file replaces the run-by-run reflection backlog. Processed reflections
 live in `runs/processed/`. Last triage: 2026-07-17 (second pass, 1 run:
 20260717-140500 — two new issues #90/#91, one POSITIVE added to Working well;
 the run postdates all of the same day's fixes, so nothing was stale and
-nothing regressed; #90 was picked and closed the same session, leaving #91
-open). Prior triage: 2026-07-17, covering 25 runs from
+nothing regressed; #90, #79's residue, and #91 were all picked and closed
+the same session). Prior triage: 2026-07-17, covering 25 runs from
 2026-07-10 to 2026-07-16 — 20 new issues (#69–#88; 2 High, 10 Medium, 8 Low),
 zero regressions. Every tool-behavior claim was verified against the current
 code before merging (per the hypothesis-testing rule): confirmed real — the
@@ -137,6 +137,7 @@ the premise behind dropped #5.
 | #69 sc-parallels returns [] for range-stored uids (2 runs) | done (2026-07-17) | `fix: resolve sc-parallels range-stored uids by member expansion` — `parallels.json` stores some suttas only under a range uid (`sn12.1-2`, `an3.183-352`, 692 range uids total, max width 169); `_sc_load_parallels_index` keyed by bare uid only, so `sc-parallels sn12.2` returned `[]` (reproduced live before the fix). New `_sc_expand_range_uid` expands numeric-tail range uids into member uids (guards: no digits-before-hyphen forms like the `ea-2.x` collection names, inverted ranges, widths > 400) and the index now registers each member; `sc_parallels` also skips the range uid that carries the query itself so `sn12.1-2` is not reported as its own parallel. Verified live after: `sn12.2` → 11 parallels incl. `sa298`/`ea49.5`, exactly the set the runs expected. SKILL.md Phase 2.5 documents the membership resolution + the `get-ebc-overview` fallback for a residual `[]`. 3 regression tests (expansion table, synthetic range-index round-trip, real-archive sn12.2). All 278 tests pass; ruff + pyright clean. |
 | #79 (residue) expose a `--slug` arg on the scratch CLI | done (2026-07-17) | `feat: accept --slug on every scratch subcommand to bypass run state` — all seven state-dependent scratch subcommands (scratch-log, scratch-gate, scratch-set-note, scratch-self-audit, scratch-verify, scratch-check-coverage, scratch-which) gain `--slug <slug>`, resolved via the same `_scratch_path(slug)` lookup scratch-resume uses (bare or date-prefixed filename), bypassing `VICAYA_SCRATCH` and the per-process state file entirely — the Python functions already accepted a `scratch` path; the CLI just never passed one. Verified live (`scratch-which --slug beatitudes-buddhist-parallels` resolved the dated dossier with no state). SKILL.md updated in three places: the scratchpad quick-reference block, the precedence sentence, and both pi-fallback bullets now lead with `--slug` (the env pin and same-invocation scratch-resume stay documented as alternatives). 2 regression tests: fresh-shell simulation (no env, no state) where log/gate/which succeed by slug alone, and a companion proving the same condition without the flag still fails. All 286 tests pass; ruff + pyright clean. (seen in 2 runs: 20260715-060744, 20260715-064135) |
 | #90 Sub-agents cite from memory of hit context, not from resolve output | done (2026-07-17) | `docs: mandate resolve-log-verbatim citations in gather dispatch` — a Phase 2 gather agent's consolidated mapping misattributed two citations (nivātavutti labelled DN33, actually DN31 Siṅgāla; asantuṭṭhitā labelled DN34, actually DN33) because it summarised from memory of which sutta a hit "was in"; the orchestrator-side spot-check (#74) caught both, but the errors shouldn't be produced at all. The Sub-agent dispatch "Four rules" list is now five: rule 5 requires every citation in the agent's final mapping/summary to copy the human ref verbatim from a resolve-citation call in its own log (never from memory; unresolved refs stay as raw book_code:paranum and are flagged). The dispatch prompt template gains a matching CITATIONS block in step 4 so every spawned agent sees the rule verbatim. Same commit: TestSearchVault's live-Obsidian test now skips cleanly when the app isn't running (pre-existing suite red herring), and the vicaya-improve SKILL.md Phase 6 questionnaire must be written in plain English per user request. All 284 tests pass (1 env skip); ruff + pyright clean. (seen in 1 run with 2 instances: 20260717-140500) |
+| #91 resolve-citation rejects --quiet, unlike the search helpers | done (2026-07-17) | `fix: accept --quiet on the lookup helpers for call-template parity` — audited every subcommand for the gap (per the issue's own suggestion): the four gather-relevant lookup helpers lacked the flag — `resolve-citation` (the reported one), `lookup-book`, `verify-citation`, and `fetch-transcript`. Each now takes `--quiet` wired through the same `_dump(quiet=…)` compaction path as the search helpers (not a fake no-op — small outputs pass through unchanged, and fetch-transcript gains genuinely useful stdout compaction on ~4,000-line transcripts). Verified live: `resolve-citation s0103m_mul 242 --quiet` and `lookup-book dn1 --quiet` both return normal JSON instead of exit 2. SKILL.md dispatch rule 3 notes the lookup helpers accept the flag so a uniform prefixed template never errors. 4 regression tests (`TestLookupToolsQuietFlag`). All 290 tests pass; ruff + pyright clean. (seen in 1 run: 20260717-140500) |
 | #40 (other part) general tier-relabelling allowance for non-doctrinal thematic runs | dropped (2026-07-06) | non-issue — verified against `tools/note_checks.py`: `## Canon Evidence (T1)` is already a soft/warning-only section when empty, and `## Commentary/Web/Talks Evidence (T2/T3/T4)` aren't in `REQUIRED_SECTIONS` at all, so a thematic run with no doctrinal canon already tolerates empty tier sections with zero validator friction — no relabelling mechanism needed. User confirmed: "keep things in these categories, just let them be empty ... its a non-issue." |
 | #17 Transcript-mining helper | dropped (2026-07-06) | no demand across 81 runs of observation — never once requested; cut rather than kept as permanent dead weight |
 | #18 Claim ledger output mode | dropped (2026-07-06) | traced to a single sighting (20260527-092930); never recurred across 40+ subsequent runs |
@@ -245,13 +246,8 @@ _(#85 moved to Done — obsidian create gotchas documented in Phase 7, 2026-07-1
 
 _(#88 moved to Done — search-craft one-liners folded into Phase 2 and Hard Rule 9, 2026-07-17)_
 
-- **#91 resolve-citation rejects --quiet, unlike the search helpers.** A
-  pinned-prefix call template that appends `--quiet` uniformly fails with
-  exit 2 on resolve-citation (verified against the current parser — no
-  `--quiet` argument), costing a failed call cycle. Fix: accept `--quiet`
-  as a silent no-op on resolve-citation (and audit the other non-search
-  subcommands for the same gap) so uniform call templates don't error.
-  (seen in 1 run: 20260717-140500)
+_(#91 moved to Done — --quiet accepted on resolve-citation, lookup-book,
+verify-citation, and fetch-transcript, 2026-07-17)_
 
 ### Parked — minor, revive only if it resurfaces
 
@@ -589,4 +585,8 @@ pull back into the main Low severity list only if a new run reports it.
     citation value on first sighting). #79's residue was closed as a
     follow-on the same session: every scratch subcommand now accepts
     --slug, so the pi fresh-shell state loss has a first-class fix instead
-    of the env-pin workaround.
+    of the env-pin workaround. #91 closed as a second follow-on: --quiet
+    audited across all subcommands and added to the four lookup helpers
+    that lacked it, so uniform prefixed call templates can no longer hit
+    an argparse error. The ranked backlog is now empty above the parked
+    and capture-blocked items (#68, #87, #89) and the #86 nicety.

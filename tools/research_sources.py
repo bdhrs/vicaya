@@ -2158,7 +2158,7 @@ def _cli() -> int:
 
     def _handle_resolve_citation(args):
         result = resolve_citation(args.book_code, args.paranum)
-        _dump(result)
+        _dump(result, quiet=getattr(args, "quiet", False))
         return _done([args.book_code, str(args.paranum)], result)
 
     def _handle_env(args):
@@ -2180,11 +2180,11 @@ def _cli() -> int:
         if tr is None:
             print("error: no transcript available", file=sys.stderr)
             return _done(exit_code=1, autolog=False)
-        _dump(tr)
+        _dump(tr, quiet=getattr(args, "quiet", False))
         return _done([args.video_id, "--lang"] + list(args.lang), tr)
 
     def _handle_lookup_book(args):
-        _dump(lookup_book(args.value))
+        _dump(lookup_book(args.value), quiet=getattr(args, "quiet", False))
         return _done()
 
     def _handle_cross_check(args):
@@ -2412,7 +2412,7 @@ def _cli() -> int:
 
     def _handle_verify_citation(args):
         result = verify_citation(args.ref)
-        _dump(result)
+        _dump(result, quiet=getattr(args, "quiet", False))
         # 0 verified · 2 unverifiable-form (verse number, not fabrication) · 1 rejected
         if result.get("exists"):
             code = 0
@@ -2456,6 +2456,7 @@ def _cli() -> int:
     pr = sub.add_parser("resolve-citation")
     pr.add_argument("book_code")
     pr.add_argument("paranum")
+    pr.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
     pr.set_defaults(func=_handle_resolve_citation)
 
     pcc = sub.add_parser(
@@ -2481,6 +2482,7 @@ def _cli() -> int:
     pt = sub.add_parser("fetch-transcript")
     pt.add_argument("video_id")
     pt.add_argument("--lang", nargs="*", default=["en"])
+    pt.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
     pt.set_defaults(func=_handle_fetch_transcript)
 
     pb = sub.add_parser(
@@ -2491,6 +2493,7 @@ def _cli() -> int:
         help="cst_filename (s0101m.mul), table name (s0101m_mul), "
         "Pāḷi title, gui code (dn1), or DPD code (DN/DNa).",
     )
+    pb.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
     pb.set_defaults(func=_handle_lookup_book)
 
     peo = sub.add_parser(
@@ -2762,6 +2765,7 @@ def _cli() -> int:
         help="Confirm a human sutta reference exists in dpd.db sutta_info.",
     )
     pvc.add_argument("ref", help='Reference, e.g. "SN 46.42", "MN60", "Sn 4.8".')
+    pvc.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
     pvc.set_defaults(func=_handle_verify_citation)
 
     pe = sub.add_parser(

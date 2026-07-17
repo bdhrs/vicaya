@@ -649,6 +649,60 @@ class TestGetEbcOverviewQuietFlag:
         assert rs._cli() == 1  # clean not-found exit, not an argparse error
 
 
+class TestLookupToolsQuietFlag:
+    # Regression for issue #91: uniform pinned-prefix call templates append
+    # --quiet to every helper call, but the lookup/verify tools' parsers
+    # rejected it (argparse exits 2 on an unrecognized argument).
+
+    def test_resolve_citation_accepts_quiet_flag(self, monkeypatch, capsys):
+        import tools.research_sources as rs
+
+        monkeypatch.setattr(
+            rs, "resolve_citation", MagicMock(return_value={"human": "DN 31"})
+        )
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["research_sources.py", "resolve-citation", "s0103m_mul", "242", "--quiet"],
+        )
+        assert rs._cli() == 0
+        assert "DN 31" in capsys.readouterr().out
+
+    def test_lookup_book_accepts_quiet_flag(self, monkeypatch, capsys):
+        import tools.research_sources as rs
+
+        monkeypatch.setattr(rs, "lookup_book", MagicMock(return_value={"gui": "dn1"}))
+        monkeypatch.setattr(
+            sys, "argv", ["research_sources.py", "lookup-book", "dn1", "--quiet"]
+        )
+        assert rs._cli() == 0
+        assert "dn1" in capsys.readouterr().out
+
+    def test_verify_citation_accepts_quiet_flag(self, monkeypatch):
+        import tools.research_sources as rs
+
+        monkeypatch.setattr(
+            rs, "verify_citation", MagicMock(return_value={"exists": True})
+        )
+        monkeypatch.setattr(
+            sys, "argv", ["research_sources.py", "verify-citation", "MN 10", "--quiet"]
+        )
+        assert rs._cli() == 0
+
+    def test_fetch_transcript_accepts_quiet_flag(self, monkeypatch):
+        import tools.research_sources as rs
+
+        monkeypatch.setattr(
+            rs, "fetch_youtube_transcript", MagicMock(return_value=None)
+        )
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["research_sources.py", "fetch-transcript", "vid123", "--quiet"],
+        )
+        assert rs._cli() == 1  # clean no-transcript exit, not an argparse error
+
+
 # ---------- sc-parallels / sc-search ----------
 
 from tools.research_sources import DEFAULT_SC_DATA_PATH  # noqa: E402
