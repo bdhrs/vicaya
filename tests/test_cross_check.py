@@ -132,6 +132,36 @@ def test_cross_check_unknown_app_falls_through_to_valid(monkeypatch):
     assert rs.cross_check("hi") == "opencode text"
 
 
+# ---------- _run_chain_subprocess: hard wall-clock ceiling ----------
+
+
+def test_chain_subprocess_returns_stdout():
+    assert rs._run_chain_subprocess(["bash", "-c", "echo hello"], timeout=10) == "hello"
+
+
+def test_chain_subprocess_none_on_nonzero_exit():
+    assert rs._run_chain_subprocess(["bash", "-c", "exit 3"], timeout=10) is None
+
+
+def test_chain_subprocess_none_on_missing_binary():
+    assert rs._run_chain_subprocess(["definitely-not-a-binary-xyz"], timeout=10) is None
+
+
+def test_chain_subprocess_kills_process_group_on_timeout():
+    # Regression for issue #71: a grandchild inheriting the stdout pipe kept
+    # the post-kill drain blocked long past the declared timeout (observed
+    # live: 5m+ past --timeout 260). The backgrounded sleep here plays the
+    # grandchild; the group kill must take it down within the timeout plus a
+    # small grace, not wait out its 30s.
+    import time
+
+    start = time.monotonic()
+    result = rs._run_chain_subprocess(["bash", "-c", "sleep 30 & sleep 30"], timeout=1)
+    elapsed = time.monotonic() - start
+    assert result is None
+    assert elapsed < 10
+
+
 # ---------- sentinel checklist matches the external-review rubric ----------
 
 

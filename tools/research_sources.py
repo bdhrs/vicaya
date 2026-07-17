@@ -1528,36 +1528,52 @@ def _parse_cross_check_chain() -> list[tuple[str, str]]:
     return entries
 
 
-def _run_opencode(prompt: str, model: str, timeout: int) -> str | None:
+def _run_chain_subprocess(cmd: list[str], timeout: int) -> str | None:
+    """Run one cross-check chain entry with a hard wall-clock ceiling.
+
+    `subprocess.run(timeout=…)` kills only the direct child; a CLI like
+    opencode spawns node grandchildren that inherit the stdout pipe, and the
+    post-kill drain then blocks on the open pipe indefinitely — a real run
+    observed the helper hanging 5m+ past its own timeout. Launching the entry
+    as its own session (= process group) and SIGKILLing the whole group on
+    timeout takes every pipe-holder down with it.
+    """
+    import signal
+
     try:
-        result = subprocess.run(
-            ["opencode", "run", "-m", model, prompt],
-            capture_output=True,
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout,
+            start_new_session=True,
         )
-    except (subprocess.TimeoutExpired, OSError):
+    except OSError:
         return None
-    if result.returncode != 0:
+    try:
+        stdout, _ = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            proc.kill()
+        try:
+            proc.communicate(timeout=5)
+        except (subprocess.TimeoutExpired, ValueError, OSError):
+            pass
         return None
-    text = result.stdout.strip()
+    if proc.returncode != 0:
+        return None
+    text = (stdout or "").strip()
     return text if text else None
+
+
+def _run_opencode(prompt: str, model: str, timeout: int) -> str | None:
+    return _run_chain_subprocess(["opencode", "run", "-m", model, prompt], timeout)
 
 
 def _run_agy(prompt: str, model: str, timeout: int) -> str | None:
-    try:
-        result = subprocess.run(
-            ["agy", "--print", prompt, "--model", model],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return None
-    if result.returncode != 0:
-        return None
-    text = result.stdout.strip()
-    return text if text else None
+    return _run_chain_subprocess(["agy", "--print", prompt, "--model", model], timeout)
 
 
 _SELF_REVIEW_SENTINEL = """# SELF_REVIEW: cross-check unavailable.
