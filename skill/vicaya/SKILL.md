@@ -1352,6 +1352,8 @@ plus text + translation where the offline archive holds them. Check `text_gaps` 
 if it is non-empty, the parallel exists but its text is not in the archive; log it
 as a known gap in Critical Gaps rather than silently omitting.
 
+Suttas that `parallels.json` stores under a range uid (e.g. `sn12.1-2`) resolve by membership — `sc-parallels sn12.2` finds the group. If a lookup still returns `[]` for a sutta you expect to have parallels, fall back to `get-ebc-overview <code>` — its `parallels_agama` list is an independent parallel source, and a genuine `[]` from both is reportable evidence of no known parallel.
+
 For comparative/Āgama-focused questions, search the Chinese Āgama root texts directly:
 
 ```bash

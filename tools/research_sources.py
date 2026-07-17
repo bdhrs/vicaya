@@ -1295,6 +1295,30 @@ def _sc_parse_ref(raw: str) -> tuple[str, bool, str]:
     return uid.strip(), resemblance, prange.strip()
 
 
+_SC_RANGE_UID_RE = _re.compile(r"^(.*?)(\d+)-(\d+)$")
+_SC_RANGE_EXPANSION_CAP = 400
+
+
+def _sc_expand_range_uid(uid: str) -> list[str]:
+    """Member uids of a range-stored uid: 'sn12.1-2' → ['sn12.1', 'sn12.2'].
+
+    parallels.json stores some suttas only under a range uid (e.g. sn12.1-2,
+    an3.183-352), so a bare-uid lookup for a member ('sn12.2') would miss them.
+    Returns [] when uid is not a numeric-tail range — collection names with a
+    hyphen ('ea-2.1') don't match because no digits directly precede the '-'.
+    Inverted or implausibly wide ranges are also skipped.
+    """
+    m = _SC_RANGE_UID_RE.match(uid)
+    if not m:
+        return []
+    prefix, start, end = m.group(1), int(m.group(2)), int(m.group(3))
+    if not any(c.isalpha() for c in prefix):
+        return []
+    if end <= start or end - start > _SC_RANGE_EXPANSION_CAP:
+        return []
+    return [f"{prefix}{n}" for n in range(start, end + 1)]
+
+
 def _sc_collection_for_uid(uid: str) -> str | None:
     """Guess the collection folder for a uid (e.g. 'ma115' → 'ma', 'mn18' → 'mn')."""
     m = _SC_REF_RE.match(uid)
@@ -1345,7 +1369,11 @@ def _sc_read_segments(path: Path | None) -> str:
 
 
 def _sc_load_parallels_index(sc_root: Path) -> dict[str, list[list[str]]]:
-    """Read parallels.json and index by bare uid for cheap lookup."""
+    """Read parallels.json and index by bare uid for cheap lookup.
+
+    Range-stored uids are also indexed under each member uid, so a lookup for
+    'sn12.2' finds the group stored as 'sn12.1-2'.
+    """
     path = sc_root / "relationship" / "parallels.json"
     if not path.exists():
         return {}
@@ -1361,6 +1389,8 @@ def _sc_load_parallels_index(sc_root: Path) -> dict[str, list[list[str]]]:
         for raw in refs:
             uid, _, _ = _sc_parse_ref(raw)
             index.setdefault(uid, []).append(refs)
+            for member in _sc_expand_range_uid(uid):
+                index.setdefault(member, []).append(refs)
     return index
 
 
@@ -1393,6 +1423,10 @@ def sc_parallels(
         for raw in refs:
             uid, resemblance, prange = _sc_parse_ref(raw)
             if uid == target or uid in seen:
+                continue
+            if target in _sc_expand_range_uid(uid):
+                # The range uid that carries the query itself (e.g. 'sn12.1-2'
+                # for target 'sn12.2') is the query, not one of its parallels.
                 continue
             seen.add(uid)
             parallel = SCParallel(

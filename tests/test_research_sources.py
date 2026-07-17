@@ -663,6 +663,54 @@ class TestSCParallels:
         # Query itself should not appear in its own parallels list.
         assert "mn18" not in refs
 
+    def test_expand_range_uid(self):
+        from tools.research_sources import _sc_expand_range_uid
+
+        assert _sc_expand_range_uid("sn12.1-2") == ["sn12.1", "sn12.2"]
+        assert _sc_expand_range_uid("an1.6-10") == [
+            "an1.6",
+            "an1.7",
+            "an1.8",
+            "an1.9",
+            "an1.10",
+        ]
+        # Not ranges: bare uid, hyphenated collection name, inverted range.
+        assert _sc_expand_range_uid("sa298") == []
+        assert _sc_expand_range_uid("ea-2.1") == []
+        assert _sc_expand_range_uid("sn12.5-3") == []
+
+    def test_range_stored_uid_resolves_by_membership(self, tmp_path):
+        # Regression for issue #69: parallels.json stores sn12.1-2 as one range
+        # uid; a lookup for the member sn12.2 previously returned [].
+        import json
+
+        from tools.research_sources import sc_parallels
+
+        rel = tmp_path / "relationship"
+        rel.mkdir(parents=True)
+        (rel / "parallels.json").write_text(
+            json.dumps([{"parallels": ["sn12.1-2", "sa298", "~ea49.5"]}]),
+            encoding="utf-8",
+        )
+        ps = sc_parallels("sn12.2", sc_root=tmp_path, include_text=False)
+        refs = {p.ref for p in ps}
+        assert refs == {"sa298", "ea49.5"}
+        # The range uid carrying the query itself is not one of its parallels.
+        assert "sn12.1-2" not in refs
+        # A direct lookup of the range uid still works and skips itself.
+        ps_range = sc_parallels("sn12.1-2", sc_root=tmp_path, include_text=False)
+        assert {p.ref for p in ps_range} == {"sa298", "ea49.5"}
+
+    @sc_available
+    def test_sn12_2_returns_parallels_from_real_archive(self):
+        from tools.research_sources import sc_parallels
+
+        ps = sc_parallels("sn12.2", include_text=False)
+        refs = {p.ref for p in ps}
+        assert "sa298" in refs
+        assert "sn12.2" not in refs
+        assert "sn12.1-2" not in refs
+
     @sc_available
     def test_text_gaps_flagged_when_missing(self):
         from tools.research_sources import sc_parallels
