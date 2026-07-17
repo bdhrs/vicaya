@@ -1833,9 +1833,12 @@ Evidence funnel: <N> T1 canon hits → <N> T2 commentary hits → <N> T3 library
 |--------|------|-----------------|
 | MN60 para 12 | T1 Canon | Duplicate of para 97 — same argument, verbatim repetition |
 | Papañcasūdanī para 45 | T2 Commentary | Redundant — same gloss covered by para 44 already cited |
-| [[Some Book Title]] — Author | T3 Scholarly | Metadata hit only; no FTS snippet; title too generic to cite without content |
+| [[Some Book Title]] — Author (Calibre #6294) | T3 Scholarly | Metadata hit only; no FTS snippet; title too generic to cite without content |
+| ~180 further library FTS hits — broad "clinging"/"grief" sweep | T3 Scholarly | Reviewed as a set: tangential shelf noise (general psychology, unrelated histories); none load-bearing |
 | https://example.com/article | T3 Web | Blocked / JS-only; content not retrievable |
 | Channel — Talk Title (video_id) | T4 Talks | Auto-captions only; Pāḷi terms mangled beyond reliable paraphrase |
+
+Individually rejected library sources carry their own `Calibre #<id>` token (one per id — grouped ids like `#1944/#27645` are only machine-checked on the first). A broad FTS sweep's tangential tail does not get per-row entries: review it as a set and account for it with a single consolidated row, as in the example.
 
 ## Angles Not Pursued
 | Angle | Reason not pursued |
@@ -2129,7 +2132,18 @@ The check matches `calibre-<document_id>` / `Calibre #<document_id>` (the
 two forms already used in notes) anywhere in the note text. **When logging a
 library source in `## Sources Investigated, Not Used`, include its calibre
 id** (e.g. `Author, Title (Calibre #2365)`) so the rejection is machine-
-checkable, not just a title a future pass can't verify against.
+checkable, not just a title a future pass can't verify against. The match is
+per id: a grouped row like `Calibre #1944/#27645` credits only the first id —
+give each individually rejected document its own `Calibre #<id>` token.
+
+**Large FTS tails don't need per-row accounting.** A broad Phase 3 sweep on a
+common term routinely leaves 50–300 tangential index hits unaccounted, and the
+check will report them; that is expected, not a defect to enumerate away.
+Name the genuinely load-bearing near-misses individually (each with its
+`Calibre #<id>`), then account for the remainder with one consolidated
+rejection row ("~N further library FTS hits — broad sweep, reviewed as a set,
+non-load-bearing"). The check is advisory: after that review, a nonzero
+residual count is an acceptable outcome to report, not a gate failure.
 
 ### Self-audit (required before the gate)
 
