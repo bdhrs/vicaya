@@ -630,6 +630,20 @@ class TestGetAgama:
             assert "sa-patton-1" in str(path)
 
 
+class TestGetEbcOverviewQuietFlag:
+    def test_get_ebc_overview_accepts_quiet_flag(self, monkeypatch):
+        # Regression for issue #81: the dispatch prompt says to pass --quiet on
+        # every search helper call, but get-ebc-overview's parser rejected it
+        # (argparse exits 2 on an unrecognized argument).
+        import tools.research_sources as rs
+
+        monkeypatch.setattr(rs, "get_ebc_overview", lambda code: None)
+        monkeypatch.setattr(
+            sys, "argv", ["research_sources.py", "get-ebc-overview", "XX99", "--quiet"]
+        )
+        assert rs._cli() == 1  # clean not-found exit, not an argparse error
+
+
 # ---------- sc-parallels / sc-search ----------
 
 from tools.research_sources import DEFAULT_SC_DATA_PATH  # noqa: E402

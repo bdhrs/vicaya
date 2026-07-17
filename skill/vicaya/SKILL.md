@@ -43,7 +43,7 @@ These rules apply to every run, by every agent. They are part of the skill, not 
 6. **Citations are non-negotiable.** Every claim has a reference. A claim without a citation is a hallucination waiting to happen.
 7. **Auto-captions mishear Pāḷi.** YouTube's auto-generated captions mangle Pāḷi terms (e.g. "Suddhāso" → "saso", "Apaṇṇaka" → "apaka"). When a YouTube transcript's `is_auto` is true, **paraphrase and link to the timestamp** — never quote Pāḷi verbatim from auto-captions. Human-uploaded captions (`is_auto = false`) may be quoted with normal care.
 8. **Query YouTube in English, anchor with Pāḷi sutta name + numeric reference.** Pāḷi-heavy queries return zero results; long English glosses return zero results. `apannaka sutta MN 60` works; `apannaka safe-bet wager rebirth` returns nothing.
-9. **CST paragraph numbers are book-global, not sutta-local.** A `paranum` returned by `search-canon` is a continuous index across the entire book file — para 261 in `s0202m_mul` is MN78, not MN60. Always run `resolve-citation` to confirm which sutta a paragraph belongs to before citing it. Never assume the paragraph number matches a sutta number. Exception: a few books (Khp, Paṭisambhidāmagga, Netti, Milinda) restart paranums per section — `resolve-citation` then says "paranum repeats per section" and lists candidate sections; disambiguate from the hit's own text before citing.
+9. **CST paragraph numbers are book-global, not sutta-local.** A `paranum` returned by `search-canon` is a continuous index across the entire book file — para 261 in `s0202m_mul` is MN78, not MN60. Always run `resolve-citation` to confirm which sutta a paragraph belongs to before citing it — on **every distinct paranum you quote**, even mid-flow inside what looks like one sutta's argument: subhead boundaries appear without a visual break, and a "continuation" paragraph has turned out to belong to the next sutta. Never assume the paragraph number matches a sutta number. Direct SQL pulls are equally subject to this: a sutta's title/subhead row is stamped with the *previous* sutta's final paranum, so `WHERE paranum='54'` can return AN4.54's body when you wanted AN4.55 — the new sutta's text starts at paranum+1. Exception: a few books (Khp, Paṭisambhidāmagga, Netti, Milinda) restart paranums per section — `resolve-citation` then says "paranum repeats per section" and lists candidate sections; disambiguate from the hit's own text before citing.
 10. **YAML frontmatter safety.** Always wrap YAML values in double quotes if they contain a colon followed by a space (e.g. `"Topic: Subtitle"`). Unquoted colons break Obsidian's property rendering.
 11. **No global temporary directories.** Every stage must keep working files inside this repo. Use `data/scratch/` for anything needed after an interruption, restart, context refresh, or handoff. Use repo-local `temp/` only for disposable extraction files, and create it with `mkdir -p temp` before use.
 12. **A 0-hit in a book you expected to contain the term is a book-code problem until proven otherwise.** Before concluding a term is absent from a given book or nipāta, confirm the code is right: run `lookup-book <your-code>` (or check the embedded book-code table) to verify you have the correct CST table for that text. The commonest mistake is AN nipāta off-by-one — `s0404m3_mul` is AN10 (Dasakanipāta), `s0404m4_mul` is AN11 (Ekādasakanipāta) — but the same pattern recurs across the Khuddaka collection. Only after confirming the code may you log 0-hits as evidence of absence.
@@ -1115,6 +1115,28 @@ CAST(paranum AS INTEGER) LIMIT 5`). Note the column names are `pali_text` /
 
 Mūla + commentary together: `--books "s02*_mul" "s02*_att"`
 
+#### Aṭṭhakathā names — never infer a commentary's title by analogy
+
+Each collection's commentary has its own name and author. Two real runs misattributed commentary names by carrying over the last-cited one (Iti's commentary called "Manorathapūraṇī"; Paramatthajotikā mislabeled twice) — look the name up here instead of guessing:
+
+| Text | Aṭṭhakathā | Author |
+|---|---|---|
+| DN | Sumaṅgalavilāsinī | Buddhaghosa |
+| MN | Papañcasūdanī | Buddhaghosa |
+| SN | Sāratthappakāsinī | Buddhaghosa |
+| AN | Manorathapūraṇī | Buddhaghosa |
+| Vinaya | Samantapāsādikā | Buddhaghosa |
+| Khp, Snp | Paramatthajotikā | attributed to Buddhaghosa |
+| Dhp | Dhammapada-aṭṭhakathā | attributed to Buddhaghosa |
+| Ud, Iti, Vv, Pv, Thag, Thig, Cp | Paramatthadīpanī | Dhammapāla |
+| Jātaka | Jātakatthavaṇṇanā | attributed to Buddhaghosa |
+| Bv | Madhuratthavilāsinī | Buddhadatta |
+| Nidd | Saddhammapajjotikā | Upasena |
+| Paṭis | Saddhammappakāsinī | Mahānāma |
+| Dhs | Atthasālinī | Buddhaghosa |
+| Vibh | Sammohavinodanī | Buddhaghosa |
+| Abh 3–7 | Pañcappakaraṇa-aṭṭhakathā | Buddhaghosa |
+
 #### Dīgha Nikāya (Sumaṅgalavilāsinī)
 
 | Mūla | Aṭṭhakathā | Pāḷi title | Suttas |
@@ -1140,6 +1162,8 @@ Mūla + commentary together: `--books "s02*_mul" "s02*_att"`
 | `s0303m_mul` | `s0303a_att` | Khandhavaggo | SN 22–34 |
 | `s0304m_mul` | `s0304a_att` | Saḷāyatanavaggo | SN 35–44 |
 | `s0305m_mul` | `s0305a_att` | Mahāvaggo | SN 45–56 |
+
+Saṃyutta numbers do not map intuitively onto the five volumes — check the ranges above before querying (e.g. SN44 Abyākatasaṃyutta lives in `s0304m_mul` with the Saḷāyatana group; a real run's resolve-citation failed by assuming it sat in the Sagāthā volume).
 
 #### Aṅguttara Nikāya (Manorathapūraṇī)
 
@@ -1233,7 +1257,13 @@ Infer the canon scope from the question. Examples:
 | paṭiccasamuppāda | `paṭiccasamuppād` |
 | khandha | `khandh` |
 
-When in doubt, drop one more character than you think you need — but expect false positives: substring match means a short stem also hits unrelated compounds and homographs (`mān` hits both `māna` conceit and `mānasa`). Skim each hit's context before counting it as evidence; the stem casts the net, it does not classify the catch.
+When in doubt, drop one more character than you think you need — but expect false positives: substring match means a short stem also hits unrelated compounds and homographs (`mān` hits both `māna` conceit and `mānasa`; `avijj` also matches `tiracchānavijjā`, so for the DO term prefer targeted compounds like `avijjāpaccayā` / `avijjāsavo`, or the synonym `aññāṇ`). Skim each hit's context before counting it as evidence; the stem casts the net, it does not classify the catch.
+
+Three refinements to the stem rule from real runs:
+
+- **Terms whose root is a high-frequency verb (`bhav-`, `hot-`, `atth-`, `gacch-`) drown in verbal forms — search compounds, not the bare stem.** `bhav` matches every "to be"; `bhavanirodha`, `bhavataṇhā`, `kāmabhava`, `upādānapaccayā bhavo` surface the doctrinal loci cleanly.
+- **The helper's substring match is not stem-folding.** An inflected compound quoted in citation form can 0-hit against the text's actual case ending (`adhivacanasamphassa` misses DN15's `adhivacanasamphasso`) — drop the final vowel/syllable or try several endings before concluding absence.
+- **When a definitional formula's phrase-search returns 0 in a book that should contain it, retry with one distinctive compound from the expected definition** — fixed phrases are brittle to inserted vocatives (`tayo bhavā` misses SN12.2's "Tayo *me, bhikkhave,* bhavā"; the compound `kāmabhavo` found it).
 
 To go the other way — turn an inflected form back into its dictionary stem, case, and number — look the exact form up in the DPD `lookup` table (see the **DPD dictionary database** section).
 
@@ -1273,6 +1303,8 @@ Then confirm which sutta the paragraph belongs to:
 ```bash
 uv run tools/research_sources.py resolve-citation s0517m_mul 1
 ```
+
+Watch for duplicate sutta titles and shared interlocutor names: the corpus has two "Subha" suttas (MN99, and MN135 whose colophon adds "subhasuttantipi vuccati"), and same-saṃyutta thematic neighbours (SN3.9 Yañña vs SN3.24 Issattha) have been confused by theme alone — the `resolve-citation` output, not the name, is what you cite.
 
 For each hit you'll cite, run `resolve-citation` with that hit's `book_code` and `paranum` to get the human-readable reference (e.g. `MN60 Apaṇṇakasuttaṃ para 97`):
 
@@ -1516,7 +1548,15 @@ but the original source tree is unavailable.
 
 **Skip this phase** unless angle 7 was marked applicable in Phase 1, or unless `VICAYA_GRETIL_PATH` is configured (check with `grep '^VICAYA_GRETIL_PATH=' .env` — the variable is not set in your shell).
 
-**On a thematic run, the gate auto-skips but the work does not.** `scratch-gate 3b` is written automatically for thematic runs — this only means the gate won't block Phase 4; it does not mean the Sanskrit search can be omitted. If angle 7 is applicable, run `search-sanskrit` and log the hits before moving on.
+**On a thematic run, the gate auto-skips but the work does not.** `scratch-gate 3b` is written automatically for thematic runs — this only means the gate won't block Phase 4; it does not mean the Sanskrit search can be omitted. If angle 7 is applicable, run `search-sanskrit` and log the hits before moving on. The auto-skip is written when a *later* phase gates — don't call `scratch-gate 3b` (or `2.5`) explicitly on a thematic run; an explicit call demands logged evidence like any content gate.
+
+**Sutta-anchored runs do not auto-skip this gate.** When angle 7 was triaged not-applicable on a sutta-anchored run, the gate still requires a logged entry — record the N/A explicitly, then gate (same recipe for Phase 2.5):
+
+```bash
+uv run tools/research_sources.py scratch-log 3b note angle-7-not-applicable \
+  --summary "Not applicable: <one-line reason from the Phase 1 triage>"
+uv run tools/research_sources.py scratch-gate 3b
+```
 
 Search the local GRETIL corpus for IAST terms or transliterated Sanskrit relevant to the question:
 
@@ -2000,7 +2040,7 @@ library_refs:
   - "223: On Meditation — Ajahn Chah"
 ```
 
-The `book_id` must come from the `document_id` in a library folders hit — never invent an ID.
+The `book_id` must come from the `document_id` in a library folders hit — never invent an ID. **`document_id`s are not stable across `library-folders-refresh` runs**: a rebuild reassigns them silently, so a Calibre id cited in an older vault note may now point to a different book (a real drift instance: id 8757 moved from Anālayo's *Memento Mori* to an unrelated Abhidhamma title). Re-resolve any id you reuse from an older note with a fresh `search-library-folders` hit before citing it.
 
 **Rule F5 — `agent` field and footer line: self-identify accurately.**
 
@@ -2108,6 +2148,8 @@ obsidian vault=Obsidian create \
 ```
 
 (Use `open` so it opens in Obsidian for the user when they come back.)
+
+Two `obsidian create` gotchas from real runs: (1) re-running `create` on a path that already exists without the `overwrite` flag silently writes a numbered duplicate (`… 1.md`) instead of erroring — pass `overwrite` explicitly on every create after the first (Phase 6 edits, validator fixes). (2) An unrecognized flag is not rejected: `obsidian create --help` silently created an empty "Untitled 1.md" in the vault root — use top-level `obsidian --help` to inspect syntax, never a flag on `create`.
 
 ### PDF generation (run after every successful vault write)
 

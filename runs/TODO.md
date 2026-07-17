@@ -123,6 +123,7 @@ the premise behind dropped #5.
 | #63 scratch-which returns a plain path string, not JSON, unlike every other subcommand | done (2026-07-06) | `fix: make scratch-which print JSON by default, add --raw for shell use` — `_handle_scratch_which` in `tools/research_sources.py` now prints `{"path": ...}` via the same `_dump()` path every other subcommand uses, matching the uniform-JSON assumption an orchestrator script can safely make; a new `--raw` flag opts into the old bare-path-string behavior for the 4 `SCRATCH="$(...)"` shell-embedding call sites in `skill/vicaya/SKILL.md`, all updated to pass it. Chose "make it JSON for consistency" over "document the exception" after review — consistency fixes the root cause instead of asking every future caller to remember a special case. 2 new regression tests (`TestScratchWhich`): default prints valid JSON with the right path, `--raw` prints the bare path. Verified live against the real CLI. All 274 tests pass. |
 | #53 Sub-agent notification cross-labelling | done (2026-07-06) | `docs: warn against trusting sub-agent notification phase claims` — added a new bullet to the "spot-check before spawning the next" list in `skill/vicaya/SKILL.md`'s Sub-agent dispatch section: a completion notification's own phase ID or status can cross-label (e.g. a Phase 2 agent's notification reporting Phase 3 status) even when the actual work is filed correctly, so ground truth must come from `grep -n '^## Phase' <scratch>` or `scratch-resume`, never the notification text alone. Placed alongside the existing misfiled-content and re-verify-citations bullets since it's the same "don't trust the surface signal" pattern. Docs-only change. |
 | #40 (part) nrf-table texts (Milindapañha) had no tier-classification guidance | done (2026-07-06) | `docs: split T1 into T1a (EBT) / T1b (later mula) evidence tiers` — verified the user's proposed mechanism against the sister dpd-db project's own EBT definition (`tools/pali_text_files.py: ebts` / `scripts/build/ebt_counter.py`) before writing anything, per the new vicaya-improve hypothesis-testing rule. `skill/vicaya/SKILL.md`'s Evidence tiers table now splits the old single T1 row into **T1a — EBT** (full DN/MN/SN/AN, Vinaya Suttavibhaṅga only, and the early Khuddaka texts through Theragāthā/Therīgāthā — the exact same file set dpd-db treats as EBT) and **T1b — later mūla, non-EBT** (Vinaya Khandhakas/Parivāra, later Khuddaka texts including Milindapañha, and the full Abhidhamma piṭaka). Milindapañha is now explicitly named as T1b, closing the classification gap. The note's `## Canon Evidence (T1)` heading stays singular (no validator/template/test changes needed — confirmed `_EVIDENCE_TIER_HEADING_RE` in `tools/note_checks.py` only matches headings ending exactly `(T1)`/`(T2)`, so an inline `(T1b)` tag on a citation doesn't collide); T1b citations get an inline `(T1b)` tag instead. Devil's Advocate question 5 extended: a claim about the *earliest* teaching needs T1a specifically, not just any T1. Docs-only. |
+| #81–#85 + #88 Low-severity batch (6 issues) | done (2026-07-17) | `fix: add --quiet to get-ebc-overview and batch the Low-severity doc items` — **#81** (code): `get-ebc-overview` gains the same `--quiet`/`_dump(quiet=…)` wiring as every other search helper (verified live; parser-level regression test asserts the flag no longer exits 2). **#82**: aṭṭhakathā-name lookup table (15 rows, DN→Sumaṅgalavilāsinī through Abh 3–7→Pañcappakaraṇa-aṭṭhakathā) added to the book-code map with a "never infer by analogy" warning. **#83**: Phase 3b documents that thematic auto-skips are written by a *later* phase's gate (explicit `scratch-gate 3b` on a thematic run demands evidence by design) and gives the exact `scratch-log 3b note angle-7-not-applicable` recipe for sutta-anchored N/A runs (same for 2.5). **#84**: Rule F4 warns `document_id`s are not stable across `library-folders-refresh` (real drift: id 8757), re-resolve before reuse. **#85**: Phase 7 documents the `obsidian create` numbered-duplicate trap (pass `overwrite` on every create after the first) and the unrecognized-flag "Untitled 1.md" trap. **#88**: Phase 2 gains three stem-rule refinements (compound-first for verb roots like `bhav-`; substring≠stem-folding for inflected compounds; distinctive-compound retry for vocative-broken formulas), the `avijj`→`tiracchānavijjā` collision example, the SN saṃyutta→volume caveat, the duplicate-title (two Subhas) caution; Hard Rule 9 now covers direct-SQL pulls (title row carries the previous sutta's paranum) and per-paranum resolve-citation even mid-sutta. All 284 tests pass; ruff + pyright clean. |
 | #73–#76 + #80 doc-cluster batch (5 issues, 11 runs) | done (2026-07-17) | `docs: batch the five prose-drift and citation-hygiene doc clusters` — one docs commit closing the remaining Medium doc items. **#73**: "Calling the helpers" now scopes the bare form precisely (safe only before any gather sub-agent is dispatched, and only for the phase the orchestrator currently owns) and mandates the orchestrator's own inline `VICAYA_PHASE` pin for any call belonging to a delegated phase. **#74**: new spot-check bullet — verify sub-agent summary sentences against the raw logged JSON (grep the scratch for the supporting tool call; a claim with no logged entry is false until re-run), with the four real drift instances named. **#75**: Phase 6 paragraph — reviewer factual-accuracy findings are necessary-not-sufficient (no DB access → false positives AND false negatives, real instances named); verify every reviewer content claim against the mūla; post-integration `resolve-citation` pass over every approximate/unresolved book-code citation regardless of flags. **#76**: Phase 5 "Draft durability" rule — full draft body to `data/scratch/<slug>.phase5-draft.md` before Phase 6, that file (never the dossier) feeds the cross-check, and it can be pre-validated via an ABSOLUTE path to validate_note.py. **#80**: never cite a verse/page ref from training memory (verify or soften to tradition-level attribution); series Section-2 negative claims verified against the canon DB before assertion (added to both the Phase 7 series spec and skill/what-the-suttas-say/SKILL.md); citations reused from prior vault notes re-verified via resolve-citation/verify-citation (enrichment paragraph). Docs-only; all 283 tests pass. |
 | #71 cross-check subprocess hangs past its own --timeout (2 runs) | done (2026-07-17) | `fix: kill the whole process group when a cross-check chain entry times out` — root cause verified before coding: `subprocess.run(capture_output=True, timeout=…)` kills only the direct child, and opencode's node grandchildren keep the inherited stdout pipe open, blocking the post-kill drain indefinitely (a run observed 5m37s past `--timeout 260` with no output and no sentinel). New `_run_chain_subprocess` launches each chain entry with `start_new_session=True` and SIGKILLs the process group on TimeoutExpired, with a 5s bounded drain; `_run_opencode`/`_run_agy` delegate to it (existing name-level monkeypatch tests unaffected). Regression test spawns a real bash child with a backgrounded 30s grandchild holding stdout — returns None in ~1s instead of blocking. Phase 6 doc adds the two related gotchas: `--timeout` bounds each chain entry (N-entry chain → N× total), and a chained `>file >/dev/null 2>&1` redirect eats the review and masquerades as SELF_REVIEW. 4 new tests; all 283 pass; ruff + pyright clean. (seen in 2 runs: 20260711-211836, 20260715-162827) |
 | #72 Phase 6 structurally skippable — gate 6 had no content requirement (2 runs) | done (2026-07-17) | `fix: require a logged Phase 6 entry before gate 6 is written` — "6" added to `_CONTENT_PHASES` in `tools/scratch.py`, so `scratch-gate 6` now refuses with "no logged evidence" until the phase holds a real logged block (the cross-check helper auto-logs; the self-review fallback records via `scratch-log 6 …`), closing the near-miss where a run went straight from synthesis to the vault write (caught only at self-audit Q6 in one run, self-caught post-set-note in another). The refusal message is phase-appropriate ("run the cross-check (or record the self-review) and log it"). Side effect: `scratch-verify --through 6/7` now content-checks Phase 6 too — consistent with the gate. Phases 0, 5, 7 stay exempt. SKILL.md Phase 6 exit line documents the refusal. 4 existing loop tests updated to log before gating 6; new regression test `test_gate_6_refuses_without_logged_cross_check`. All 279 tests pass; ruff + pyright clean. (seen in 2 runs: 20260715-054137, 20260711-113434) |
@@ -206,51 +207,15 @@ _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
   the actual banner text captured before a special-case can be written.
   (seen in 1 run: 20260703-091816)
 
-- **#81 get-ebc-overview lacks --quiet, contradicting the "pass --quiet on
-  every search helper call" dispatch instruction.** Verified 2026-07-17 in
-  the argparser: `get-agama` has the flag, `get-ebc-overview` doesn't —
-  calling it with `--quiet` errors. Quick win: add the same
-  `--quiet`/`_dump(quiet=…)` wiring (same shape as Done #56). (seen in 1
-  run: 20260711-094116)
+_(#81 moved to Done — --quiet added to get-ebc-overview, 2026-07-17)_
 
-- **#82 Book → aṭṭhakathā-name reference table.** Two runs misattributed
-  commentary names by analogy from the last-cited one (Iti's
-  Paramatthadīpanī called Manorathapūraṇī; SN's Sāratthappakāsinī ditto;
-  Paramatthajotikā mislabeled twice) — caught only by cross-check. Fix
-  (doc): a small table near the book-code map mapping each Nikāya/Khuddaka
-  book to its commentary's actual name and author
-  (Sumaṅgalavilāsinī/Papañcasūdanī/Sāratthappakāsinī/Manorathapūraṇī/
-  Paramatthajotikā/Paramatthadīpanī…). (seen in 2 runs: 20260711-042246,
-  20260711-083537)
+_(#82 moved to Done — aṭṭhakathā-name table added to the book-code map, 2026-07-17)_
 
-- **#83 2.5/3b gate ergonomics when the angle is not applicable.**
-  Verified 2026-07-17: on a thematic run the auto-skip only fires for
-  skip-phases *below* the phase being gated — an explicit `scratch-gate
-  2.5` still demands logged evidence (this is by design, and the
-  20260715-060000 "auto-skip did not work" claim was re-scoped
-  accordingly). On sutta-anchored runs where angle 7 is triaged
-  not-applicable, agents fumble the required explicit
-  `scratch-log 3b … --summary "Not applicable: …"` step. Fix: doc a
-  one-line N/A recipe in Phase 3b (and 2.5); optionally let an explicit
-  gate call on an auto-skippable phase of a thematic run write the
-  AUTO-SKIPPED gate instead of refusing. (seen in 3 runs:
-  20260711-152351, 20260715-054645, 20260715-060000)
+_(#83 moved to Done — N/A gate recipe + thematic explicit-gate caveat documented, 2026-07-17)_
 
-- **#84 document_id is not stable across library-folders-refresh —
-  Calibre ids in older notes silently drift.** Live instance: id 8757
-  cited in a 2026-06-04 note as Anālayo's *Memento Mori* now points to an
-  unrelated Abhidhamma book. Fix (doc): warn near the library_refs rule
-  that ids must be re-resolved before reuse from older notes; a one-off
-  sweep of older notes' drifted ids is optional follow-up. (seen in 1 run:
-  20260710-091726)
+_(#84 moved to Done — document_id instability warning at Rule F4, 2026-07-17)_
 
-- **#85 obsidian create gotchas.** An unrecognized flag (`--help`)
-  silently creates an empty "Untitled 1.md" in the vault root; a re-run
-  without `overwrite` on an existing path silently creates a numbered
-  " 1.md" duplicate. Fix (doc): Phase 7 — always pass `overwrite` on any
-  create after the first; use top-level `obsidian --help`, never
-  `obsidian create --help`. (seen in 2 runs: 20260711-094116,
-  20260711-152351)
+_(#85 moved to Done — obsidian create gotchas documented in Phase 7, 2026-07-17)_
 
 - **#86 scratch-init cannot replace a stale/crashed dossier — wants
   --force.** #60's reuse warning ships, but when the old dossier is
@@ -274,19 +239,7 @@ _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
   generic query word. Needs a design decision on what "investigated" means
   mechanically before any code. (residue of the 8-run evidence under #77)
 
-- **#88 Phase 2 search-craft doc one-liners bundle.** (a) For terms whose
-  root is a high-frequency verb (bhav-, hot-, atth-), compound-first
-  search, not bare stem; (b) helper substring match is not stem-folding —
-  inflected compounds need the final vowel dropped (adhivacanasamphassa →
-  0 hits vs -samphasso); (c) name the avijj→tiracchānavijjā-type substring
-  collision with the targeted-compound workaround; (d) reminder that SN
-  saṃyutta numbers don't map linearly to vagga volumes (SN44 lives in
-  s0304m_mul); (e) Hard Rule 9 addendum: direct SQL pulls hit the
-  title-row/previous-paranum offset too (AN4.55), and resolve-citation
-  must be re-run on every distinct paranum even mid-sutta; (f) duplicate
-  interlocutor-title collisions (two "Subha" suttas) as a named trap.
-  (seen in 6 runs: 20260715-054137, -054645, -060000, -074500,
-  20260711-211836, -094116, -042246)
+_(#88 moved to Done — search-craft one-liners folded into Phase 2 and Hard Rule 9, 2026-07-17)_
 
 ### Parked — minor, revive only if it resurfaces
 
@@ -597,5 +550,7 @@ pull back into the main Low severity list only if a new run reports it.
     own process group and are group-killed on timeout, ending the
     pipe-held-by-grandchildren hang. The five remaining Medium doc clusters
     (#73, #74, #75, #76, #80) were batched into one docs commit the same
-    session — every Medium from this triage is now closed; the backlog is
-    all Low (#68, #79 residue, #81–#89).
+    session — every Medium from this triage is now closed. A final Low batch
+    closed #81–#85 and #88 the same session (one small code fix + docs).
+    Everything remaining is either parked pending capture/design (#68, #87,
+    #89), a nicety (#79 --slug, #86 scratch-init --force), or dormant.

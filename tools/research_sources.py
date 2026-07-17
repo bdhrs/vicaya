@@ -2201,7 +2201,7 @@ def _cli() -> int:
         if result is None:
             print(f"error: no EBC overview for {args.code!r}", file=sys.stderr)
             return _done(exit_code=1, autolog=False)
-        _dump(result)
+        _dump(result, quiet=getattr(args, "quiet", False))
         return _done([args.code], result)
 
     def _handle_get_agama(args):
@@ -2484,6 +2484,7 @@ def _cli() -> int:
         "get-ebc-overview", help="Parse the EBC per-sutta overview card for SUTTA_CODE."
     )
     peo.add_argument("code", help="Sutta code, e.g. MN10, mn-10, mn 10, DN22, MA98.")
+    peo.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
     peo.set_defaults(func=_handle_get_ebc_overview)
 
     pga = sub.add_parser(
