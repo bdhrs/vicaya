@@ -1729,7 +1729,7 @@ The verifier understands range-stored books (Dhp verses, AN ones/twos, peyyāla 
 
 If the review surfaces nothing substantive, move on without any acknowledgement in the note.
 
-→ **Phase 6 exit:** `scratch-gate 6` once the cross-check raw output and any integrations are recorded.
+→ **Phase 6 exit:** `scratch-gate 6` once the cross-check raw output and any integrations are recorded. The gate refuses with "no logged evidence" until a Phase 6 entry exists in the scratch (the `cross-check` helper auto-logs; on the self-review fallback, record the review via `scratch-log 6 …`) — the review step cannot be skipped between synthesis and the vault write.
 
 ### Phase 7 — Write the note
 

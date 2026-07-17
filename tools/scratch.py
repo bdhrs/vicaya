@@ -428,7 +428,12 @@ _PLACEHOLDER_PATTERNS = (
 
 # Gather/search phases whose section body must carry real evidence once gated.
 # Phase 0 is header-driven; 5/6/7 hold the draft/cross-check/note, not searches.
-_CONTENT_PHASES = ("1", "2", "2.5", "3", "3b", "4", "4b", "4c")
+# Phases whose gate requires at least one logged entry. The gather phases
+# need logged searches; Phase 6 needs the cross-check output (or self-review)
+# logged, so the review step cannot be silently skipped between synthesis and
+# the vault write. Phases 0 (header fields), 5, and 7 (draft/finalization
+# content) are exempt.
+_CONTENT_PHASES = ("1", "2", "2.5", "3", "3b", "4", "4b", "4c", "6")
 
 
 def _phase_body(text: str, pid: str) -> str:
@@ -641,19 +646,25 @@ def scratch_gate(phase: str, scratch: Path | None = None) -> dict:
                                 "the inline tags before gating."
                             ),
                         }
-    # For gather phases, require at least one real logged entry before gating.
-    # Phase 0 uses header fields (no tool logs); phases 5–7 hold draft/synthesis
-    # content — both are exempt. AUTO-SKIPPED thematic phases are also exempt.
+    # For gather phases and the Phase 6 cross-check, require at least one real
+    # logged entry before gating. Phase 0 uses header fields (no tool logs);
+    # phases 5 and 7 hold draft/finalization content — those are exempt.
+    # AUTO-SKIPPED thematic phases are also exempt.
     if phase in _CONTENT_PHASES:
         body = _phase_body(text, phase)
         if "AUTO-SKIPPED" not in body and _phase_content_issue(body) == "empty":
+            action = (
+                "run the cross-check (or record the self-review) and log it"
+                if phase == "6"
+                else "run the searches first"
+            )
             return {
                 "ok": False,
                 "phase": phase,
                 "reason": "no logged evidence",
                 "message": (
                     f"Phase {phase} gate refused: the phase section has no logged "
-                    f"tool calls — run the searches first, then gate. "
+                    f"tool calls — {action}, then gate. "
                     f"Expected evidence: {_PHASE_INDEX[phase][2]}"
                 ),
             }
@@ -745,7 +756,7 @@ def scratch_set_note(
 
 
 def scratch_verify(through: str | None = None, scratch: Path | None = None) -> dict:
-    """Verify gather phases are gated AND carry real content.
+    """Verify gather phases (and, past 5, the cross-check) are gated AND carry real content.
 
     Without `through`, checks every pre-synthesis phase (0 through 4c) — the same
     set Phase 5's gate requires — so verify and `scratch-gate 5` never disagree

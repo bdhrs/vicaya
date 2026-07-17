@@ -1087,6 +1087,26 @@ class TestScratchDossier:
         assert "run the searches first" in result["message"]
         assert "### PHASE 1 EXIT GATE" not in path.read_text(encoding="utf-8")
 
+    def test_gate_6_refuses_without_logged_cross_check(self, tmp_path, monkeypatch):
+        # Regression for issue #72: Phase 6 was exempt from the content check,
+        # so the review step could be silently skipped between synthesis and
+        # the vault write.
+        from tools.research_sources import scratch_gate, scratch_init, scratch_log
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("test-gate-6")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        for phase in ("0", "1", "2", "2.5", "3", "3b", "4", "4b", "4c", "5"):
+            if phase not in ("0", "5"):
+                scratch_log(phase, "search-canon", summary=f"hit in {phase}")
+            assert scratch_gate(phase)["ok"]
+        result = scratch_gate("6")
+        assert result["ok"] is False
+        assert result["reason"] == "no logged evidence"
+        assert "cross-check" in result["message"]
+        scratch_log("6", "cross-check-review", summary="review output integrated")
+        assert scratch_gate("6")["ok"]
+
     def test_verify_passes_when_phase_has_logged_content(self, tmp_path, monkeypatch):
         from tools.research_sources import (
             scratch_gate,
@@ -1311,7 +1331,7 @@ class TestScratchDossier:
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
         from tools.research_sources import scratch_log
 
-        _cp = ("1", "2", "2.5", "3", "3b", "4", "4b", "4c")
+        _cp = ("1", "2", "2.5", "3", "3b", "4", "4b", "4c", "6")
         for phase in ("0", "1", "2", "2.5", "3", "3b", "4", "4b", "4c", "5", "6"):
             if phase in _cp:
                 scratch_log(phase, "search-canon", summary=f"hit in {phase}")
@@ -1670,7 +1690,7 @@ class TestScratchSetNote:
         assert scratch_set_note(str(note))["ok"]
         from tools.research_sources import scratch_log
 
-        _cp = ("1", "2", "2.5", "3", "3b", "4", "4b", "4c")
+        _cp = ("1", "2", "2.5", "3", "3b", "4", "4b", "4c", "6")
         for phase in ("0", "1", "2", "2.5", "3", "3b", "4", "4b", "4c", "5", "6"):
             if phase in _cp:
                 scratch_log(phase, "search-canon", summary=f"hit in {phase}")
@@ -1967,7 +1987,7 @@ class TestScratchSelfAudit:
         assert scratch_set_note(str(note))["ok"]
         from tools.research_sources import scratch_log
 
-        _cp = ("1", "2", "2.5", "3", "3b", "4", "4b", "4c")
+        _cp = ("1", "2", "2.5", "3", "3b", "4", "4b", "4c", "6")
         for phase in ("0", "1", "2", "2.5", "3", "3b", "4", "4b", "4c", "5", "6"):
             if phase in _cp:
                 scratch_log(phase, "search-canon", summary=f"hit in {phase}")
@@ -1996,7 +2016,7 @@ class TestScratchSelfAudit:
         assert scratch_set_note(str(note))["ok"]
         from tools.research_sources import scratch_log
 
-        _cp = ("1", "2", "2.5", "3", "3b", "4", "4b", "4c")
+        _cp = ("1", "2", "2.5", "3", "3b", "4", "4b", "4c", "6")
         for phase in ("0", "1", "2", "2.5", "3", "3b", "4", "4b", "4c", "5", "6"):
             if phase in _cp:
                 scratch_log(phase, "search-canon", summary=f"hit in {phase}")
