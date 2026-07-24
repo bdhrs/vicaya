@@ -17,9 +17,9 @@ instead (see **Relationship to vicaya** below).
 
 ## What this skill does NOT do
 
-No phase gates, no dossier, no cross-check model pass, no PDF, no
+No phase gates, no dossier, no cross-check model pass, no
 bibliography with per-claim citations, no `sync_notes`/run-report ceremony.
-One session, one file, done.
+One session, one file + one PDF, done.
 
 ## How to run
 
@@ -29,9 +29,9 @@ One session, one file, done.
 ambiguous — e.g. "quantum computing" vs "the quantum computing industry").
 
 Slugify X (lowercase, ASCII-fold, hyphenate) and check the vault's
-`Vicaya Digest` folder for an existing note on that slug (`search-vault` or
-list the folder via the Obsidian CLI). If one exists, tell the user and ask
-whether to redo it or leave it — never silently overwrite or duplicate.
+`Vicaya/Digest` folder for an existing note on that slug (list the folder
+via the Obsidian CLI). If one exists, tell the user and ask whether to
+redo it or leave it — never silently overwrite or duplicate.
 
 ### Step 2 — Research
 
@@ -101,7 +101,7 @@ Use exactly this structure:
 TODAY=$(date +%Y-%m-%d)
 SLUG="<lowercase-hyphenated-topic-slug>"
 obsidian vault=Obsidian create \
-  path="Vicaya Digest/${TODAY} - ${SLUG}.md" \
+  path="Vicaya/Digest/${TODAY} - ${SLUG}.md" \
   content="<full rendered markdown, frontmatter + essay>" \
   open
 ```
@@ -113,7 +113,21 @@ If the Obsidian CLI can't connect, launch the app per that same skill's Hard
 Rule 4 and retry; if it still fails, write the file directly into the vault
 path on disk as a fallback and tell the user.
 
-Frontmatter — deliberately lighter than a `vicaya` research note (no
+### Step 5 — Generate PDF
+
+After the note is saved, generate a PDF copy using the same script the
+`vicaya` skill uses (it reads `VICAYA_PDF_PATH` from `.env` to decide
+whether PDF generation is enabled; if unset, skip with a message):
+
+```bash
+uv run scripts/generate_note_pdf.py "Vicaya/Digest/${TODAY} - ${SLUG}.md"
+```
+
+The script creates a `PDF` folder next to the note — no rename needed.
+
+### Frontmatter
+
+Deliberately lighter than a `vicaya` research note (no
 `canon_refs`/`library_refs`/`web_refs` — those are for citation-complete
 notes, not this):
 
@@ -127,14 +141,29 @@ tags:
 ---
 ```
 
+## Vault layout
+
+Digests live under `Vicaya/digest/` in the Obsidian vault, with a `pdf/`
+subfolder holding the generated PDFs:
+
+```
+Vicaya/
+├── Digest/
+│   ├── 2026-07-24 - some-topic.md
+│   └── PDF/
+│       └── 2026-07-24 - some-topic.pdf
+├── ...
+```
+
 ## Relationship to vicaya
 
-This skill shares the vault, the Obsidian CLI conventions, and — when the
-topic calls for it — the vicaya local-source helpers, but it is otherwise
-independent: it does not read or resume vicaya's scratch dossiers, and a
-digest is not a valid input to vicaya's `scratch-resume`/promotion path. If
-the user wants a digest turned into a full cited research note, treat that
-as a fresh `/vicaya` run on the same topic, not a promotion.
+This skill shares the vault, the Obsidian CLI conventions, the PDF
+generation script, and — when the topic calls for it — the vicaya
+local-source helpers, but it is otherwise independent: it does not read
+or resume vicaya's scratch dossiers, and a digest is not a valid input
+to vicaya's `scratch-resume`/promotion path. If the user wants a digest
+turned into a full cited research note, treat that as a fresh `/vicaya`
+run on the same topic, not a promotion.
 
 ## When something fails
 
