@@ -125,6 +125,19 @@ uv run scripts/generate_note_pdf.py "Vicaya/Digest/${TODAY} - ${SLUG}.md"
 
 The script creates a `PDF` folder next to the note — no rename needed.
 
+### Step 6 — Sync to the notes repo
+
+Commit and push the digest note and its PDF to the Vicaya notes repo using the
+same pre-approved script the `vicaya` skill uses:
+
+```bash
+uv run scripts/sync_notes.py "Vicaya/Digest/${TODAY} - ${SLUG}.md"
+```
+
+`sync_notes.py` git-adds the note and its matching `PDF/` sibling, commits with
+`note: <slug>`, rebases onto the latest remote, and pushes. If the push fails
+the commit is saved locally — nothing is lost.
+
 ### Frontmatter
 
 Deliberately lighter than a `vicaya` research note (no
