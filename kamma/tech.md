@@ -63,6 +63,7 @@
 - `tools/align_translations.py`: standalone Pāḷi word/phrase translator-comparison tool (issue #23). Deterministic Bilara segment alignment (root Pāḷi + English authors share one segment key); locates the sutta and lists EBC translator files for the agent to read. On a phrase spanning >1 sutta with no `--in`, prints `AMBIGUOUS` and stops — never guesses. Prints a Markdown table to stdout; reuses `research_sources` helpers; no new deps. Agent procedure lives in `skill/align/SKILL.md`.
 - `skill/align/SKILL.md`: agent procedure for the translation aligner — run the tool, ask the user on `AMBIGUOUS`, read EBC files to fill those rows.
 - `skill/vicaya/SKILL.md`: canonical agent workflow and source-use procedure.
+- `skill/digest/SKILL.md`: plain-English quick-study essay skill (`/digest <topic>`) — Monarch Notes/CliffsNotes-style summary, no phase gates, no inline citations, writes into `<vault>/Vicaya Digest/`.
 - `README.md`: user-facing setup and project overview.
 - `kamma/tech.md`: architecture summary, constraints, and resource map.
 - `skill/vicaya/README.md`: short skill-package overview; link to `SKILL.md`
@@ -71,3 +72,6 @@
 ## Output shape
 A single `.md` file per research session written into `<vault>/Vicaya/`.
 Source helpers return plain Python lists-of-dicts; no external I/O inside helpers.
+`digest` writes into a separate `<vault>/Vicaya Digest/` folder — a different
+output shape (short plain-English essay, no citation fields) from the
+research notes above.

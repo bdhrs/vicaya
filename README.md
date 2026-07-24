@@ -10,6 +10,8 @@ Three commands handle research at different depths:
 
 All three are invoked as slash commands inside Claude Code, OpenCode, or any agent that reads a Markdown skill file. `/vicaya` runs as a single orchestrating session that delegates evidence-gathering phases to sub-agents — each sub-agent writes findings to a shared scratch file, keeping the main session's context clear for synthesis and review. `skill/vicaya/SKILL.md` is the behavioral source of truth for all three. For periodic maintenance, use `/vicaya-improve` to process run retrospectives into the improvement backlog.
 
+A separate command, `/digest <topic>`, is not a research note — it's a short (~1200-word), plain-English quick-study essay on any topic, modeled on the 1960s Monarch Notes/CliffsNotes study-guide pamphlets. No inline citations, just a further-reading link list at the end; saved into your vault under `Vicaya Digest/`.
+
 ## Sources
 
 Each source is optional — if the tool or path isn't configured it is silently skipped.
@@ -43,25 +45,25 @@ Each source is optional — if the tool or path isn't configured it is silently 
    **OpenCode:**
    ```bash
    # Symlink skills
-   for skill in vicaya vicaya-improve vicaya-pre vicaya-quick align; do
+   for skill in vicaya vicaya-improve vicaya-pre vicaya-quick align digest; do
      ln -sf "$(pwd)/skill/$skill" ~/.agents/skills/$skill
    done
    # Symlink slash commands (for autocomplete)
-   for cmd in vicaya vicaya-improve vicaya-pre vicaya-quick; do
+   for cmd in vicaya vicaya-improve vicaya-pre vicaya-quick digest; do
      ln -sf "$(pwd)/config/opencode/commands/$cmd.md" ~/.config/opencode/commands/$cmd.md
    done
    ```
 
    **Antigravity CLI (`agy`):**
    ```bash
-   for skill in vicaya vicaya-improve vicaya-pre vicaya-quick align; do
+   for skill in vicaya vicaya-improve vicaya-pre vicaya-quick align digest; do
      ln -sf "$(pwd)/skill/$skill" ~/.gemini/skills/$skill
    done
    ```
 
    **Claude Code:**
    ```bash
-   for skill in vicaya vicaya-improve vicaya-pre vicaya-quick align; do
+   for skill in vicaya vicaya-improve vicaya-pre vicaya-quick align digest; do
      ln -sf "$(pwd)/skill/$skill" ~/.claude/skills/$skill
    done
    ```
@@ -441,6 +443,7 @@ ln -sf "$(pwd)/skill/vicaya-improve" ~/.agents/skills/vicaya-improve
 ln -sf "$(pwd)/skill/vicaya-pre" ~/.agents/skills/vicaya-pre
 ln -sf "$(pwd)/skill/vicaya-quick" ~/.agents/skills/vicaya-quick
 ln -sf "$(pwd)/skill/align" ~/.agents/skills/align
+ln -sf "$(pwd)/skill/digest" ~/.agents/skills/digest
 ```
 
 **For Claude Code:**
@@ -452,6 +455,7 @@ ln -sf "$(pwd)/skill/vicaya-improve" ~/.claude/skills/vicaya-improve
 ln -sf "$(pwd)/skill/vicaya-pre" ~/.claude/skills/vicaya-pre
 ln -sf "$(pwd)/skill/vicaya-quick" ~/.claude/skills/vicaya-quick
 ln -sf "$(pwd)/skill/align" ~/.claude/skills/align
+ln -sf "$(pwd)/skill/digest" ~/.claude/skills/digest
 ```
 
 **For Pi coding agent:**
@@ -474,6 +478,7 @@ ls ~/.agents/skills/vicaya-improve/SKILL.md
 ls ~/.agents/skills/vicaya-pre/SKILL.md
 ls ~/.agents/skills/vicaya-quick/SKILL.md
 ls ~/.agents/skills/align/SKILL.md
+ls ~/.agents/skills/digest/SKILL.md
 
 # Check Claude
 ls ~/.claude/skills/vicaya/SKILL.md
@@ -481,10 +486,12 @@ ls ~/.claude/skills/vicaya-improve/SKILL.md
 ls ~/.claude/skills/vicaya-pre/SKILL.md
 ls ~/.claude/skills/vicaya-quick/SKILL.md
 ls ~/.claude/skills/align/SKILL.md
+ls ~/.claude/skills/digest/SKILL.md
 
 # Check Pi — should point at config/pi/prompts/, not skill/*/SKILL.md
 readlink ~/.pi/agent/prompts/vicaya.md
 readlink ~/.pi/agent/prompts/vicaya-quick.md
+readlink ~/.pi/agent/prompts/digest.md
 ```
 
 If you ever move or rename this repository, you will need to re-run these
