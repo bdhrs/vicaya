@@ -37,7 +37,7 @@
 
 ## Phase 3 — Publish the corrections
 
-- [ ] Sync each corrected note with `uv run scripts/sync_notes.py "<path>"`.
+- [~] Sync each corrected note with `uv run scripts/sync_notes.py "<path>"`.
   → verify: each sync command reported success, or the failure is recorded
 
 ## Phase 4 — Wire the gate
@@ -75,3 +75,5 @@ But the note itself records `Pāḷi: [Not directly retrieved but referenced in 
 ### Footnote anchors vs rendered prose
 
 7 of the 18 findings were footnote anchors (`[^MN118.150]`) rather than rendered text. An anchor is an identifier and does not display, so the reader-facing defect there is nil — the fix is machine-readability and consistency. The remaining 11 were rendered prose and genuinely misleading. Anchors were renamed with their definitions together (`[^MN118-para150]`), matching the note's existing `[^SN46.chain]` convention.
+
+**Phase 3 not done:** the six corrected vault notes remain unpublished. Publishing to the public `bdhrs/vicaya-notes` repo needs explicit user approval, which was not given.

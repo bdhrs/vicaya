@@ -1799,7 +1799,63 @@ The verifier understands range-stored books (Dhp verses, AN ones/twos, peyyāla 
 
 If the review surfaces nothing substantive, move on without any acknowledgement in the note.
 
-→ **Phase 6 exit:** `scratch-gate 6` once the cross-check raw output and any integrations are recorded. The gate refuses with "no logged evidence" until a Phase 6 entry exists in the scratch (the `cross-check` helper auto-logs; on the self-review fallback, record the review via `scratch-log 6 …`) — the review step cannot be skipped between synthesis and the vault write.
+#### Second reviewer — source-armed, read-only
+
+After the external cross-check has been integrated, dispatch a **second** reviewer as a sub-agent. The external chain above reasons about citations without database access and errs in both directions — doubting correct references and missing wrong ones. This reviewer exists to close exactly that gap: it can look things up.
+
+Dispatch it with a **read-only tool set**: no `Edit`, no `Write`, no `NotebookEdit`. It reports; it does not touch the draft or the dossier. Its own helper calls auto-log to the scratch under Phase 6, which is expected and correct.
+
+Give it the polished question and the Phase 5 draft file path (`data/scratch/<slug>.phase5-draft.md`) — never the accumulating dossier.
+
+```text
+You are an independent reviewer of a research synthesis on a Pāḷi/Buddhist question.
+You have read-only access. Do NOT edit any file. Report findings only.
+
+Repo root: <repo-root>
+Draft to review: data/scratch/<slug>.phase5-draft.md
+Question: <question_polished>
+
+You have the canon helpers. USE THEM — this is the whole reason you exist:
+  uv run tools/research_sources.py resolve-citation <table> <paranum>
+  uv run tools/research_sources.py verify-citation "<ref>"
+  uv run tools/research_sources.py search-canon "<pāḷi>" --quiet
+  uv run tools/research_sources.py lookup-book <code>
+
+Rules:
+1. CHECK, do not reason. Every citation you doubt, resolve it before reporting it.
+   A hunch that a reference "looks wrong" is not a finding. A resolve-citation
+   output that contradicts the draft IS a finding.
+2. Report only what you verified, and paste the command output that establishes it.
+3. Say plainly when you could not check something, rather than guessing.
+
+Return your report as your final message. Do NOT use SendMessage — the
+dispatching session is not addressable from a sub-agent, and a report sent
+that way is lost.
+
+Report against these five, specifically or "no issue":
+1. Perspective coverage — named positions underrepresented or mischaracterised; schools, teachers, or scholarly voices missing entirely.
+2. Tier integrity — anything attributed to the root canon (mūla) that originates in the commentaries (aṭṭhakathā / ṭīkā); any teacher's interpretation presented as canonical.
+3. Disputed consensus — a live interpretive dispute presented as settled.
+4. Factual accuracy — errors in Pāḷi terminology, sutta references, historical claims, scholarly attributions. Verify each against the mūla.
+5. General — other errors, oversights, or alternative interpretations.
+```
+
+Integrate its findings under the same discipline as the external review: verify before accepting, drop anything you cannot substantiate, and never write that a review surfaced something (the IRON RULE applies unchanged).
+
+#### Verification pass
+
+After integrating, send the **same** reviewer sub-agent a follow-up naming each finding you accepted and asking it to confirm the fix landed in the revised draft. A fresh reviewer cannot do this — it never made the findings. Instruct it again to return its verification as its final message, not via SendMessage.
+
+**Check partial landings specifically.** In the run this was built from, the reviewer's most useful finding was that a caveat had been added to `## Critical Gaps` but *not* to the `## Findings` prose asserting the same claim — so a reader of Findings alone would take the drafting agent's inference for something the tradition states. Ask explicitly whether each caveat appears where the claim is made, not merely somewhere in the note.
+
+Allow one loop-back on anything it reports as unaddressed. After that, record the outcome and proceed; an unresolved finding is logged, not a blocker.
+
+```bash
+uv run tools/research_sources.py scratch-log 6 reviewer-verification "<verification outcome>" \
+  --summary "Source-armed reviewer confirmed which accepted findings landed in the revised draft."
+```
+
+→ **Phase 6 exit:** `scratch-gate 6` once the cross-check raw output, the source-armed reviewer's findings, the verification outcome, and any integrations are recorded. The gate refuses with "no logged evidence" until a Phase 6 entry exists in the scratch (the `cross-check` helper auto-logs; on the self-review fallback, record the review via `scratch-log 6 …`) — the review step cannot be skipped between synthesis and the vault write.
 
 ### Phase 7 — Write the note
 
