@@ -21,7 +21,7 @@ Four structural commands carry the run. Everything else is reference.
 1. **Phase 0:** `scratch-init <slug> --question-original "…" --question-polished "…" --scope-assumptions "…" --ambiguity <clear|minor_uncertainty|unclear>` (add `--class thematic` for non-sutta-anchored questions). This records the active scratch for *this run*, fills the Phase 0 header fields, and — because all the Phase 0 evidence is then present — writes the Phase 0 exit gate automatically, so the run starts at Phase 1. Do not run the bare form unless the question is still unresolved; a bare init leaves gate 0 unwritten and every later gate will refuse until you run `scratch-gate 0`. **If the slug already has a dossier on disk, `scratch-init` reuses it (never overwrites) and the JSON response carries a `warning` field naming the last gate written and whether the vault note is already set.** If you are starting an independent run of a question another agent already handled, do not ignore that warning — pick a different slug; reusing an in-progress or finished dossier silently attaches your new work to it. Auto-logging is isolated automatically — the run's state is keyed to your agent process, so parallel runs never collide. There is nothing to pin or export **while you are the only agent working the run** (Phase 0/1, and Phases 5–7). The moment gather phases are delegated to sub-agents (below), that guarantee no longer holds — see the mandatory `VICAYA_PHASE` pin in **Sub-agent dispatch**.
 2. **Each phase boundary:** end the prior phase with `scratch-gate <prev-phase>`. The gate auto-advances the active phase, so the next phase's helper calls log correctly without any manual step. It refuses if earlier gates are missing and prints the exact evidence still needed. Thematic runs auto-skip the Phase 2.5 (SC-parallels) and 3b (Sanskrit) gates.
 3. **Start of Phase 5:** `scratch-verify`. Exit 0 = proceed to synthesis. Exit 1 = backfill the named phase first; do not draft.
-4. **End of Phase 7:** `scratch-set-note <note-path> --pdf <pdf-path|skipped>` (records the saved paths in the scratch header — the [REJECTED] hard-gate target), then `scratch-self-audit` (answer the failure checklist — the gate refuses without it), then `scratch-gate 7`, then publish the saved note with `uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"`; after writing the reflection, publish the run report with `uv run scripts/sync_run_report.py`. The run is not complete until the gate passes and both sync commands have been attempted.
+4. **End of Phase 7:** `scratch-set-note <note-path> --pdf <pdf-path|skipped>` (records the saved paths in the scratch header — the [REJECTED] hard-gate target), then `check-citation-shape <note-path>` (hard — fix every finding), then `scratch-self-audit` (answer the failure checklist — the gate refuses without it), then `scratch-gate 7`, then publish the saved note with `uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"`; after writing the reflection, publish the run report with `uv run scripts/sync_run_report.py`. The run is not complete until the gate passes and both sync commands have been attempted.
 
 If context compaction fires at any point, `scratch-resume <slug>` explicitly selects that run, reattaches the active scratch state, and prints the last gate and next phase — no findings are lost.
 
@@ -2232,6 +2232,18 @@ rejection row ("~N further library FTS hits — broad sweep, reviewed as a set,
 non-load-bearing"). The check is advisory: after that review, a nonzero
 residual count is an acceptable outcome to report, not a gate failure.
 
+### Citation shape check (hard — blocks the gate)
+
+After `scratch-set-note`, run:
+
+```bash
+uv run tools/research_sources.py check-citation-shape "<note-path>"
+```
+
+It flags references carrying more numbers than their collection uses — `MN118.150` for MN118 §150, `DN2.244` for DN2 §244, `SN 5.46.20` for SN 46.20. That is a paragraph number glued onto a sutta number (Hard Rule 9's failure, written into the note instead of the query). Fix every finding before gating: write the paragraph as `§N` and keep the sutta number alone. A nonzero exit blocks `scratch-gate 7`.
+
+Structural only — it says nothing about whether the cited passage supports the claim. It skips URLs and code spans, so SuttaCentral uids and CST filenames never trip it. Measured over 260 vault notes: 18 findings, all real, zero false positives.
+
 ### Self-audit (required before the gate)
 
 After `scratch-set-note` and before `scratch-gate 7`, record the failure
@@ -2269,7 +2281,7 @@ approved script path.
 
 A sync failure is never fatal — the note is already saved to the vault.
 
-→ **Phase 7 exit:** after validation/PDF generation, run `scratch-set-note` (records the saved note + PDF paths), then `scratch-check-coverage` (advisory — review any flagged library documents), then `scratch-self-audit` with answers (the gate refuses without it), then `scratch-gate 7`, then `uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"`; after writing the reflection, run `uv run scripts/sync_run_report.py`. The run is not complete until the gate passes and both sync commands have been attempted — the gate confirms the vault path and PDF path are recorded in the dossier, note sync publishes the saved note, and run-report sync publishes the latest `runs/*.md` report. `scripts/sync_run_report.py` is a pre-approved run-report publishing script and may pull, commit, and push Vicaya run reports in this project repo. New or materially modified scripts are not automatically pre-approved for git, publishing, deployment, sync, delete, or overwrite operations.
+→ **Phase 7 exit:** after validation/PDF generation, run `scratch-set-note` (records the saved note + PDF paths), then `check-citation-shape` (hard — fix every finding), then `scratch-check-coverage` (advisory — review any flagged library documents), then `scratch-self-audit` with answers (the gate refuses without it), then `scratch-gate 7`, then `uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"`; after writing the reflection, run `uv run scripts/sync_run_report.py`. The run is not complete until the gate passes and both sync commands have been attempted — the gate confirms the vault path and PDF path are recorded in the dossier, note sync publishes the saved note, and run-report sync publishes the latest `runs/*.md` report. `scripts/sync_run_report.py` is a pre-approved run-report publishing script and may pull, commit, and push Vicaya run reports in this project repo. New or materially modified scripts are not automatically pre-approved for git, publishing, deployment, sync, delete, or overwrite operations.
 
 After both sync commands have been attempted, clean only this run's disposable repo-local temp directory; never remove `data/scratch/` or scratch-local draft/review files:
 

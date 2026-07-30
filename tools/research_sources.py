@@ -1877,6 +1877,119 @@ def annotate_citations(text: str, dpd_db: Path | None = None) -> str:
     return _CITATION_RE.sub(_stamp, text)
 
 
+# Maximum addressing segments per collection: how many dot-separated numbers
+# address a single text. MN suttas take one (MN 22), SN takes two
+# (saṃyutta.sutta). A reference carrying more segments than its collection has
+# is a paranum glued onto the sutta number — the error Hard Rule 9 exists to
+# prevent: `MN118.150` means MN118 §150.
+#
+# Depth only, no leading-segment maximum. A maximum looked appealing but is
+# unsound: Ud, Iti, Snp, Thag and Thig are each cited *both* by chapter.sutta
+# (`Ud 5.5`) and by global number (`Ud 73`, `Iti 75`), so no single ceiling
+# holds. Second-segment range checking would need per-section sutta counts,
+# i.e. a database, which this check deliberately avoids — verify_citation
+# already covers that ground.
+CITATION_SHAPES: dict[str, int] = {
+    "MN": 1,
+    "DN": 1,
+    "SN": 2,
+    "AN": 2,
+    "DHP": 1,
+    "KHP": 1,
+    "KP": 1,
+    "SNP": 2,
+    "UD": 2,
+    "ITI": 2,
+    "IT": 2,
+    "THAG": 2,
+    "THIG": 2,
+}
+
+# Collections left unhandled on purpose: Vinaya/Vin (cited as book + §paranum,
+# not a sutta address), and the commentarial/exegetical works (Vism, Nett, Mil,
+# Ps) which have no uniform numeric addressing.
+_SHAPE_UNHANDLED = frozenset({"VIN", "VINAYA", "VISM", "NETT", "MIL", "PS", "JA"})
+
+_SHAPE_COLLECTIONS = sorted(
+    {*CITATION_SHAPES, *_SHAPE_UNHANDLED}, key=len, reverse=True
+)
+# Numeric part: dotted segments, optionally a range, optionally a §/para
+# suffix. The suffix is NOT a segment — `Vinaya 02 §679` and `AN1.41-50 §48`
+# must not read as extra depth.
+_SHAPE_RE = _re.compile(
+    r"\b(?P<coll>" + "|".join(_SHAPE_COLLECTIONS) + r")"
+    r"(?P<sep>\s?\.?\s?)"
+    r"(?P<num>\d+(?:\.\d+)*)"
+    r"(?P<range>\s*[-–—]\s*\d+(?:\.\d+)*)?"
+    r"(?P<suffix>\s*(?:§\s*\d+|para(?:graph)?\.?\s*\d+))?",
+    _re.IGNORECASE,
+)
+
+
+# Regions where a collection-plus-number token is machine data, not a prose
+# citation: URLs (SuttaCentral uids like `.../ud73/` or `/an107/`) and code
+# spans (CST filenames like `dn.02.0`). Scanning these produced 519 false
+# positives against 31 real findings on the first backtest run.
+_URL_RE = _re.compile(r"https?://\S+|www\.\S+")
+_CODE_SPAN_RE = _re.compile(r"`[^`\n]*`")
+
+
+def _masked_spans(line: str) -> list[tuple[int, int]]:
+    spans = [m.span() for m in _URL_RE.finditer(line)]
+    spans += [m.span() for m in _CODE_SPAN_RE.finditer(line)]
+    return spans
+
+
+def check_citation_shape(text: str) -> list[dict]:
+    """Flag structurally malformed canon references in `text`.
+
+    A finding means the reference carries more addressing segments than its
+    collection has — e.g. `MN118.150`, which is MN118 §150 with the paragraph
+    number glued onto the sutta number.
+
+    Returns one dict per finding: {line, ref, collection, verdict, context}.
+    URLs and code spans are skipped: a SuttaCentral uid or a CST filename is
+    machine data, not a citation. Well-formed references, unhandled
+    collections, and non-canonical works produce no finding.
+
+    Structural only: no database, and no claim that the cited passage supports
+    the surrounding text.
+    """
+    findings: list[dict] = []
+    for lineno, line in enumerate(text.splitlines(), 1):
+        masked = _masked_spans(line)
+        for m in _SHAPE_RE.finditer(line):
+            if any(start <= m.start() < end for start, end in masked):
+                continue
+            coll = m.group("coll").upper()
+            if coll in _SHAPE_UNHANDLED or coll not in CITATION_SHAPES:
+                continue
+            segments = CITATION_SHAPES[coll]
+            parts = m.group("num").split(".")
+            if len(parts) <= segments:
+                continue
+            findings.append(
+                {
+                    "line": lineno,
+                    "ref": m.group(0).strip(),
+                    "collection": coll,
+                    "verdict": "depth",
+                    "expected_segments": segments,
+                    "found_segments": len(parts),
+                    "context": line.strip()[:200],
+                }
+            )
+    return findings
+
+
+def check_citation_shape_file(path: Path) -> list[dict]:
+    """check_citation_shape over a note on disk, with `file` added per finding."""
+    findings = check_citation_shape(path.read_text(encoding="utf-8"))
+    for f in findings:
+        f["file"] = str(path)
+    return findings
+
+
 def cross_check(prompt: str, timeout: int = 180) -> str:
     """Cross-check `prompt` via the app/model chain in VICAYA_CROSS_CHECK_CHAIN.
 
@@ -2422,6 +2535,23 @@ def _cli() -> int:
             code = 1
         return _done(exit_code=code, autolog=False)
 
+    def _handle_check_citation_shape(args):
+        path = Path(args.note).expanduser()
+        if not path.exists():
+            _dump({"error": f"note not found: {path}"})
+            return _done(exit_code=2, autolog=False)
+        findings = check_citation_shape_file(path)
+        for f in findings:
+            print(
+                f"{f['file']}:{f['line']}:{f['verdict'].upper()}:"
+                f"{f['ref']}:{f['context']}"
+            )
+        _dump(
+            {"note": str(path), "findings": findings, "count": len(findings)},
+            quiet=getattr(args, "quiet", False),
+        )
+        return _done(exit_code=1 if findings else 0, autolog=False)
+
     _QUIET_HELP = (
         "Compact stdout: truncate long text fields to a snippet. The FULL result "
         "is still written to the scratch dossier — use in gather sub-agents to "
@@ -2767,6 +2897,16 @@ def _cli() -> int:
     pvc.add_argument("ref", help='Reference, e.g. "SN 46.42", "MN60", "Sn 4.8".')
     pvc.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
     pvc.set_defaults(func=_handle_verify_citation)
+
+    pcs = sub.add_parser(
+        "check-citation-shape",
+        help="Flag structurally malformed canon references in a note "
+        "(too many addressing segments, or a leading segment over the "
+        "collection's size). Structural only — no database lookups.",
+    )
+    pcs.add_argument("note", help="Path to a note file.")
+    pcs.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
+    pcs.set_defaults(func=_handle_check_citation_shape)
 
     pe = sub.add_parser(
         "env",
