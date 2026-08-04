@@ -28,7 +28,10 @@ except ModuleNotFoundError:
 
 PDF_CSS = (
     "@page { margin: 20mm; } "
-    "body { font-family: Georgia, serif; font-size: 11pt; line-height: 1.6; }"
+    "body { font-family: Georgia, serif; font-size: 11pt; line-height: 1.6; } "
+    # Images wider than the content area must scale down to the page width,
+    # otherwise they run off the edge of the page in the generated PDF.
+    "img { max-width: 100%; height: auto; }"
 )
 
 

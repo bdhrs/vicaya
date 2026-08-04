@@ -105,3 +105,12 @@ def test_generate_note_pdf_reports_missing_note(
     output = capsys.readouterr().out
     assert exit_code == 2
     assert "note not found" in output
+
+
+def test_pdf_css_keeps_images_within_the_page_width() -> None:
+    """Wide inline images must scale down to the content width, otherwise they
+    overflow the page edge in the generated PDF."""
+    css = generate_note_pdf.PDF_CSS
+    assert "img" in css
+    assert "max-width: 100%" in css
+    assert "height: auto" in css
