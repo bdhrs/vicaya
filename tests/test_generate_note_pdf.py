@@ -48,7 +48,7 @@ def test_generate_note_pdf_derives_output_path_and_strips_frontmatter(
 
     exit_code = generate_note_pdf.main(["Vicaya/2099-01-01 - sample.md"])
 
-    output_path = note_path.parent / "PDF" / "2099-01-01 - sample.pdf"
+    output_path = vault_path / "Vicaya" / "PDF" / "2099-01-01 - sample.pdf"
     output = capsys.readouterr().out
     assert exit_code == 0
     assert rendered["output_path"] == output_path
@@ -57,14 +57,14 @@ def test_generate_note_pdf_derives_output_path_and_strips_frontmatter(
     assert "## Question" in str(rendered["markdown_body"])
 
 
-def test_generate_note_pdf_writes_into_notes_own_subfolder(
+def test_generate_note_pdf_mirrors_note_subfolder_under_the_pdf_tree(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    """Series notes live in a vault subfolder; their PDF must land in that
-    subfolder's own PDF/ dir, not in the vault-root PDF/ dir — regression for
-    notes being written to the wrong folder when VICAYA_PDF_PATH pointed at a
-    single flat directory regardless of the note's location."""
+    """All PDFs live under one Vicaya/PDF tree whose subfolders mirror the
+    notes' own subfolders, so a series note in `What the Suttas Say About/`
+    lands in `PDF/What the Suttas Say About/` — not in a PDF/ dir beside the
+    note, and not flattened into the PDF tree root."""
     monkeypatch.chdir(tmp_path)
     vault_path = tmp_path / "vault"
     note_path = (
@@ -75,7 +75,7 @@ def test_generate_note_pdf_writes_into_notes_own_subfolder(
     monkeypatch.setenv("VICAYA_VAULT_PATH", str(vault_path))
     monkeypatch.setenv("VICAYA_PDF_PATH", "1")
 
-    def fake_render_pdf(markdown_body: str, output_path: Path) -> None:
+    def fake_render_pdf(_markdown_body: str, output_path: Path) -> None:
         output_path.write_bytes(b"%PDF-1.4\n")
 
     monkeypatch.setattr(generate_note_pdf, "render_pdf", fake_render_pdf)
@@ -84,11 +84,12 @@ def test_generate_note_pdf_writes_into_notes_own_subfolder(
         ["Vicaya/What the Suttas Say About/2099-01-01 - sample.md"]
     )
 
-    expected_path = note_path.parent / "PDF" / "2099-01-01 - sample.pdf"
-    wrong_path = vault_path / "Vicaya" / "PDF" / "2099-01-01 - sample.pdf"
+    pdf_tree = vault_path / "Vicaya" / "PDF"
+    expected_path = pdf_tree / "What the Suttas Say About" / "2099-01-01 - sample.pdf"
     assert exit_code == 0
     assert expected_path.exists()
-    assert not wrong_path.exists()
+    assert not (note_path.parent / "PDF").exists()
+    assert not (pdf_tree / "2099-01-01 - sample.pdf").exists()
 
 
 def test_generate_note_pdf_reports_missing_note(

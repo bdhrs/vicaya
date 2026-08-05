@@ -49,6 +49,6 @@ Series notes live in their own vault subfolder. Save, validate, PDF, record, and
 Vicaya/What the Suttas Say About/${TODAY} - what-the-suttas-say-about-<x>.md
 ```
 
-Pass this same path to `scratch-set-note`, `validate_note.py`, `generate_note_pdf.py`, and `sync_notes.py`.
+Pass this same path to `scratch-set-note`, `validate_note.py`, `generate_note_pdf.py`, and `sync_notes.py`. The PDF lands in the mirrored `Vicaya/PDF/What the Suttas Say About/` folder — the scripts derive that themselves.
 
 Before starting, grep that subfolder — if a note for X already exists, tell the user and ask whether to redo or extend it rather than silently writing a duplicate.

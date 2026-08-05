@@ -123,7 +123,7 @@ whether PDF generation is enabled; if unset, skip with a message):
 uv run scripts/generate_note_pdf.py "Vicaya/Digest/${TODAY} - ${SLUG}.md"
 ```
 
-The script creates a `PDF` folder next to the note — no rename needed.
+The script writes it to `Vicaya/PDF/Digest/` — no rename needed.
 
 ### Step 6 — Sync to the notes repo
 
@@ -134,7 +134,7 @@ same pre-approved script the `vicaya` skill uses:
 uv run scripts/sync_notes.py "Vicaya/Digest/${TODAY} - ${SLUG}.md"
 ```
 
-`sync_notes.py` git-adds the note and its matching `PDF/` sibling, commits with
+`sync_notes.py` git-adds the note and its matching PDF, commits with
 `note: <slug>`, rebases onto the latest remote, and pushes. If the push fails
 the commit is saved locally — nothing is lost.
 
@@ -156,14 +156,14 @@ tags:
 
 ## Vault layout
 
-Digests live under `Vicaya/digest/` in the Obsidian vault, with a `pdf/`
-subfolder holding the generated PDFs:
+Digests live under `Vicaya/Digest/` in the Obsidian vault; their PDFs live in the matching `Vicaya/PDF/Digest/` folder, since every note's PDF sits under the one `PDF/` tree mirroring the note's own subfolder:
 
 ```
 Vicaya/
 ├── Digest/
-│   ├── 2026-07-24 - some-topic.md
-│   └── PDF/
+│   └── 2026-07-24 - some-topic.md
+├── PDF/
+│   └── Digest/
 │       └── 2026-07-24 - some-topic.pdf
 ├── ...
 ```

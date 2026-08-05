@@ -311,8 +311,8 @@ find ~ -maxdepth 8 -path "*/dpd-db/resources/sc-data" -type d 2>/dev/null | head
 # Choose any short name, e.g. your first name or a hostname.
 
 # VICAYA_PDF_PATH — any non-empty value turns PDF generation on (leave blank to skip).
-# The PDF always lands in a PDF/ subfolder next to the note itself, mirroring the
-# note's own vault subfolder — this value is not used as the output directory.
+# All PDFs land in the single Vicaya/PDF/ tree, whose subfolders mirror the notes'
+# own vault subfolders — this value is not used as the output directory.
 ```
 
 **Canon DB and DPD DB — choose one:**
@@ -402,7 +402,7 @@ VICAYA_EBC_VAULT_PATH=
 # Use path found in step 2 (inside dpd-db), or <repo>/resources/sc-data if cloned there
 VICAYA_SC_DATA_PATH=
 # Any non-empty value turns PDF generation on (leave blank to skip). The PDF is
-# written to a PDF/ subfolder next to the note itself, not to this value.
+# written into the Vicaya/PDF/ tree under the note's own subfolder, not to this value.
 VICAYA_PDF_PATH=
 VICAYA_CROSS_CHECK_CHAIN=
 ```

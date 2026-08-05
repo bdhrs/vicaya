@@ -76,6 +76,28 @@ def test_push_succeeds_when_remote_advanced(tmp_path: Path, monkeypatch) -> None
     assert "other run" in remote_log
 
 
+def test_subfolder_note_commits_its_mirrored_pdf(tmp_path: Path, monkeypatch) -> None:
+    """A note in a vault subfolder keeps its PDF under the mirrored path in the
+    single Vicaya/PDF tree, so the sync must look there rather than beside the
+    note."""
+    remote, _ = _make_remote_and_clone(tmp_path)
+    notes_repo = _setup_vault(tmp_path, remote, monkeypatch)
+    monkeypatch.setenv("VICAYA_PDF_PATH", "1")
+
+    note = notes_repo / "Digest" / "2099-01-03 - sample.md"
+    note.parent.mkdir(parents=True)
+    note.write_text("# note\n", encoding="utf-8")
+    pdf = notes_repo / "PDF" / "Digest" / "2099-01-03 - sample.pdf"
+    pdf.parent.mkdir(parents=True)
+    pdf.write_bytes(b"%PDF-1.4\n")
+
+    sync_notes.main(["Vicaya/Digest/2099-01-03 - sample.md"])
+
+    remote_log = _git(remote, "log", "--name-only", "--pretty=format:%s", "main")
+    assert "Digest/2099-01-03 - sample.md" in remote_log
+    assert "PDF/Digest/2099-01-03 - sample.pdf" in remote_log
+
+
 def test_dirty_tree_does_not_block_push(tmp_path: Path, monkeypatch) -> None:
     remote, _ = _make_remote_and_clone(tmp_path)
     notes_repo = _setup_vault(tmp_path, remote, monkeypatch)

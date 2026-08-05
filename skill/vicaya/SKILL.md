@@ -2241,6 +2241,8 @@ uv run scripts/generate_note_pdf.py "Vicaya/${TODAY} - ${SLUG}.md"
 successfully with a skip message. Include the PDF path in the Section 1 run summary if
 generation succeeded.
 
+The PDF is never written next to the note. Every PDF lands in the single `Vicaya/PDF/` tree, whose subfolders mirror the notes' own subfolders — a root note goes to `Vicaya/PDF/`, and `Vicaya/<Subfolder>/x.md` goes to `Vicaya/PDF/<Subfolder>/x.pdf`. The script derives this itself; pass it only the note path.
+
 Then record both paths in the scratch header — this sets the file the Phase 7
 `[REJECTED]` hard gate scans. Never hand-edit the `**Vault note:**` header:
 

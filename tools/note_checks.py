@@ -102,6 +102,20 @@ def resolve_existing_note(note_arg: str, env: dict[str, str]) -> Path:
     return note_path
 
 
+def resolve_pdf_path(note_path: Path, notes_root: Path) -> Path:
+    """Map a note to its PDF under the single ``PDF`` tree in ``notes_root``.
+
+    The tree mirrors the note's own subfolder, so ``Digest/x.md`` becomes
+    ``PDF/Digest/x.pdf``.
+    """
+    root = notes_root.expanduser().resolve()
+    try:
+        relative = note_path.resolve().relative_to(root)
+    except ValueError:
+        raise ValueError(f"note is outside the notes root: {root}") from None
+    return root / "PDF" / relative.parent / f"{note_path.stem}.pdf"
+
+
 def extract_frontmatter(text: str) -> tuple[str, str]:
     if not text.startswith("---\n"):
         return "", text

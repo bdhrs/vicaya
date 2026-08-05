@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from tools import note_checks
 
 
@@ -107,6 +109,28 @@ def test_resolve_absolute_note_path() -> None:
     resolved = note_checks.resolve_note_path(str(note_path), Path("/other/vault"))
 
     assert resolved == note_path
+
+
+def test_resolve_pdf_path_mirrors_the_notes_subfolder(tmp_path: Path) -> None:
+    notes_root = tmp_path / "Vicaya"
+
+    assert (
+        note_checks.resolve_pdf_path(notes_root / "2099-01-01 - sample.md", notes_root)
+        == notes_root / "PDF" / "2099-01-01 - sample.pdf"
+    )
+    assert (
+        note_checks.resolve_pdf_path(
+            notes_root / "Digest" / "2099-01-01 - sample.md", notes_root
+        )
+        == notes_root / "PDF" / "Digest" / "2099-01-01 - sample.pdf"
+    )
+
+
+def test_resolve_pdf_path_rejects_a_note_outside_the_notes_root(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="outside the notes root"):
+        note_checks.resolve_pdf_path(tmp_path / "elsewhere.md", tmp_path / "Vicaya")
 
 
 def test_strip_frontmatter_returns_note_body() -> None:

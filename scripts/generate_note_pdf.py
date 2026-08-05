@@ -50,9 +50,12 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         note_path = note_checks.resolve_existing_note(note_arg, env)
-        pdf_dir = note_path.parent / "PDF"
-        pdf_dir.mkdir(parents=True, exist_ok=True)
-        output_path = pdf_dir / f"{note_path.stem}.pdf"
+        vault_path = env.get("VICAYA_VAULT_PATH", "").strip()
+        if not vault_path:
+            raise ValueError("VICAYA_VAULT_PATH is required to place the PDF")
+        notes_root = Path(vault_path).expanduser() / "Vicaya"
+        output_path = note_checks.resolve_pdf_path(note_path, notes_root)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         body = note_checks.strip_frontmatter(note_path.read_text(encoding="utf-8"))
         render_pdf(body, output_path)
     except OSError as exc:
