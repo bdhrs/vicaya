@@ -1,6 +1,6 @@
 ---
-name: align
-description: Compare how different translators render a Pāḷi word or phrase, as an easy-to-scan Markdown table. Use when the user asks to compare/align translations of a Pāḷi term, or types /align <phrase>.
+name: vicaya-align
+description: Compare how different translators render a Pāḷi word or phrase, as an easy-to-scan Markdown table. Use when the user asks to compare/align translations of a Pāḷi term, or types /vicaya-align <phrase>.
 ---
 
 # Translation Aligner

@@ -1,6 +1,6 @@
 ---
-name: what-the-suttas-say
-description: Run the full /vicaya workflow with the fixed "What the suttas say about X" series format — earliest-strata evidence vs later attributions, one quote per idea, written into the series subfolder of the vault. Invoke when the user types /what-the-suttas-say <X> or asks for a "what the suttas say about X" note.
+name: vicaya-what-the-suttas-say
+description: Run the full /vicaya workflow with the fixed "What the suttas say about X" series format — earliest-strata evidence vs later attributions, one quote per idea, written into the series subfolder of the vault. Invoke when the user types /vicaya-what-the-suttas-say <X> or asks for a "what the suttas say about X" note.
 ---
 
 # What the suttas say about X

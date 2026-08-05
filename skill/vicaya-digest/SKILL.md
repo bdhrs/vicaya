@@ -1,6 +1,6 @@
 ---
-name: digest
-description: Write a plain-English essay (a 20–30 minute read) that gives a layperson the main points of a large or complex topic without reading the book/paper/field yourself — a modern Monarch Notes / CliffsNotes pamphlet for any subject. No inline footnotes; ends with a further-reading link list. Saved into the vault. Invoke when the user types /digest <topic> or asks for "a digest of X", "the CliffsNotes version of X", "a quick-study summary of X", or "get me up to speed on X in plain English".
+name: vicaya-digest
+description: Write a plain-English essay (a 20–30 minute read) that gives a layperson the main points of a large or complex topic without reading the book/paper/field yourself — a modern Monarch Notes / CliffsNotes pamphlet for any subject. No inline footnotes; ends with a further-reading link list. Saved into the vault. Invoke when the user types /vicaya-digest <topic> or asks for "a digest of X", "the CliffsNotes version of X", "a quick-study summary of X", or "get me up to speed on X in plain English".
 ---
 
 # Digest

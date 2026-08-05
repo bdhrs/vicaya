@@ -3,4 +3,4 @@ description: Full /vicaya research run in the fixed "What the suttas say about X
 argument-hint: "<topic>"
 ---
 
-Load the skill at `~/.pi/agent/skills/what-the-suttas-say/SKILL.md` and execute it with X = $ARGUMENTS
+Load the skill at `~/.pi/agent/skills/vicaya-what-the-suttas-say/SKILL.md` and execute it with X = $ARGUMENTS

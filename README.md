@@ -10,7 +10,7 @@ Three commands handle research at different depths:
 
 All three are invoked as slash commands inside Claude Code, OpenCode, or any agent that reads a Markdown skill file. `/vicaya` runs as a single orchestrating session that delegates evidence-gathering phases to sub-agents — each sub-agent writes findings to a shared scratch file, keeping the main session's context clear for synthesis and review. `skill/vicaya/SKILL.md` is the behavioral source of truth for all three. For periodic maintenance, use `/vicaya-improve` to process run retrospectives into the improvement backlog.
 
-A separate command, `/digest <topic>`, is not a research note — it's a short (~1200-word), plain-English quick-study essay on any topic, modeled on the 1960s Monarch Notes/CliffsNotes study-guide pamphlets. No inline citations, just a further-reading link list at the end; saved into your vault under `Vicaya Digest/`.
+A separate command, `/vicaya-digest <topic>`, is not a research note — it's a short (~1200-word), plain-English quick-study essay on any topic, modeled on the 1960s Monarch Notes/CliffsNotes study-guide pamphlets. No inline citations, just a further-reading link list at the end; saved into your vault under `Vicaya Digest/`.
 
 ## Sources
 
@@ -442,8 +442,10 @@ ln -sf "$(pwd)/skill/vicaya" ~/.agents/skills/vicaya
 ln -sf "$(pwd)/skill/vicaya-improve" ~/.agents/skills/vicaya-improve
 ln -sf "$(pwd)/skill/vicaya-pre" ~/.agents/skills/vicaya-pre
 ln -sf "$(pwd)/skill/vicaya-quick" ~/.agents/skills/vicaya-quick
-ln -sf "$(pwd)/skill/align" ~/.agents/skills/align
-ln -sf "$(pwd)/skill/digest" ~/.agents/skills/digest
+ln -sf "$(pwd)/skill/vicaya-align" ~/.agents/skills/vicaya-align
+ln -sf "$(pwd)/skill/vicaya-digest" ~/.agents/skills/vicaya-digest
+ln -sf "$(pwd)/skill/vicaya-pdf" ~/.agents/skills/vicaya-pdf
+ln -sf "$(pwd)/skill/vicaya-what-the-suttas-say" ~/.agents/skills/vicaya-what-the-suttas-say
 ```
 
 **For Claude Code:**
@@ -454,8 +456,10 @@ ln -sf "$(pwd)/skill/vicaya" ~/.claude/skills/vicaya
 ln -sf "$(pwd)/skill/vicaya-improve" ~/.claude/skills/vicaya-improve
 ln -sf "$(pwd)/skill/vicaya-pre" ~/.claude/skills/vicaya-pre
 ln -sf "$(pwd)/skill/vicaya-quick" ~/.claude/skills/vicaya-quick
-ln -sf "$(pwd)/skill/align" ~/.claude/skills/align
-ln -sf "$(pwd)/skill/digest" ~/.claude/skills/digest
+ln -sf "$(pwd)/skill/vicaya-align" ~/.claude/skills/vicaya-align
+ln -sf "$(pwd)/skill/vicaya-digest" ~/.claude/skills/vicaya-digest
+ln -sf "$(pwd)/skill/vicaya-pdf" ~/.claude/skills/vicaya-pdf
+ln -sf "$(pwd)/skill/vicaya-what-the-suttas-say" ~/.claude/skills/vicaya-what-the-suttas-say
 ```
 
 **For Pi coding agent:**
@@ -477,21 +481,25 @@ ls ~/.agents/skills/vicaya/SKILL.md
 ls ~/.agents/skills/vicaya-improve/SKILL.md
 ls ~/.agents/skills/vicaya-pre/SKILL.md
 ls ~/.agents/skills/vicaya-quick/SKILL.md
-ls ~/.agents/skills/align/SKILL.md
-ls ~/.agents/skills/digest/SKILL.md
+ls ~/.agents/skills/vicaya-align/SKILL.md
+ls ~/.agents/skills/vicaya-digest/SKILL.md
+ls ~/.agents/skills/vicaya-pdf/SKILL.md
+ls ~/.agents/skills/vicaya-what-the-suttas-say/SKILL.md
 
 # Check Claude
 ls ~/.claude/skills/vicaya/SKILL.md
 ls ~/.claude/skills/vicaya-improve/SKILL.md
 ls ~/.claude/skills/vicaya-pre/SKILL.md
 ls ~/.claude/skills/vicaya-quick/SKILL.md
-ls ~/.claude/skills/align/SKILL.md
-ls ~/.claude/skills/digest/SKILL.md
+ls ~/.claude/skills/vicaya-align/SKILL.md
+ls ~/.claude/skills/vicaya-digest/SKILL.md
+ls ~/.claude/skills/vicaya-pdf/SKILL.md
+ls ~/.claude/skills/vicaya-what-the-suttas-say/SKILL.md
 
 # Check Pi — should point at config/pi/prompts/, not skill/*/SKILL.md
 readlink ~/.pi/agent/prompts/vicaya.md
 readlink ~/.pi/agent/prompts/vicaya-quick.md
-readlink ~/.pi/agent/prompts/digest.md
+readlink ~/.pi/agent/prompts/vicaya-digest.md
 ```
 
 If you ever move or rename this repository, you will need to re-run these

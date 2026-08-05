@@ -6,4 +6,4 @@ args:
     required: true
 ---
 
-Load the skill at `~/.agents/skills/align/SKILL.md` and execute it with the phrase `{{args}}`.
+Load the skill at `~/.agents/skills/vicaya-align/SKILL.md` and execute it with the phrase `{{args}}`.

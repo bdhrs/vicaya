@@ -6,4 +6,4 @@ args:
     required: true
 ---
 
-Load the skill at `~/.agents/skills/what-the-suttas-say/SKILL.md` and execute it with X = `{{args}}`.
+Load the skill at `~/.agents/skills/vicaya-what-the-suttas-say/SKILL.md` and execute it with X = `{{args}}`.

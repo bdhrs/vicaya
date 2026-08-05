@@ -3,4 +3,4 @@ description: Compare how different translators render a Pāḷi word or phrase, 
 argument-hint: "<phrase>"
 ---
 
-Load the skill at `~/.pi/agent/skills/align/SKILL.md` and execute it with the phrase: $ARGUMENTS
+Load the skill at `~/.pi/agent/skills/vicaya-align/SKILL.md` and execute it with the phrase: $ARGUMENTS
