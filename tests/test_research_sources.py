@@ -441,6 +441,33 @@ class TestSearchLibraryFoldersTimeout:
         assert rs._cli() == 1
         assert "too broad" in capsys.readouterr().err
 
+    def test_timeout_diagnostic_also_lands_on_stdout_as_json(self, monkeypatch, capsys):
+        # #87: callers parse stdout. A stderr-only diagnostic left them with
+        # empty stdout and a JSON decode error — the very confusion #61's
+        # clear-error fix was written to remove.
+        import json
+
+        import tools.research_sources as rs
+        from tools.library_folders import LibraryFoldersSearchTimeout as _Timeout
+
+        fake_library_folders = MagicMock()
+        fake_library_folders.LibraryFoldersSearchTimeout = _Timeout
+        fake_library_folders.search.side_effect = _Timeout(
+            "search timed out after 20s — query 'of' is too broad"
+        )
+        monkeypatch.setattr(
+            rs, "_load_library_folders_module", lambda: fake_library_folders
+        )
+        monkeypatch.setattr(
+            sys, "argv", ["research_sources", "search-library-folders", "of"]
+        )
+
+        assert rs._cli() == 1
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["ok"] is False
+        assert payload["timed_out"] is True
+        assert "too broad" in payload["error"]
+
 
 class TestChannelAllowlist:
     def test_channel_allowlist_parses(self, tmp_path):

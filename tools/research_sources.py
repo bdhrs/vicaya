@@ -2444,7 +2444,12 @@ def _cli() -> int:
                 timeout=args.timeout,
             )
         except library_folders.LibraryFoldersSearchTimeout as exc:
+            # Also emit the diagnostic as JSON on stdout. Callers parse stdout;
+            # a stderr-only message left them with empty stdout and a JSON
+            # decode error, which is what #61's clear-diagnostic fix was meant
+            # to replace (issue #87).
             print(f"error: {exc}", file=sys.stderr)
+            _dump({"ok": False, "error": str(exc), "timed_out": True})
             return _done(exit_code=1, autolog=False)
         argv = [args.query, "--limit", str(args.limit)]
         if args.include_duplicates:
