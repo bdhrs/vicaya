@@ -230,6 +230,49 @@ def test_series_note_without_canon_evidence_is_clean() -> None:
     assert note_checks.validate_note_text(series_note_text()) == []
 
 
+def test_qualified_t1_evidence_headings_satisfy_the_section() -> None:
+    # #99: the skill has always said the validator accepts any "## * (T1)"
+    # heading, and the comparative-religion guidance tells runs to substitute
+    # one — but the exact-match check warned on them. "Stoic Sources" is one of
+    # the skill's own examples and carries no "Evidence" in the wording, so the
+    # `(T1)` tier tag is what marks the section.
+    for heading in (
+        "## Pāli Canon Evidence (T1)",
+        "## Biblical Evidence (T1)",
+        "## Quranic Evidence (T1)",
+        "## Stoic Sources (T1)",
+    ):
+        text = valid_note_text().replace("## Canon Evidence (T1)", heading)
+
+        assert note_checks.validate_note_text(text) == [], heading
+
+
+def test_qualified_t1_heading_still_requires_canon_ref() -> None:
+    # The substitution must not become a way to skip the canon_refs check.
+    text = (
+        valid_note_text()
+        .replace("## Canon Evidence (T1)", "## Pāli Canon Evidence (T1)")
+        .replace('  - "MN 21"\n', "")
+    )
+
+    assert "missing-canon-ref" in issue_codes(text)
+
+
+def test_untagged_evidence_heading_does_not_satisfy_the_section() -> None:
+    # The `(T1)` tier tag is the marker: drop it and the section is missing.
+    text = valid_note_text().replace("## Canon Evidence (T1)", "## Canon Evidence")
+
+    assert "missing-section" in issue_codes(text)
+
+
+def test_t2_heading_does_not_satisfy_the_t1_section() -> None:
+    text = valid_note_text().replace(
+        "## Canon Evidence (T1)", "## Commentary Evidence (T2)"
+    )
+
+    assert "missing-section" in issue_codes(text)
+
+
 def test_series_heading_variants_are_recognized() -> None:
     base = valid_note_text().replace(
         "## Canon Evidence (T1)\n\n- MN 21 gives the relevant example.\n", ""

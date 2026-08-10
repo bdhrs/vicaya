@@ -158,6 +158,7 @@ the premise behind dropped #5.
 | #18 Claim ledger output mode | dropped (2026-07-06) | traced to a single sighting (20260527-092930); never recurred across 40+ subsequent runs |
 | #20 Inline Python blocked by CLAUDE.md hook | dropped (2026-07-06) | resolved by practice, not by a skill change — the temp/-script workflow became routine after the early cycles that first hit this, so the friction no longer occurs |
 | #28 Movement-internal term mapping | dropped (2026-07-06) | traced to a single sighting (20260527-092930); never recurred across 40+ subsequent runs |
+| #99 validator contradicted the documented evidence-heading rule | done (2026-08-10) | `fix: accept any (T1)-tagged evidence heading as the required section` — the skill says the validator "accepts any `## * Evidence (T1)` heading and does not warn", but `REQUIRED_SECTIONS` held the literal `## Canon Evidence (T1)` and the check was an exact string match, so `## Pāli Canon Evidence (T1)` warned on a correctly-formed note. Fixed the code rather than the docs, because the documented behaviour is the intended one: Done #52 tells comparative-religion runs to substitute the heading, so every such note was collecting a spurious warning. While writing it, the skill's own examples contradicted my first regex — `## Stoic Sources (T1)` carries no "Evidence" — so the marker is the `(T1)` tier tag, which is also exactly what `_EVIDENCE_TIER_HEADING_RE` already uses for the quote-ratio check; one notion of "T1 evidence section" in the file instead of two. The `canon_refs` requirement follows the heading the note actually uses, so the substitution can't be used to skip it. 5 regression tests (four documented variants incl. Stoic Sources; canon_refs still enforced; an untagged heading and a T2 heading both still missing). No doc change needed — the code now does what the docs always claimed. |
 | #98 backticks in --summary/--answer silently delete logged text | done (2026-08-10) | `feat: accept logged prose from a file so the shell cannot eat it` — the corruption happens in the shell, before the process starts, so no amount of in-process validation can recover the lost word; the fix had to be a channel the shell cannot touch. `--summary-file` (scratch-log) and `--answer-file` (scratch-self-audit, repeatable, one file per answer) read the text verbatim, both accepting `-` for stdin. Detection is genuinely limited and the code says so: a *matched* backtick pair is substituted away without residue, so the only detectable signature is an **odd** backtick count — one span consumed while another survived — which now returns an advisory `warning` field rather than failing (a lone backtick can be legitimate prose). SKILL.md gets the rule in "Calling the helpers" (routed by every staged router, so gather sub-agents see it) plus a pointer at the self-audit block. 6 regression tests, two of which drive a real bash to pin the failure mode itself: `printf %s "a \`gap\` b"` → `a  b` (word gone) while the single-quoted and file forms round-trip intact. |
 | #95 check-citation-shape rejects the vault-relative note path | done (2026-08-10) | `fix: resolve vault-relative note paths the same way in every command` — `_handle_check_citation_shape` did a bare `Path(args.note).expanduser()` while `scratch_set_note` retried a non-existent relative path against `VICAYA_VAULT_PATH`, so the documented `Vicaya/<file>.md` form failed in one command immediately after succeeding in the other. Rather than copy the retry a second time (which is how the two drifted apart), it is extracted into `resolve_vault_path()` in `tools/_common.py` and both call it — one definition, so a third caller can't reintroduce the split. The not-found error now also names both accepted path forms instead of just echoing the path. 5 regression tests (vault-relative resolves, absolute wins, missing path returns unchanged for the caller to report, plus both CLI paths end-to-end). |
 | #104 library-folders-check rejects --quiet | done (2026-08-10) | `fix: resolve vault-relative note paths the same way in every command` — folded into the same commit: the parser took no arguments at all (the one subcommand #91's audit missed), so a uniform prefixed call template still hit an argparse error. Added the flag and wired `_dump(quiet=…)` like every sibling. 1 regression test. |
@@ -277,19 +278,8 @@ resolver used by both commands, 2026-08-10)_
 _(#98 moved to Done — --summary-file/--answer-file give the shell no chance
 to eat logged prose, 2026-08-10)_
 
-- **#99 SKILL.md's evidence-heading claim contradicts the validator.** The
-  skill states the validator "accepts any `## * Evidence (T1)` heading and
-  does not warn"; a run using `## Pāli Canon Evidence (T1)` was warned.
-  Verified in code: `REQUIRED_SECTIONS` (`tools/note_checks.py:27`) holds the
-  literal string `## Canon Evidence (T1)` and the section check is an exact
-  match; the permissive `_EVIDENCE_TIER_HEADING_RE` (line 52) is used only to
-  scope the under-quoted-evidence ratio. It is a soft section, so this warns
-  rather than fails — which is why it never blocked anyone. Note this also
-  makes Done #52's comparative-religion guidance ("validator already accepts
-  any `## * Evidence (T1)` heading") inaccurate as written. Fix: either
-  accept qualified/diacritic variants in the section check, or correct both
-  doc claims to state the exact-heading requirement.
-  (seen in 1 run: 20260721-154716)
+_(#99 moved to Done — any (T1)-tagged evidence heading now satisfies the
+required section, 2026-08-10)_
 
 - **#100 sc-parallels `text_gaps` needs an explicit EBC fallback step.** A
   Phase 2.5 agent reported SA 470 as a "hard text gap … cannot be

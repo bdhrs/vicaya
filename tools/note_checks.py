@@ -21,10 +21,11 @@ from tools._common import _parse_dotenv  # noqa: E402
 
 
 TOOL_URL = "https://github.com/bdhrs/vicaya"
+_CANON_EVIDENCE_HEADING = "## Canon Evidence (T1)"
 REQUIRED_SECTIONS = (
     "## Question",
     "## Findings",
-    "## Canon Evidence (T1)",
+    _CANON_EVIDENCE_HEADING,
     "## Sources Investigated, Not Used",
     "## Critical Gaps",
     "## Bibliography",
@@ -33,7 +34,7 @@ REQUIRED_SECTIONS = (
 # Absence of these is a warning, not an error: they are content-dependent,
 # so a thematic/secular question or a custom note format may legitimately
 # omit them. All other required sections remain hard errors.
-SOFT_SECTIONS = frozenset({"## Canon Evidence (T1)"})
+SOFT_SECTIONS = frozenset({_CANON_EVIDENCE_HEADING})
 
 # Series-format bodies ("What the EBTs say / don't say about X") hold their
 # block-quoted canon evidence inside those sections, so a separate Canon
@@ -50,6 +51,27 @@ _SERIES_HEADING_RE = re.compile(
 # under-quoted-evidence ratio must only count footnotes cited within a T1/T2
 # section, not every footnote definition in the note.
 _EVIDENCE_TIER_HEADING_RE = re.compile(r"^##\s+.*\(T[12]\)\s*$")
+
+# The T1 evidence section is satisfied by any tradition-appropriate variant —
+# "## Pāli Canon Evidence (T1)", "## Biblical Evidence (T1)", "## Stoic Sources
+# (T1)" — not only the literal "## Canon Evidence (T1)". Comparative-religion
+# runs are documented to substitute this heading, and the skill has always
+# claimed the validator accepts any "## * (T1)"; the exact-match check meant it
+# did not, and warned on a correctly-formed note (issue #99). The `(T1)` tier
+# tag, not the word "Evidence", is what marks the section — the same rule
+# _EVIDENCE_TIER_HEADING_RE already applies for the quote-ratio check, so there
+# is one notion of "T1 evidence section" in this file rather than two.
+_T1_EVIDENCE_HEADING_RE = re.compile(r"^##\s+.*\(T1\)\s*$")
+
+
+def _t1_evidence_heading(lines: list[str]) -> str | None:
+    """The note's own T1 evidence heading, whatever wording it uses."""
+    for line in lines:
+        stripped = line.strip()
+        if _T1_EVIDENCE_HEADING_RE.match(stripped):
+            return stripped
+    return None
+
 
 _SECTION_HINTS = {
     "## Question": (
@@ -218,8 +240,11 @@ def _validate_body(body: str, issues: list[ValidationIssue], frontmatter: str) -
             )
 
     series_body = any(_SERIES_HEADING_RE.match(line.strip()) for line in lines)
+    t1_heading = _t1_evidence_heading(lines)
     for heading in REQUIRED_SECTIONS:
         if any(line.strip() == heading for line in lines):
+            continue
+        if heading == _CANON_EVIDENCE_HEADING and t1_heading:
             continue
         if heading in SOFT_SECTIONS and series_body:
             continue
@@ -236,9 +261,9 @@ def _validate_body(body: str, issues: list[ValidationIssue], frontmatter: str) -
             )
         )
 
-    if _section_has_content(lines, "## Canon Evidence (T1)") and not _list_items(
-        frontmatter, "canon_refs"
-    ):
+    if _section_has_content(
+        lines, t1_heading or _CANON_EVIDENCE_HEADING
+    ) and not _list_items(frontmatter, "canon_refs"):
         issues.append(
             ValidationIssue(
                 "missing-canon-ref",
