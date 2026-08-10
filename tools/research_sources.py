@@ -96,6 +96,10 @@ class Citation:
     pitaka: str
     text_type: str
     paranum: str
+    # True/False when the canon DB could be consulted, None when it could not
+    # (no VICAYA_CANON_DB, or the book has no table there). False means the
+    # reference is bogus — never cite it.
+    paranum_exists: bool | None = None
 
 
 @dataclass
@@ -415,6 +419,9 @@ def _canon_heading_lookup(
             if not ids:
                 if not book:
                     return None
+                # Defensive: resolve_citation guards this case up front via
+                # _canon_paranum_exists, so a book-only label should no longer
+                # be reachable for a paranum with no row.
                 return {"book": book, "sections": [], "candidates": []}
             if len(ids) > 1:
                 candidates: list[str] = []
@@ -440,6 +447,37 @@ def _canon_heading_lookup(
             return {"book": book, "sections": sections, "candidates": []}
     except sqlite3.Error:
         return None
+
+
+def _canon_paranum_exists(
+    book_code: str, paranum_int: int, canon_db: Path | None
+) -> bool | None:
+    """Does `paranum_int` actually have a row in the book's canon table?
+
+    Returns None for "cannot tell" — no canon DB configured, or the book has
+    no table there — so callers can distinguish an unverifiable citation from
+    a bogus one. Every naming path in `resolve_citation` resolves by *nearest
+    preceding* heading or paranum, so without this check a paranum that
+    exists nowhere still produces a confident-looking reference.
+    """
+    if canon_db is None or not canon_db.exists():
+        return None
+    try:
+        with sqlite3.connect(canon_db) as conn:
+            table = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                (book_code,),
+            ).fetchone()
+            if not table:
+                return None
+            row = conn.execute(
+                f"SELECT 1 FROM {book_code} "
+                f"WHERE paranum=? OR CAST(paranum AS INTEGER)=? LIMIT 1",
+                (str(paranum_int), paranum_int),
+            ).fetchone()
+    except sqlite3.Error:
+        return None
+    return row is not None
 
 
 def _dpd_code_for_sutta_name(
@@ -581,12 +619,37 @@ def resolve_citation(
     db_path = dpd_db or DEFAULT_DPD_DB
 
     # Parse paranum: may be "97", "97-99", or "_subhead" etc.
+    exists: bool | None = None
     para_match = _re.match(r"(\d+)(?:-(\d+))?", paranum)
     if para_match:
         first_para = int(para_match.group(1))
         para_display = paranum.replace("-", "–")  # en-dash for ranges
 
         tt_label = _TEXT_TYPE_LABELS.get(text_type, text_type)
+
+        # Every naming path below resolves by nearest *preceding* heading or
+        # sutta_info row, so none of them can tell "this paranum exists" from
+        # "this paranum is somewhere after a heading I recognise". Check the
+        # book's own table once, up front, and refuse to name a paranum that
+        # has no row rather than interpolating a plausible-looking label.
+        exists = _canon_paranum_exists(
+            book_code, first_para, canon_db or DEFAULT_CANON_DB
+        )
+        if exists is False:
+            base, pitaka = _fallback_human(stem, text_type, para_display)
+            return Citation(
+                machine=machine,
+                human=(
+                    f"{base} — NO SUCH PARANUM: {book_code} has no row for "
+                    f"paranum {para_display}; do not cite this reference. "
+                    f"Search the book for the passage you mean, or check the "
+                    f"book code with lookup-book."
+                ),
+                pitaka=pitaka,
+                text_type=tt_label,
+                paranum=paranum,
+                paranum_exists=False,
+            )
 
         if (
             db_path is not None
@@ -603,6 +666,7 @@ def resolve_citation(
                     pitaka="Sutta",
                     text_type=tt_label,
                     paranum=paranum,
+                    paranum_exists=exists,
                 )
 
         elif db_path is not None and text_type in ("att", "tik"):
@@ -626,6 +690,7 @@ def resolve_citation(
                     pitaka="Commentary",
                     text_type=tt_label,
                     paranum=paranum,
+                    paranum_exists=exists,
                 )
 
         canon = _canon_heading_lookup(
@@ -647,6 +712,7 @@ def resolve_citation(
                     pitaka=pitaka,
                     text_type=tt_label,
                     paranum=paranum,
+                    paranum_exists=exists,
                 )
             if text_type == "mul":
                 for heading in reversed(canon["sections"]):
@@ -660,6 +726,7 @@ def resolve_citation(
                             pitaka="Sutta",
                             text_type=tt_label,
                             paranum=paranum,
+                            paranum_exists=exists,
                         )
             parts = ", ".join(p for p in [canon["book"], *canon["sections"]] if p)
             if parts:
@@ -670,6 +737,7 @@ def resolve_citation(
                     pitaka=pitaka,
                     text_type=tt_label,
                     paranum=paranum,
+                    paranum_exists=exists,
                 )
 
     # Fallback
@@ -677,6 +745,7 @@ def resolve_citation(
     return Citation(
         machine=machine,
         human=human,
+        paranum_exists=exists,
         pitaka=pitaka,
         text_type=_TEXT_TYPE_LABELS.get(text_type, ""),
         paranum=paranum,
@@ -2272,7 +2341,11 @@ def _cli() -> int:
     def _handle_resolve_citation(args):
         result = resolve_citation(args.book_code, args.paranum)
         _dump(result, quiet=getattr(args, "quiet", False))
-        return _done([args.book_code, str(args.paranum)], result)
+        # Exit 1 on a paranum with no row so a shell loop or a `&&` chain can't
+        # carry a bogus reference forward silently. An unverifiable paranum
+        # (no canon DB) stays exit 0 — unknown is not the same as wrong.
+        code = 1 if getattr(result, "paranum_exists", None) is False else 0
+        return _done([args.book_code, str(args.paranum)], result, exit_code=code)
 
     def _handle_env(args):
         import shlex

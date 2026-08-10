@@ -8,6 +8,7 @@ suite stays green on a machine that doesn't have everything wired up yet.
 from __future__ import annotations
 
 import shutil
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -198,6 +199,86 @@ class TestResolveCitationCanonHeadings:
         # chapter row.
         c = resolve_citation("s0518m_nrf", "1")
         assert "Milindapañha" in c.human
+
+
+class TestResolveCitationParanumExists:
+    """#94 — a paranum with no row must not get a confident label.
+
+    Every naming path resolves by nearest *preceding* heading/sutta_info row,
+    so before this check `resolve-citation e0102n_mul 84` returned
+    "Extra 0102 §84 — Visuddhimaggo" for a paranum with zero rows, and a
+    sub-agent reported it as a real citation.
+    """
+
+    @staticmethod
+    def _canon_db(tmp_path, paranums):
+        """A minimal canon DB with one book table holding `paranums`."""
+        db = tmp_path / "canon.db"
+        with sqlite3.connect(db) as conn:
+            conn.execute(
+                "CREATE TABLE e0999n_mul "
+                "(id INTEGER PRIMARY KEY, paranum TEXT, rend TEXT, pali_text TEXT)"
+            )
+            conn.execute(
+                "INSERT INTO e0999n_mul (id, paranum, rend, pali_text) "
+                "VALUES (1, '', 'book', 'Testabook')"
+            )
+            for i, p in enumerate(paranums, start=2):
+                conn.execute(
+                    "INSERT INTO e0999n_mul (id, paranum, rend, pali_text) "
+                    "VALUES (?, ?, 'para', 'text')",
+                    (i, str(p)),
+                )
+        return db
+
+    def test_missing_paranum_is_flagged_and_not_named(self, tmp_path):
+        db = self._canon_db(tmp_path, [10, 375])
+        c = resolve_citation("e0999n_mul", "84", canon_db=db)
+        assert c.paranum_exists is False
+        assert "NO SUCH PARANUM" in c.human
+        assert "do not cite" in c.human
+        # The book name alone must not read as a resolved citation.
+        assert not c.human.endswith("Testabook")
+
+    def test_present_paranum_still_resolves_and_is_marked(self, tmp_path):
+        db = self._canon_db(tmp_path, [10, 375])
+        c = resolve_citation("e0999n_mul", "375", canon_db=db)
+        assert c.paranum_exists is True
+        assert "NO SUCH PARANUM" not in c.human
+        assert "375" in c.human
+
+    def test_unknown_when_canon_db_unavailable(self, tmp_path):
+        # No canon DB to consult: unverifiable is not the same as bogus, so
+        # the label is unchanged and the flag stays None.
+        c = resolve_citation("e0999n_mul", "84", canon_db=tmp_path / "absent.db")
+        assert c.paranum_exists is None
+        assert "NO SUCH PARANUM" not in c.human
+
+    def test_unknown_when_book_has_no_table(self, tmp_path):
+        db = self._canon_db(tmp_path, [10])
+        c = resolve_citation("e0998n_mul", "84", canon_db=db)
+        assert c.paranum_exists is None
+        assert "NO SUCH PARANUM" not in c.human
+
+    def test_range_paranum_checks_first_endpoint(self, tmp_path):
+        db = self._canon_db(tmp_path, [10, 375])
+        c = resolve_citation("e0999n_mul", "84-86", canon_db=db)
+        assert c.paranum_exists is False
+
+
+@canon_available
+class TestResolveCitationParanumExistsLive:
+    """The reported case, against the real canon DB."""
+
+    def test_vism_missing_paranum_flagged(self):
+        c = resolve_citation("e0102n_mul", "84")
+        assert c.paranum_exists is False
+        assert "NO SUCH PARANUM" in c.human
+
+    def test_vism_present_paranum_resolves(self):
+        c = resolve_citation("e0101n_mul", "176")
+        assert c.paranum_exists is True
+        assert "Visuddhimagg" in c.human
 
 
 # ---------- search_canon ----------

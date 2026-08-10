@@ -13,7 +13,8 @@ prose/quotes drifting from the data underneath them again, now at the *quoted
 text* layer rather than the locator layer (#96 fabricated and mis-assigned Pāḷi
 blockquotes, #97 scholarly position attributions), tool paths that return a
 confident answer instead of an error (#94 resolve-citation on a nonexistent
-paranum, #92, #87), and one severe autonomy failure (#93: a gather fork ran the
+paranum — picked and closed 2026-08-10; plus #92, #87), and one severe
+autonomy failure (#93: a gather fork ran the
 whole pipeline, published, and deleted two siblings' unread work). Prior
 triage: 2026-07-17 (second pass, 1 run:
 20260717-140500 — two new issues #90/#91, one POSITIVE added to Working well;
@@ -157,6 +158,7 @@ the premise behind dropped #5.
 | #18 Claim ledger output mode | dropped (2026-07-06) | traced to a single sighting (20260527-092930); never recurred across 40+ subsequent runs |
 | #20 Inline Python blocked by CLAUDE.md hook | dropped (2026-07-06) | resolved by practice, not by a skill change — the temp/-script workflow became routine after the early cycles that first hit this, so the friction no longer occurs |
 | #28 Movement-internal term mapping | dropped (2026-07-06) | traced to a single sighting (20260527-092930); never recurred across 40+ subsequent runs |
+| #94 resolve-citation names a paranum that has no row | done (2026-08-10) | `fix: refuse to name a paranum with no row in the book's canon table` — root cause confirmed before coding: every naming path resolves by *nearest preceding* heading or sutta_info row (`_lookup_sutta_info`'s `CAST(cst_paranum AS INTEGER) <= ?` … `DESC`; `_canon_heading_lookup` returning a truthy book-only dict on empty `ids`), so none could distinguish "this paranum exists" from "this paranum is somewhere after a heading I recognise". New `_canon_paranum_exists()` checks the book's own table once, up front, and `resolve_citation` returns early with `paranum_exists: False` and a `NO SUCH PARANUM … do not cite this reference` human label instead of interpolating one; the CLI exits 1 so a shell loop or `&&` chain can't carry it forward silently. Deliberately tri-state: `None` (no `VICAYA_CANON_DB`, or the book has no table there) means unverifiable, not bogus, and leaves the old label untouched — the check can never turn a working offline setup into false accusations. `paranum_exists` threaded through all six return paths and added to the `Citation` dataclass. Verified against the real canon DB, reproducing the reported case: `e0102n_mul 84` now flagged, `e0101n_mul 176` still resolves to the Visuddhimagga chapter. 7 regression tests (5 on a synthetic canon DB needing no env config, 2 live). SKILL.md documents the field in the Citation shape, the Phase 2 resolve-citation section, and Hard Rule 9. All 360 tests pass; ruff + pyright clean. |
 | #86 scratch-init --force to replace a stale/crashed dossier | dropped (2026-08-09) | single sighting (20260715-140000), never recurred across the 21 runs since — verified by grepping `runs/processed/` for the term, which returns only that one file. #60's reuse warning already makes the stale dossier visible, and the remedy is one `rm`. Revive only if a run actually reports being blocked by it. |
 | #42 dhammatalks.org AN URL pattern | dropped (2026-07-06) | misdiagnosed premise, not a real bug — the original run was logged `Scope: local` (should never have been promoted to a global backlog item) and its own proposed fix was a documentation caveat, not a URL fix; live-tested against the real site: `AN/AN7_6.html` and `AN/AN7_80.html` (translated) both return 200, `AN/AN7_55.html` returns 404 only because Ṭhānissaro never translated that sutta. The URL pattern already matches the MN scheme exactly; there is no pattern bug to fix. |
 
@@ -215,21 +217,8 @@ Phase 2's EBC pull, Phase 2.5, and the EBC vault section, 2026-07-17)_
   an unauthorized-publish path, not only data loss.
   (seen in 1 run: 20260801-171000)
 
-- **#94 resolve-citation returns a confident human reference for a paranum
-  that has no row at all.** `resolve-citation e0102n_mul 84` returned
-  "Extra 0102 §84 — Visuddhimaggo" for a paranum with zero rows in that table
-  (the khīṇāsava passage the agent wanted is at §375); a sub-agent then
-  reported it as a real citation, and it was caught only by an orchestrator
-  spot-check. Verified in code: `_canon_heading_lookup`
-  (`tools/research_sources.py:415-418`) returns a truthy book-only dict when
-  the paranum matches no rows, and `_lookup_sutta_info` (line 499) resolves by
-  nearest *preceding* paranum (`CAST(cst_paranum AS INTEGER) <= ?` … `DESC`),
-  so neither path can distinguish "this paranum exists" from "this paranum is
-  somewhere after a heading I recognise." Fix: confirm the paranum has a row
-  and surface `paranum_exists: false` (or fail loudly) rather than
-  interpolating a plausible-looking label from surrounding structure. This
-  undercuts the whole resolve-citation-as-ground-truth discipline that Hard
-  Rule 9, #74, and #90 all lean on. (seen in 1 run: 20260730-060651)
+_(#94 moved to Done — resolve-citation now checks the book's own table and
+refuses to name a paranum with no row, 2026-08-10)_
 
 ### Medium severity
 
@@ -938,3 +927,24 @@ pull back into the main Low severity list only if a new run reports it.
     the rule, on these hosts. Channel tally: "Ego (buddhism podcast)" sighted
     again across cycles and is past the promotion-evaluation threshold —
     proposed to the user, not auto-promoted.
+
+14. Session 2026-08-10: **#94 picked and closed.** Two things worth recording.
+    First, the triage ranking was challenged and corrected mid-session: of the
+    19 new issues only 5 are genuine tool defects (#92, #94, #95, #104, #108);
+    the rest are agent discipline, doc gaps, or environment. Ranking by
+    run-count alone had put a mostly-behavioural item (#93) second. Worth
+    sorting future cycles by *defect vs. discipline* before ranking by
+    frequency. Second, run authorship matters for evidence weight: 9 of this
+    cycle's 21 runs came from SBS-resident, whose checkout version cannot be
+    confirmed, and 12 from bdhrs (current). All five verified defects trace to
+    bdhrs runs and were checked against HEAD rather than trusted from the run's
+    prose, so they stand — but #103 (7 of 8 sightings resident) is most likely
+    one machine missing cross-check config, #108 may be an older canon DB on
+    that machine, and #96's evidence is 2/3 resident and may predate #90's
+    rules. **Still to apply:** demote #103, mark #108 verify-first, trim #96's
+    evidence, and add an issue for recording the repo commit SHA in the run
+    reflection frontmatter — right now staleness has to be reconstructed from
+    commit authorship, which is why this ambiguity existed at all. Also noticed
+    in passing: this file repeatedly cites `tests/test_skill_routes.py` as the
+    route-list guard, but that file no longer exists (skills were renamed in
+    `ecee2b1`) — the guard it describes may have been lost.
