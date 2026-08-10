@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import threading
 import time
 import unicodedata
 import zipfile
@@ -1278,6 +1279,69 @@ def duplicates(
     }
 
 
+_SOURCE_PROBE_TIMEOUT = 2.0
+
+
+def _exists_probe(path: Path, timeout: float) -> bool | None:
+    """`path.exists()` bounded by a wall clock. None means the probe hung.
+
+    A stat against an offline or hung network mount blocks for the mount's own
+    timeout, which no SQLite-level guard can bound — the probe runs in a daemon
+    thread so a stuck stat cannot hold up the caller.
+    """
+    result: list[bool] = []
+
+    def _probe() -> None:
+        try:
+            result.append(path.exists())
+        except OSError:
+            result.append(False)
+
+    thread = threading.Thread(target=_probe, daemon=True)
+    thread.start()
+    thread.join(timeout)
+    if thread.is_alive():
+        return None
+    return result[0] if result else False
+
+
+def _source_availability(
+    rows: list[sqlite3.Row], timeout: float
+) -> dict[str, bool | None]:
+    """Probe each distinct source root once, not once per hit.
+
+    Returns root → reachable (None when the probe timed out). The per-hit stat
+    is only safe once its root is known to answer; on an unreachable volume a
+    broad search would otherwise stat every candidate row in turn and block for
+    minutes with no diagnostic (the FTS timeout guard covers only the query).
+    """
+    state: dict[str, bool | None] = {}
+    for row in rows:
+        root = str(row["source_root"])
+        if root not in state:
+            state[root] = _exists_probe(Path(root), timeout)
+    return state
+
+
+def _hit_source_available(
+    row: sqlite3.Row, root_reachable: dict[str, bool | None]
+) -> bool | None:
+    """Is this hit's file on disk? None when its volume can't be reached.
+
+    Only stats the file when its root answered — an unreachable root means the
+    file's presence is unknown, which is not the same as known-absent.
+    """
+    reachable = root_reachable.get(str(row["source_root"]))
+    if reachable is None:
+        return None
+    if reachable is False:
+        return False
+    try:
+        return Path(str(row["source_path"])).exists()
+    except OSError:
+        return False
+
+
 def search(
     query: str,
     config: LibraryFoldersConfig | None = None,
@@ -1285,6 +1349,7 @@ def search(
     limit: int = 20,
     include_duplicates: bool = False,
     timeout: float | None = _SEARCH_TIMEOUT_SECONDS,
+    source_timeout: float = _SOURCE_PROBE_TIMEOUT,
 ) -> list[dict[str, Any]]:
     if limit <= 0:
         return []
@@ -1300,6 +1365,7 @@ def search(
             rows = _search_rows(conn, query, candidate_limit, timeout=timeout)
         except sqlite3.Error:
             return []
+    root_reachable = _source_availability(rows, source_timeout)
     hits: list[dict[str, Any]] = []
     for row in rows:
         duplicate_members = duplicate_map.get(int(row["id"]), [])
@@ -1322,7 +1388,7 @@ def search(
                 "duplicate_count": len(duplicate_members) if duplicate_members else 1,
                 "duplicate_paths": [rel for _, _src, rel in duplicate_members],
                 "possible_duplicate_of": weak_hints.get(int(row["id"]), []),
-                "source_available": Path(row["source_path"]).exists(),
+                "source_available": _hit_source_available(row, root_reachable),
             }
         )
         if len(hits) >= limit:

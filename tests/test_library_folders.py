@@ -14,6 +14,7 @@ import tarfile
 import time
 import zipfile
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -472,6 +473,78 @@ def test_search_marks_unavailable_source_from_existing_index(tmp_path):
 
     assert hits
     assert hits[0]["source_available"] is False
+
+
+class _HangingPath:
+    """Stands in for a path on a hung network mount."""
+
+    def __init__(self, delay: float) -> None:
+        self.delay = delay
+
+    def exists(self) -> bool:
+        time.sleep(self.delay)
+        return True
+
+
+def test_exists_probe_returns_none_when_stat_hangs():
+    # Regression for #92: a stat against an offline/hung mount blocks for the
+    # mount's own timeout, which the FTS query guard cannot bound.
+    started = time.monotonic()
+    result = library_folders._exists_probe(cast(Path, _HangingPath(30)), timeout=0.2)
+    elapsed = time.monotonic() - started
+
+    assert result is None
+    assert elapsed < 5
+
+
+def test_exists_probe_reports_real_answers():
+    assert library_folders._exists_probe(Path(__file__), timeout=5) is True
+    assert library_folders._exists_probe(Path("/no/such/path"), timeout=5) is False
+
+
+def test_search_marks_source_unknown_when_volume_unreachable(tmp_path, monkeypatch):
+    # An unreachable volume means the file's presence is *unknown*. Reporting
+    # False there would read as "the book is gone" rather than "plug the drive
+    # in", which is what five runs' worth of offline-volume confusion was.
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "a.txt").write_text("nibbana target text", encoding="utf-8")
+    index = tmp_path / "folder.sqlite"
+    config = LibraryFoldersConfig(roots=[root], index=index)
+    refresh(config)
+
+    monkeypatch.setattr(library_folders, "_exists_probe", lambda _p, _t: None)
+    hits = search("nibbana", config)
+
+    assert hits
+    assert all(h["source_available"] is None for h in hits)
+
+
+def test_search_probes_each_root_once_not_each_hit(tmp_path, monkeypatch):
+    # The hang was O(hits): a broad sweep stats every candidate row in turn.
+    # One probe per distinct root bounds it regardless of how wide the sweep is.
+    root = tmp_path / "root"
+    root.mkdir()
+    for i in range(5):
+        # Distinct bodies so the duplicate collapser keeps them as separate hits.
+        (root / f"doc{i}.txt").write_text(
+            f"nibbana target text variant {i}", encoding="utf-8"
+        )
+    index = tmp_path / "folder.sqlite"
+    config = LibraryFoldersConfig(roots=[root], index=index)
+    refresh(config)
+
+    probes: list[str] = []
+
+    def _counting_probe(path, _timeout):
+        probes.append(str(path))
+        return True
+
+    monkeypatch.setattr(library_folders, "_exists_probe", _counting_probe)
+    hits = search("nibbana", config)
+
+    assert len(hits) > 1
+    assert len(probes) == 1
 
 
 def test_search_collapses_exact_content_and_text_duplicates(tmp_path):

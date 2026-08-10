@@ -158,6 +158,7 @@ the premise behind dropped #5.
 | #18 Claim ledger output mode | dropped (2026-07-06) | traced to a single sighting (20260527-092930); never recurred across 40+ subsequent runs |
 | #20 Inline Python blocked by CLAUDE.md hook | dropped (2026-07-06) | resolved by practice, not by a skill change — the temp/-script workflow became routine after the early cycles that first hit this, so the friction no longer occurs |
 | #28 Movement-internal term mapping | dropped (2026-07-06) | traced to a single sighting (20260527-092930); never recurred across 40+ subsequent runs |
+| #92 search-library-folders hangs on an unreachable library volume | done (2026-08-10) | `fix: probe each library source root once instead of statting every hit` — the run's own diagnosis (a common-word query bypassing #61's FTS guard) was checked and rejected: that guard is intact and covers the query. The real mechanism was `Path(row["source_path"]).exists()` running once per candidate row in the post-query result loop, outside any deadline — on an offline or hung mount each stat blocks for the mount's own timeout, and a broad sweep stats up to `limit * 10` rows, giving the reported 3+ minute hang with no diagnostic. New `_exists_probe()` bounds a stat with a daemon thread and a wall clock (no SQLite-level guard can bound a stat), and `_source_availability()` probes each *distinct source root* once per call rather than once per hit, so cost is O(roots) not O(hits). `source_available` becomes tri-state to match: `true` on disk, `false` genuinely missing, `null` volume unreachable — presence unknown, which is the honest answer and stops five runs' worth of "library volume offline" reports reading as "the book is gone". Same tri-state discipline as #94. 4 regression tests (probe returns None on a hanging stat and returns promptly; probe reports real answers; unreachable volume yields null; one probe for five hits in one root). SKILL.md documents the tri-state in the hit shape and adds a "When something fails" bullet. All 364 tests pass; ruff + pyright clean. |
 | #94 resolve-citation names a paranum that has no row | done (2026-08-10) | `fix: refuse to name a paranum with no row in the book's canon table` — root cause confirmed before coding: every naming path resolves by *nearest preceding* heading or sutta_info row (`_lookup_sutta_info`'s `CAST(cst_paranum AS INTEGER) <= ?` … `DESC`; `_canon_heading_lookup` returning a truthy book-only dict on empty `ids`), so none could distinguish "this paranum exists" from "this paranum is somewhere after a heading I recognise". New `_canon_paranum_exists()` checks the book's own table once, up front, and `resolve_citation` returns early with `paranum_exists: False` and a `NO SUCH PARANUM … do not cite this reference` human label instead of interpolating one; the CLI exits 1 so a shell loop or `&&` chain can't carry it forward silently. Deliberately tri-state: `None` (no `VICAYA_CANON_DB`, or the book has no table there) means unverifiable, not bogus, and leaves the old label untouched — the check can never turn a working offline setup into false accusations. `paranum_exists` threaded through all six return paths and added to the `Citation` dataclass. Verified against the real canon DB, reproducing the reported case: `e0102n_mul 84` now flagged, `e0101n_mul 176` still resolves to the Visuddhimagga chapter. 7 regression tests (5 on a synthetic canon DB needing no env config, 2 live). SKILL.md documents the field in the Citation shape, the Phase 2 resolve-citation section, and Hard Rule 9. All 360 tests pass; ruff + pyright clean. |
 | #86 scratch-init --force to replace a stale/crashed dossier | dropped (2026-08-09) | single sighting (20260715-140000), never recurred across the 21 runs since — verified by grepping `runs/processed/` for the term, which returns only that one file. #60's reuse warning already makes the stale dossier visible, and the remedy is one `rm`. Revive only if a run actually reports being blocked by it. |
 | #42 dhammatalks.org AN URL pattern | dropped (2026-07-06) | misdiagnosed premise, not a real bug — the original run was logged `Scope: local` (should never have been promoted to a global backlog item) and its own proposed fix was a documentation caveat, not a URL fix; live-tested against the real site: `AN/AN7_6.html` and `AN/AN7_80.html` (translated) both return 200, `AN/AN7_55.html` returns 404 only because Ṭhānissaro never translated that sutta. The URL pattern already matches the MN scheme exactly; there is no pattern bug to fix. |
@@ -174,27 +175,8 @@ build, 2026-07-17)_
 _(#70 moved to Done — parallel content-check IRON RULE documented in
 Phase 2's EBC pull, Phase 2.5, and the EBC vault section, 2026-07-17)_
 
-- **#92 search-library-folders hangs for minutes when the library volume is
-  unreachable — the post-query stat loop sits outside #61's timeout guard.**
-  A `search-library-folders "Aion phenomenology of the self"` call ran 3+
-  minutes at high CPU before a manual kill, instead of the documented clean
-  "too broad" timeout error. The run's own hypothesis (a common-word query
-  bypassing the FTS guard) was checked and is **wrong**: the
-  `set_progress_handler` deadline at `tools/library_folders.py:1022` is intact
-  and covers the query. The real mechanism is
-  `tools/library_folders.py:1325` — `Path(row["source_path"]).exists()` runs
-  once per hit in the result-assembly loop *after* the guarded query, and
-  every source path lives on the external/NFS library volume; when that mount
-  is offline or hung, each stat blocks for the mount's own timeout with
-  nothing bounding the total. This is the same root cause as the recurring
-  "library volume offline / PermissionError on /Volumes/share2" friction in
-  five other runs this cycle. Fix: bound or skip the availability stat —
-  probe the mount root once per call and short-circuit `source_available` to
-  a tri-state (`true`/`false`/`unknown: volume unreachable`) instead of
-  statting every hit, and/or fold the loop inside the same wall-clock
-  deadline. (seen in 6 runs: 20260724-093707, 20260723-032557,
-  20260724-vassa-split-two-places, 20260726-cognitive-biases,
-  20260726-logical-fallacies, 20260808T065938Z)
+_(#92 moved to Done — each source root is probed once with a bounded stat and
+`source_available` is tri-state, 2026-08-10)_
 
 - **#93 A gather sub-agent ran the whole pipeline unsupervised and published,
   then deleted the shared temp/ directory with two siblings' unread work.**
