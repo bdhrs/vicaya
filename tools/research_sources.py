@@ -33,6 +33,7 @@ from tools._common import (  # noqa: E402
     REPO_ROOT as _REPO_ROOT,
     env_path as _env_path,
     load_dotenv as _load_dotenv,
+    resolve_vault_path,
     strip_xml as _strip_xml,
 )
 
@@ -2415,10 +2416,10 @@ def _cli() -> int:
         _dump(result, quiet=getattr(args, "quiet", False))
         return _done(argv, result)
 
-    def _handle_library_folders_check(_args):
+    def _handle_library_folders_check(args):
         library_folders = _load_library_folders_module()
         result = library_folders.check()
-        _dump(result)
+        _dump(result, quiet=getattr(args, "quiet", False))
         return _done([], result)
 
     def _handle_library_folders_refresh(args):
@@ -2609,9 +2610,17 @@ def _cli() -> int:
         return _done(exit_code=code, autolog=False)
 
     def _handle_check_citation_shape(args):
-        path = Path(args.note).expanduser()
+        path = resolve_vault_path(args.note)
         if not path.exists():
-            _dump({"error": f"note not found: {path}"})
+            _dump(
+                {
+                    "error": f"note not found: {path}",
+                    "hint": (
+                        "pass an absolute path, or a vault-relative one "
+                        "(Vicaya/<file>.md) with VICAYA_VAULT_PATH set"
+                    ),
+                }
+            )
             return _done(exit_code=2, autolog=False)
         findings = check_citation_shape_file(path)
         for f in findings:
@@ -2754,6 +2763,7 @@ def _cli() -> int:
         "library-folders-check",
         help="Probe configured library folders paths and index health.",
     )
+    plfc.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
     plfc.set_defaults(func=_handle_library_folders_check)
 
     pfr = sub.add_parser(

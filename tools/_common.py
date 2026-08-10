@@ -42,3 +42,23 @@ def load_dotenv(path: Path = REPO_ROOT / ".env") -> None:
 def env_path(key: str, default: str | None = None) -> Path | None:
     val = os.environ.get(key, default)
     return Path(os.path.expanduser(val)) if val else None
+
+
+def resolve_vault_path(note_path: str) -> Path:
+    """Resolve a note path the way every vault-facing command should.
+
+    An absolute path is used as given. A relative path is tried against the
+    current directory first, then against ``VICAYA_VAULT_PATH``, so the
+    vault-relative form the Obsidian CLI and the skill docs use
+    (``Vicaya/<file>.md``) works from any working directory. The returned path
+    may not exist — callers report that themselves.
+    """
+    note = Path(note_path).expanduser()
+    if note.exists() or note.is_absolute():
+        return note
+    vault = os.environ.get("VICAYA_VAULT_PATH")
+    if vault:
+        candidate = Path(vault).expanduser() / note_path
+        if candidate.exists():
+            return candidate
+    return note

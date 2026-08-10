@@ -2300,6 +2300,8 @@ After `scratch-set-note`, run:
 uv run tools/research_sources.py check-citation-shape "<note-path>"
 ```
 
+The note path takes the same forms every other vault command takes — absolute, or vault-relative (`Vicaya/<file>.md`) with `VICAYA_VAULT_PATH` set. (Before 2026-08-10 this one command resolved against the current directory only, so the vault-relative form returned `note not found` immediately after `scratch-set-note` had accepted it — issue #95.)
+
 It flags references carrying more numbers than their collection uses — `MN118.150` for MN118 §150, `DN2.244` for DN2 §244, `SN 5.46.20` for SN 46.20. That is a paragraph number glued onto a sutta number (Hard Rule 9's failure, written into the note instead of the query). Fix every finding before gating: write the paragraph as `§N` and keep the sutta number alone. A nonzero exit blocks `scratch-gate 7`.
 
 Structural only — it says nothing about whether the cited passage supports the claim. It skips URLs and code spans, so SuttaCentral uids and CST filenames never trip it. Measured over 260 vault notes: 18 findings, all real, zero false positives.

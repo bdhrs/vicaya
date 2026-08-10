@@ -11,6 +11,7 @@ import subprocess
 from contextlib import contextmanager
 from pathlib import Path
 
+from tools._common import resolve_vault_path
 
 _SCRATCH_DIR = Path(__file__).resolve().parents[1] / "data" / "scratch"
 
@@ -699,13 +700,7 @@ def scratch_set_note(
         raise FileNotFoundError(
             f"scratch not initialised: {path}; run scratch-init <slug>"
         )
-    note = Path(note_path).expanduser()
-    if not note.exists() and not note.is_absolute():
-        vault = os.environ.get("VICAYA_VAULT_PATH")
-        if vault:
-            candidate = Path(vault).expanduser() / note_path
-            if candidate.exists():
-                note = candidate
+    note = resolve_vault_path(note_path)
     if not note.exists():
         return {
             "ok": False,

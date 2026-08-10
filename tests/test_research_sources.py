@@ -730,6 +730,84 @@ class TestGetEbcOverviewQuietFlag:
         assert rs._cli() == 1  # clean not-found exit, not an argparse error
 
 
+class TestVaultPathResolution:
+    """#95 — every vault-facing command must accept the same path form.
+
+    check-citation-shape resolved its note argument against the CWD alone, so
+    the documented vault-relative form (Vicaya/<file>.md) reported "note not
+    found" immediately after scratch-set-note had resolved that exact path.
+    """
+
+    def test_vault_relative_path_resolves_against_vault_env(
+        self, tmp_path, monkeypatch
+    ):
+        from tools._common import resolve_vault_path
+
+        vault = tmp_path / "vault"
+        (vault / "Vicaya").mkdir(parents=True)
+        note = vault / "Vicaya" / "note.md"
+        note.write_text("# note\n", encoding="utf-8")
+        monkeypatch.setenv("VICAYA_VAULT_PATH", str(vault))
+        monkeypatch.chdir(tmp_path)
+
+        assert resolve_vault_path("Vicaya/note.md") == note
+
+    def test_absolute_path_is_used_as_given(self, tmp_path, monkeypatch):
+        from tools._common import resolve_vault_path
+
+        note = tmp_path / "note.md"
+        note.write_text("# note\n", encoding="utf-8")
+        monkeypatch.setenv("VICAYA_VAULT_PATH", str(tmp_path / "elsewhere"))
+
+        assert resolve_vault_path(str(note)) == note
+
+    def test_missing_path_returned_unchanged_for_caller_to_report(
+        self, tmp_path, monkeypatch
+    ):
+        from tools._common import resolve_vault_path
+
+        monkeypatch.setenv("VICAYA_VAULT_PATH", str(tmp_path))
+        assert resolve_vault_path("Vicaya/absent.md") == Path("Vicaya/absent.md")
+
+    def test_check_citation_shape_accepts_vault_relative_path(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        import tools.research_sources as rs
+
+        vault = tmp_path / "vault"
+        (vault / "Vicaya").mkdir(parents=True)
+        note = vault / "Vicaya" / "note.md"
+        note.write_text("# note\n\nNo citations here.\n", encoding="utf-8")
+        monkeypatch.setenv("VICAYA_VAULT_PATH", str(vault))
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["research_sources.py", "check-citation-shape", "Vicaya/note.md"],
+        )
+
+        assert rs._cli() == 0
+        assert "note not found" not in capsys.readouterr().out
+
+    def test_check_citation_shape_missing_note_hints_at_path_forms(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        import tools.research_sources as rs
+
+        monkeypatch.setenv("VICAYA_VAULT_PATH", str(tmp_path))
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["research_sources.py", "check-citation-shape", "Vicaya/absent.md"],
+        )
+
+        assert rs._cli() == 2
+        out = capsys.readouterr().out
+        assert "note not found" in out
+        assert "VICAYA_VAULT_PATH" in out
+
+
 class TestLookupToolsQuietFlag:
     # Regression for issue #91: uniform pinned-prefix call templates append
     # --quiet to every helper call, but the lookup/verify tools' parsers
@@ -748,6 +826,23 @@ class TestLookupToolsQuietFlag:
         )
         assert rs._cli() == 0
         assert "DN 31" in capsys.readouterr().out
+
+    def test_library_folders_check_accepts_quiet_flag(self, monkeypatch, capsys):
+        # Regression for issue #104: #91's audit missed this subcommand, whose
+        # parser took no arguments at all, so a uniform prefixed call template
+        # still hit an argparse error on it.
+        import tools.research_sources as rs
+
+        monkeypatch.setattr(
+            rs,
+            "_load_library_folders_module",
+            lambda: MagicMock(check=MagicMock(return_value={"status": "ok"})),
+        )
+        monkeypatch.setattr(
+            sys, "argv", ["research_sources.py", "library-folders-check", "--quiet"]
+        )
+        assert rs._cli() == 0
+        assert "ok" in capsys.readouterr().out
 
     def test_lookup_book_accepts_quiet_flag(self, monkeypatch, capsys):
         import tools.research_sources as rs
