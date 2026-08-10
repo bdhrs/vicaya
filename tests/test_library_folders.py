@@ -502,6 +502,54 @@ def test_exists_probe_reports_real_answers():
     assert library_folders._exists_probe(Path("/no/such/path"), timeout=5) is False
 
 
+class _ErroringPath:
+    def __init__(self, exc: Exception) -> None:
+        self.exc = exc
+
+    def exists(self) -> bool:
+        raise self.exc
+
+
+def test_exists_probe_separates_missing_file_from_unhappy_volume():
+    # A missing file is absent; EACCES/EIO on a flaky mount is unknown. The
+    # NFS PermissionError several runs hit must not read as "book deleted".
+    missing = cast(Path, _ErroringPath(FileNotFoundError()))
+    denied = cast(Path, _ErroringPath(PermissionError()))
+
+    assert library_folders._exists_probe(missing, timeout=5) is False
+    assert library_folders._exists_probe(denied, timeout=5) is None
+
+
+def test_per_hit_stat_is_bounded_and_demotes_its_root(tmp_path, monkeypatch):
+    # The root probe can pass and the mount drop mid-loop; without a bounded
+    # per-hit stat that is O(hits) hangs again. The first timeout demotes the
+    # root so the rest of the loop stops statting.
+    root = tmp_path / "root"
+    root.mkdir()
+    for i in range(4):
+        (root / f"doc{i}.txt").write_text(f"nibbana target {i}", encoding="utf-8")
+    index = tmp_path / "folder.sqlite"
+    config = LibraryFoldersConfig(roots=[root], index=index)
+    refresh(config)
+
+    calls: list[str] = []
+    real_probe = library_folders._exists_probe
+
+    def _probe(path, timeout):
+        calls.append(str(path))
+        if str(path) == str(root):
+            return real_probe(path, timeout)
+        return None  # every file stat hangs
+
+    monkeypatch.setattr(library_folders, "_exists_probe", _probe)
+    hits = search("nibbana", config)
+
+    assert len(hits) > 1
+    assert all(h["source_available"] is None for h in hits)
+    # One root probe + one file stat; the rest short-circuit on the demoted root.
+    assert len(calls) == 2
+
+
 def test_search_marks_source_unknown_when_volume_unreachable(tmp_path, monkeypatch):
     # An unreachable volume means the file's presence is *unknown*. Reporting
     # False there would read as "the book is gone" rather than "plug the drive
@@ -544,7 +592,11 @@ def test_search_probes_each_root_once_not_each_hit(tmp_path, monkeypatch):
     hits = search("nibbana", config)
 
     assert len(hits) > 1
-    assert len(probes) == 1
+    # The root is probed once, not once per hit — that is what bounds the cost
+    # of an unreachable volume. Healthy per-hit stats still happen (bounded),
+    # so the total is 1 + one per returned hit.
+    assert probes.count(str(root)) == 1
+    assert len(probes) == 1 + len(hits)
 
 
 def test_search_collapses_exact_content_and_text_duplicates(tmp_path):

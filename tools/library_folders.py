@@ -1289,13 +1289,17 @@ def _exists_probe(path: Path, timeout: float) -> bool | None:
     timeout, which no SQLite-level guard can bound — the probe runs in a daemon
     thread so a stuck stat cannot hold up the caller.
     """
-    result: list[bool] = []
+    result: list[bool | None] = []
 
     def _probe() -> None:
         try:
             result.append(path.exists())
-        except OSError:
+        except FileNotFoundError:
             result.append(False)
+        except OSError:
+            # EACCES/EIO/ESTALE on a flaky mount says the volume is unhappy,
+            # not that the file is gone — report unknown rather than absent.
+            result.append(None)
 
     thread = threading.Thread(target=_probe, daemon=True)
     thread.start()
@@ -1324,22 +1328,26 @@ def _source_availability(
 
 
 def _hit_source_available(
-    row: sqlite3.Row, root_reachable: dict[str, bool | None]
+    row: sqlite3.Row, root_reachable: dict[str, bool | None], timeout: float
 ) -> bool | None:
     """Is this hit's file on disk? None when its volume can't be reached.
 
-    Only stats the file when its root answered — an unreachable root means the
-    file's presence is unknown, which is not the same as known-absent.
+    The per-hit stat is bounded too, not just the root probe: a mount that
+    answered a moment ago can drop mid-loop, which would otherwise put us back
+    to blocking once per hit. A hit whose own stat times out demotes its root
+    for the rest of the call, so the worst case stays one timeout per root
+    rather than one per row.
     """
-    reachable = root_reachable.get(str(row["source_root"]))
+    root = str(row["source_root"])
+    reachable = root_reachable.get(root)
     if reachable is None:
         return None
     if reachable is False:
         return False
-    try:
-        return Path(str(row["source_path"])).exists()
-    except OSError:
-        return False
+    available = _exists_probe(Path(str(row["source_path"])), timeout)
+    if available is None:
+        root_reachable[root] = None
+    return available
 
 
 def search(
@@ -1388,7 +1396,9 @@ def search(
                 "duplicate_count": len(duplicate_members) if duplicate_members else 1,
                 "duplicate_paths": [rel for _, _src, rel in duplicate_members],
                 "possible_duplicate_of": weak_hints.get(int(row["id"]), []),
-                "source_available": _hit_source_available(row, root_reachable),
+                "source_available": _hit_source_available(
+                    row, root_reachable, source_timeout
+                ),
             }
         )
         if len(hits) >= limit:
