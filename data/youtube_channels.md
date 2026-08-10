@@ -78,5 +78,8 @@ Prune dead links periodically.
 - Buddha's Wisdom
 - Buddhism Podcast
 - Dalai Lama & Laurence Freeman dialogues
+- Patisota
+- Hillside Hermitage
+- Anukampa Bhikkhuni Project
 
 ## excluded

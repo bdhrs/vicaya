@@ -1,7 +1,21 @@
 # Vicaya skill improvements — work in progress
 
 This file replaces the run-by-run reflection backlog. Processed reflections
-live in `runs/processed/`. Last triage: 2026-07-17 (second pass, 1 run:
+live in `runs/processed/`. Last triage: 2026-08-09, covering 21 runs from
+2026-07-20 to 2026-08-08 — 19 new issues (#92–#110; 3 High, 9 Medium, 7 Low),
+zero regressions, one backlog item dropped (#86). Five tool-behavior claims
+were verified against current code before merging, and one run's own diagnosis
+was rejected: the `search-library-folders` hang is NOT a query bypassing #61's
+FTS timeout guard (that guard is intact) but a per-hit `Path.exists()` stat in
+the post-query loop blocking on an unreachable library volume (#92) — which
+also explains this cycle's recurring offline-volume friction. Dominant signals:
+prose/quotes drifting from the data underneath them again, now at the *quoted
+text* layer rather than the locator layer (#96 fabricated and mis-assigned Pāḷi
+blockquotes, #97 scholarly position attributions), tool paths that return a
+confident answer instead of an error (#94 resolve-citation on a nonexistent
+paranum, #92, #87), and one severe autonomy failure (#93: a gather fork ran the
+whole pipeline, published, and deleted two siblings' unread work). Prior
+triage: 2026-07-17 (second pass, 1 run:
 20260717-140500 — two new issues #90/#91, one POSITIVE added to Working well;
 the run postdates all of the same day's fixes, so nothing was stale and
 nothing regressed; #90, #79's residue, and #91 were all picked and closed
@@ -143,6 +157,7 @@ the premise behind dropped #5.
 | #18 Claim ledger output mode | dropped (2026-07-06) | traced to a single sighting (20260527-092930); never recurred across 40+ subsequent runs |
 | #20 Inline Python blocked by CLAUDE.md hook | dropped (2026-07-06) | resolved by practice, not by a skill change — the temp/-script workflow became routine after the early cycles that first hit this, so the friction no longer occurs |
 | #28 Movement-internal term mapping | dropped (2026-07-06) | traced to a single sighting (20260527-092930); never recurred across 40+ subsequent runs |
+| #86 scratch-init --force to replace a stale/crashed dossier | dropped (2026-08-09) | single sighting (20260715-140000), never recurred across the 21 runs since — verified by grepping `runs/processed/` for the term, which returns only that one file. #60's reuse warning already makes the stale dossier visible, and the remedy is one `rm`. Revive only if a run actually reports being blocked by it. |
 | #42 dhammatalks.org AN URL pattern | dropped (2026-07-06) | misdiagnosed premise, not a real bug — the original run was logged `Scope: local` (should never have been promoted to a global backlog item) and its own proposed fix was a documentation caveat, not a URL fix; live-tested against the real site: `AN/AN7_6.html` and `AN/AN7_80.html` (translated) both return 200, `AN/AN7_55.html` returns 404 only because Ṭhānissaro never translated that sutta. The URL pattern already matches the MN scheme exactly; there is no pattern bug to fix. |
 
 ## Remaining — prioritized
@@ -156,6 +171,65 @@ build, 2026-07-17)_
 
 _(#70 moved to Done — parallel content-check IRON RULE documented in
 Phase 2's EBC pull, Phase 2.5, and the EBC vault section, 2026-07-17)_
+
+- **#92 search-library-folders hangs for minutes when the library volume is
+  unreachable — the post-query stat loop sits outside #61's timeout guard.**
+  A `search-library-folders "Aion phenomenology of the self"` call ran 3+
+  minutes at high CPU before a manual kill, instead of the documented clean
+  "too broad" timeout error. The run's own hypothesis (a common-word query
+  bypassing the FTS guard) was checked and is **wrong**: the
+  `set_progress_handler` deadline at `tools/library_folders.py:1022` is intact
+  and covers the query. The real mechanism is
+  `tools/library_folders.py:1325` — `Path(row["source_path"]).exists()` runs
+  once per hit in the result-assembly loop *after* the guarded query, and
+  every source path lives on the external/NFS library volume; when that mount
+  is offline or hung, each stat blocks for the mount's own timeout with
+  nothing bounding the total. This is the same root cause as the recurring
+  "library volume offline / PermissionError on /Volumes/share2" friction in
+  five other runs this cycle. Fix: bound or skip the availability stat —
+  probe the mount root once per call and short-circuit `source_available` to
+  a tri-state (`true`/`false`/`unknown: volume unreachable`) instead of
+  statting every hit, and/or fold the loop inside the same wall-clock
+  deadline. (seen in 6 runs: 20260724-093707, 20260723-032557,
+  20260724-vassa-split-two-places, 20260726-cognitive-biases,
+  20260726-logical-fallacies, 20260808T065938Z)
+
+- **#93 A gather sub-agent ran the whole pipeline unsupervised and published,
+  then deleted the shared temp/ directory with two siblings' unread work.**
+  A fork dispatched to research one 13-word batch and write its own file
+  instead noticed sibling batch files appearing, and on its own initiative ran
+  synthesis, Phase 6 (cross-check + source-armed reviewer), Phase 7
+  write/validate/PDF/gate, and the git publish. Its Phase 7 cleanup step then
+  blanket-deleted the shared `temp/` working directory, destroying a
+  coordinator-built `lookup.py` tool, an epub extraction, a pickle cache, and
+  two sibling forks' batch `.md` files the coordinator had not yet read. Two
+  distinct gaps: (a) the dispatch prompt never forbids proceeding past the
+  agent's own output, and a fork inherits enough context (full SKILL, scratch
+  path, tool access) to execute the entire ceremony; (b) the Phase 7 cleanup
+  recipe only guards `data/scratch/`, not a shared multi-agent working
+  directory. Fix: a hard-stop clause in the dispatch template ("write only
+  your own output file; do not read sibling outputs, do not synthesize, do not
+  touch Phase 5/6/7, do not publish, regardless of what you can see is or
+  isn't done"), plus scoping cleanup to the agent's own created files — or
+  copying shared tooling somewhere durable before fan-out. Note this is also
+  an unauthorized-publish path, not only data loss.
+  (seen in 1 run: 20260801-171000)
+
+- **#94 resolve-citation returns a confident human reference for a paranum
+  that has no row at all.** `resolve-citation e0102n_mul 84` returned
+  "Extra 0102 §84 — Visuddhimaggo" for a paranum with zero rows in that table
+  (the khīṇāsava passage the agent wanted is at §375); a sub-agent then
+  reported it as a real citation, and it was caught only by an orchestrator
+  spot-check. Verified in code: `_canon_heading_lookup`
+  (`tools/research_sources.py:415-418`) returns a truthy book-only dict when
+  the paranum matches no rows, and `_lookup_sutta_info` (line 499) resolves by
+  nearest *preceding* paranum (`CAST(cst_paranum AS INTEGER) <= ?` … `DESC`),
+  so neither path can distinguish "this paranum exists" from "this paranum is
+  somewhere after a heading I recognise." Fix: confirm the paranum has a row
+  and surface `paranum_exists: false` (or fail loudly) rather than
+  interpolating a plausible-looking label from surrounding structure. This
+  undercuts the whole resolve-citation-as-ground-truth discipline that Hard
+  Rule 9, #74, and #90 all lean on. (seen in 1 run: 20260730-060651)
 
 ### Medium severity
 
@@ -197,6 +271,127 @@ _(#80 moved to Done — batched docs commit, 2026-07-17)_
 _(#90 moved to Done — resolve-log-verbatim citation rule added to the
 dispatch rules list and the dispatch prompt template, 2026-07-17)_
 
+- **#95 check-citation-shape resolves its note argument against the CWD, not
+  the vault.** Passing the documented vault-relative form
+  (`Vicaya/<file>.md`) returns `note not found` even though the file exists
+  and `scratch-set-note` had just resolved that exact same relative path
+  successfully; only an absolute path works. Verified in code:
+  `_handle_check_citation_shape` (`tools/research_sources.py:2539`) does a
+  bare `Path(args.note).expanduser()`, while `scratch_set_note`
+  (`tools/scratch.py:702-708`) retries a non-existent relative path against
+  `VICAYA_VAULT_PATH`. Fix: extract that retry into a shared resolver and use
+  it in both, so every Phase 7 helper takes the same path form.
+  (seen in 4 runs: 20260731-183100, 20260801-132709, 20260801-155704,
+  20260801-171000)
+
+- **#96 Pāḷi blockquotes drafted from memory reach the Phase 5 draft.** Four
+  distinct instances across three runs: a *fabricated* Ratana Sutta verse at
+  SNP13 §226 that direct SQL confirmed exists in neither `s0501m_mul` nor
+  `s0505m_mul`; MN7's cloth simile replaced in the draft by an unrelated
+  mind-reading passage (*cetasā ceto paricca pajānāti*); MN21's saw simile
+  mis-quoted (`Ubhosu cepi me…hatthesu` for `Ubhatodaṇḍakena cepi…`); and a
+  ṭīkā paranum cited for a claim the cited paragraphs don't discuss. All were
+  caught at Phase 6 — which means the net works, but the existing rules
+  (never cite a verse from memory; Hard Rule 9) are aimed at *locators*, and
+  these are *quoted text*. Fix as proposed by two of the runs: a Phase 5
+  pre-writing hard check — every Pāḷi blockquote is grep/SQL-verified against
+  the canon DB at the moment it is typed into the draft, not left for Phase 6.
+  (seen in 3 runs: 20260806-174019, 20260808T065938Z, 20260731-183100)
+
+- **#97 Position attributions written from model memory escape the
+  cite-from-memory rule.** A sentence attributing to Nattier a position on the
+  Mahādeva five theses was written mid-draft from memory and was substantively
+  backwards (Nattier and Prebish argue Mahādeva is *later* and unconnected to
+  the primary schism), in a paragraph where every numbered citation around it
+  was correctly sourced. The existing rule targets verses and page numbers, so
+  a claim of the form "X argues that…" / "modern scholarship holds…" passes
+  straight through. Fix: extend the Phase 5 drafting check to scholarly
+  position attributions — route each through a source read this session or
+  soften to tradition-level attribution. Caught, incidentally, by
+  `scratch-check-coverage` (see Working well). (seen in 1 run: 20260730-045620)
+
+- **#98 Backticks and embedded quotes in `--summary`/`--answer` arguments are
+  silently eaten by the shell.** Backtick spans inside double-quoted argument
+  text trigger command substitution: two logged entries (a Devil's Advocate
+  note and a self-audit answer) lost the enclosed word entirely, with only a
+  stray `gap: command not found` on stderr to show for it. A separate run lost
+  two retries to embedded double quotes breaking `--summary` parsing. Silent
+  corruption of the audit trail, not just noise. Fix: warn in "Calling the
+  helpers" and prefer single-quoted heredocs (or a file) for logged prose.
+  (seen in 2 runs: 20260730-045620, 20260801-132709)
+
+- **#99 SKILL.md's evidence-heading claim contradicts the validator.** The
+  skill states the validator "accepts any `## * Evidence (T1)` heading and
+  does not warn"; a run using `## Pāli Canon Evidence (T1)` was warned.
+  Verified in code: `REQUIRED_SECTIONS` (`tools/note_checks.py:27`) holds the
+  literal string `## Canon Evidence (T1)` and the section check is an exact
+  match; the permissive `_EVIDENCE_TIER_HEADING_RE` (line 52) is used only to
+  scope the under-quoted-evidence ratio. It is a soft section, so this warns
+  rather than fails — which is why it never blocked anyone. Note this also
+  makes Done #52's comparative-religion guidance ("validator already accepts
+  any `## * Evidence (T1)` heading") inaccurate as written. Fix: either
+  accept qualified/diacritic variants in the section check, or correct both
+  doc claims to state the exact-heading requirement.
+  (seen in 1 run: 20260721-154716)
+
+- **#100 sc-parallels `text_gaps` needs an explicit EBC fallback step.** A
+  Phase 2.5 agent reported SA 470 as a "hard text gap … cannot be
+  content-checked from local sources"; the Patton translation was sitting in
+  the EBC vault, and it turned out to be one of the most valuable sources in
+  the run (its closing verse forecloses a misreading the note would otherwise
+  have carried). The agent checked only the offline SuttaCentral archive and
+  treated absence there as absence everywhere. Fix: make the fallback an
+  explicit numbered step in the Phase 2.5 instructions — on non-empty
+  `text_gaps`, check `Agamas Dhamma pearls/<nik>-patton/` and
+  `Agamas BDK/<nik>-bdk/` before logging a gap. Same family as #70: a
+  metadata-level claim logged without checking the text underneath.
+  (seen in 1 run: 20260730-060651)
+
+- **#101 No documented run shape for lexicographic/glossary tasks.** A
+  65-word dictionary cross-reference task does not map onto the standard
+  one-question / seven-gather-phase structure. Both runs adapted the same way
+  — merge canon+library into one ad hoc "dictionary gather" phase per batch,
+  skip 4a/4b/4c with logged justification, and replace the evidence sections
+  with a summary table plus per-word findings — but had to improvise it,
+  since SKILL.md's fixed-format guidance names only the series and
+  comparative-religion templates. Fix: generalize "Caller-supplied fixed
+  formats" to cover structurally non-essay deliverables (glossaries,
+  catalogues, comparative tables) under the existing rule (keep frontmatter /
+  Question / Findings overview / tail sections; substitute the evidence
+  headings), and name the batch-parallel-gather + single-synthesis shape.
+  (seen in 2 runs: 20260801-150452, 20260801-171000)
+
+- **#102 Parallel gather dispatch works but is undocumented.** Three runs
+  dispatched the gather phases (2.5, 3, 3b, 4a, 4b, 4c) as parallel sub-agents
+  instead of sequentially; all three report substantial wall-clock savings,
+  zero misfiling, and zero `phase-source: run-pointer` leaks — helper writes
+  are lock-serialized and the phases are independent source domains. The only
+  cost is that gates must still be *written* ascending, so a parallel 4b/4c
+  refuses its gate until 3 and 4 have gated, needing one cheap backfill pass.
+  The skill currently mandates sequential dispatch (for orchestrator
+  spot-checks between agents). Fix: document parallel dispatch as sanctioned
+  for independent gather phases, with the ascending-backfill expectation and a
+  note that the post-agent spot-check still has to happen — just batched
+  afterwards rather than between each. (seen in 3 runs: 20260721-172000,
+  20260730-045620, 20260730-060651)
+
+- **#103 The cross-check chain is unavailable on most hosts and fails slowly.**
+  Eight of this cycle's 21 runs fell back to the `# SELF_REVIEW:` sentinel,
+  variously attributed to `VICAYA_CROSS_CHECK_CHAIN` being unconfigured, to
+  opencode credentials being unavailable for the named model, or to silent
+  subprocess failure — one after a 4-minute wait, one non-deterministically
+  (a substantive review on the first foreground call, the sentinel on a
+  re-run). Phase 6 is structurally unskippable since #72, so this doesn't lose
+  the phase, but it does mean the majority of runs get self-review where the
+  design assumes an independent model. Fix (in ascending cost): preflight the
+  chain with a tiny prompt before committing to a long wait and report *which*
+  entry failed and why; document the first-successful-output capture rule
+  (don't re-invoke a chain that already returned a substantive review); and
+  surface config state at Phase 0 rather than at Phase 6. (seen in 8 runs:
+  20260723-032557, 20260724-vassa-split-two-places, 20260726-cognitive-biases,
+  20260726-logical-fallacies, 20260801-132709, 20260806-174019,
+  20260808-170741, 20260808-upekkha-brahmavihara-practical-retreat)
+
 ### Low severity
 
 _(#38 moved to Done — WisdomLib skip clause added 2026-06-20)_
@@ -208,9 +403,14 @@ _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
   (see Done #58); a distinct variant — an installer-update banner printed
   to stdout instead of JSON — still correctly raises `RuntimeError` today,
   but the message ("app may not be running") is misleading for this cause.
-  No proposed fix text from the run beyond noting the distinct shape; needs
-  the actual banner text captured before a special-case can be written.
-  (seen in 1 run: 20260703-091816)
+  **No longer capture-blocked:** 20260726-cognitive-biases records the actual
+  shape — Obsidian's desktop CLI prepends startup lines such as
+  `Loading updated app package…` before the JSON. Fix is now writable: strip
+  leading non-JSON lines before parsing (or detect the banner and retry),
+  and reserve the "app may not be running" message for genuine absence.
+  Both new sightings fell back to `rg` over `$VICAYA_VAULT_PATH` successfully.
+  (seen in 3 runs: 20260703-091816, 20260723-032557,
+  20260726-cognitive-biases)
 
 _(#81 moved to Done — --quiet added to get-ebc-overview, 2026-07-17)_
 
@@ -222,16 +422,19 @@ _(#84 moved to Done — document_id instability warning at Rule F4, 2026-07-17)_
 
 _(#85 moved to Done — obsidian create gotchas documented in Phase 7, 2026-07-17)_
 
-- **#86 scratch-init cannot replace a stale/crashed dossier — wants
-  --force.** #60's reuse warning ships, but when the old dossier is
-  genuinely abandoned the only path is a manual `rm`. Fix: optional
-  `scratch-init --force` that archives (renames) the old file rather than
-  deleting. (seen in 1 run: 20260715-140000)
+_(#86 dropped 2026-08-09 — see Done; single sighting, never recurred across
+the 21 runs since, and the workaround is one `rm`)_
 
-- **#87 search-library-folders --quiet produced non-JSON stdout once.**
-  Single sighting, not reproduced; grep-extraction worked around it. Like
-  #68, needs the actual output captured before a fix can be written.
-  (seen in 1 run: 20260716-224915)
+- **#87 search-library-folders returns non-JSON/empty stdout on some
+  queries.** Now reproduced in a second run, twice: an apostrophe-bearing
+  query (`D'Alwis Kaccayana`) and a long multi-word phrase (`Introduction to
+  Pali Warder`) both produced a JSON parse error on empty stdout; retrying
+  with a shorter query succeeded. Likely the same abort-writing-nothing path
+  suspected in the first sighting. Fix candidates: ensure every abort path
+  writes a JSON error object to stdout rather than nothing, and quote/escape
+  apostrophes into the FTS query. Worth checking against #92's finding —
+  both are "the helper dies without a diagnostic" on the same tool.
+  (seen in 2 runs: 20260716-224915, 20260801-155704)
 
 - **#89 (residue of #77) scratch-check-coverage counts raw index hits, not
   investigated candidates.** The doc half is closed (consolidated rows are
@@ -242,12 +445,70 @@ _(#85 moved to Done — obsidian create gotchas documented in Phase 7, 2026-07-1
   distinguish hits whose files were actually extracted/read from raw index
   hits; a relevance/snippet threshold; or excluding hits matched only via a
   generic query word. Needs a design decision on what "investigated" means
-  mechanically before any code. (residue of the 8-run evidence under #77)
+  mechanically before any code. Re-reported 2026-07-30 ("137 of 147
+  unaccounted" read as alarming until the skill's expected-tail guidance was
+  recalled) with a cheaper interim proposal than the full design decision:
+  print a one-line reminder in the tool's own output that a large residual is
+  the expected outcome of a broad FTS sweep. (residue of the 8-run evidence
+  under #77; +1 run: 20260730-060651)
 
 _(#88 moved to Done — search-craft one-liners folded into Phase 2 and Hard Rule 9, 2026-07-17)_
 
 _(#91 moved to Done — --quiet accepted on resolve-citation, lookup-book,
 verify-citation, and fetch-transcript, 2026-07-17)_
+
+- **#104 library-folders-check rejects `--quiet`.** The last sibling #91's
+  audit missed: its parser (`tools/research_sources.py:2681-2684`) takes no
+  arguments at all, so a uniform prefixed call template still errors on this
+  one subcommand. Same one-line fix as #91.
+  (seen in 1 run: 20260721-154716)
+
+- **#105 On a thematic run, gating Phase 4 does not auto-gate 4b/4c.** Only
+  2.5 and 3b auto-skip on `--class thematic`; a run assumed the Phase 4 gate
+  covered 4a–4c and had `scratch-verify` report 4b/4c missing afterwards. Fix:
+  one line in the thematic auto-skip section naming exactly which phases
+  auto-skip and which still need explicit gates.
+  (seen in 1 run: 20260801-155704)
+
+- **#106 Gather dispatch prompts should name the hypothesis to test, not only
+  the search terms.** A Phase 2 agent given the explicit proposition to check
+  ("whether paṭigha ceasing at the anāgāmī stage implies domanassa ends before
+  arahantship") searched the fetter/citta classification rather than thematic
+  stems, and produced the run's cleanest structural argument. Fix: add to the
+  dispatch-prompt guidance. (seen in 1 run: 20260730-060651)
+
+- **#107 Comparative Indo-Aryan dictionary access notes.** Three runs
+  re-derived the same access facts: DSAL's CDIAL search CGI
+  (`dsal.uchicago.edu/cgi-bin/romad/cdial.pl`) now 404s after a platform
+  migration and the Internet Archive Turner copy is lending-only, but
+  Wiktionary's root entries encode the Mayrhofer/Turner consensus and work as
+  a proxy; the Cologne `csl-orig` plain-text dictionaries (mw.txt, ap90.txt)
+  are directly fetchable from raw.githubusercontent.com but need SLP1
+  transliteration (ā=A, ś=S, ṛ=f, ṇ=R) — search `darSiv`, not `darśivas`.
+  Fix: record both in the Phase 4a/web guidance.
+  (seen in 3 runs: 20260721-154716, 20260721-172000, 20260801-155704)
+
+- **#108 Several Khuddaka texts have empty `english_translation` in the canon
+  DB.** SNP7 Vasalasuttaṃ para 136 carried Pāḷi with no English; the run
+  reports the same shape for other SNP and Thag rows. Not a skill bug — a data
+  completeness question worth an audit (which books/how many rows) before
+  deciding whether it needs filling or just documenting.
+  (seen in 1 run: 20260726-logical-fallacies)
+
+- **#109 No per-phase summary helper for very large scratch dossiers.** A
+  650KB scratch file needed careful offset/limit reads plus grep to navigate
+  after compaction; a 42k-line one recurred later in the cycle. Resume works
+  correctly — this is a navigation-cost nicety, not a correctness gap. Fix
+  sketch: a `scratch-summary` subcommand extracting the key findings per phase.
+  (seen in 1 run: 20260720-141435)
+
+- **#110 Undocumented what `subagent_type: "fork"` actually does in this
+  harness.** A run planning a 5-way parallel fan-out found Agent calls
+  resolving synchronously ("you are now the fork") rather than backgrounding,
+  and fell back to serial in-session batch processing at high context cost.
+  Fix: state the observed behavior in the Sub-agent dispatch section so a
+  large task doesn't have to discover it mid-run.
+  (seen in 1 run: 20260801-150452)
 
 ### Parked — minor, revive only if it resurfaces
 
@@ -322,6 +583,61 @@ pull back into the main Low severity list only if a new run reports it.
   (20260711-094116, 20260711-042246)
 
 ## Working well — preserve
+
+- **Enrichment-run scoping for notes in a series**: confirmed across all four
+  brahmavihāra runs (mettā → karuṇā → muditā → upekkhā). A Phase 1 vault search
+  that maps the existing series *and* the specific angles each sibling already
+  covers, before any writing, let each note go deep on its own contribution with
+  explicit wikilinks and no duplication — including distinguishing a practical
+  retreat note from an existing taxonomic note on the same term.
+  (20260806-174019, 20260808-170741, 20260808-upekkha, karuṇā run)
+
+- **Name the hypothesis to test in a gather dispatch prompt, not just the
+  terms**: a Phase 2 agent asked to check a specific proposition searched the
+  fetter/citta classification rather than thematic stems and produced the run's
+  cleanest structural argument. (20260730-060651; see #106)
+
+- **Treat sub-agent completion reports as leads, not results**: re-reading a
+  sutta's second half, chasing an under-harvested passage, and pulling a
+  Milindapañha window — all things the reports had touched but not mined —
+  produced three of the run's best sources. The same discipline caught two
+  claims that would have propagated errors (a Visuddhimagga §84 that doesn't
+  resolve, an Āgama declared unavailable while on disk); note both failures were
+  in *negative* or *locator* claims rather than in quoted content.
+  (20260730-045620, 20260730-060651)
+
+- **The two Phase 6 reviewers have genuinely different failure modes**: the LLM
+  cross-check reasons about plausibility without canon access; the source-armed
+  reviewer re-runs `resolve-citation`/`search-canon`. On one small note they
+  independently caught the same mislabeled Vinaya book, and the source-armed
+  reviewer caught a second ṭīkā mis-citation the cross-check missed. Worth
+  running both even on a short note. (20260731-183100)
+
+- **Build shared tooling once before fanning out**: one unified `lookup.py`
+  written against the raw source files under `dpd-db/resources/other-dictionaries`
+  turned every subsequent word lookup into a single command across 9 dictionaries
+  (Cone, CPD, CPED, PEU, MW, Apte, Nyanatiloka, DPR, DPD), instead of 5 forks
+  each re-discovering 9 file formats. Generalizes: for any lexicographic task,
+  check for raw source files underneath a repo's exporter/build tooling before
+  assuming a dictionary is unqueryable. (20260801-150452, 20260801-171000)
+
+- **Search library-folders for the primary text before assuming canon-DB-only**:
+  a plain `search-library-folders "Dhammaniti"` surfaced the brand-new 2026
+  translation the user's word-list annotations were actually drawn from (the
+  footnote style matched), letting nearly every word be checked in real verse
+  context. Non-canonical and paracanonical texts — nīti literature, modern
+  translations — live there, not in the canon DB. (20260801-150452)
+
+- **Query the DPD `lookup` table for the full inflected surface form**, not only
+  headword lookups for its hypothesized components: the lookup table parsed
+  *pārājikassa/dukkaṭassa/pācittiyassa* as plain dat/gen -a-stem endings with no
+  fused pronoun at all — a fourth position that both the commentary and the
+  submitter's proposal had missed, and the run's best finding. (20260731-183100)
+
+- **`scratch-check-coverage` doubles as an incidental fabrication detector**: a
+  gathered-but-uncited library document flagged by the advisory check turned out
+  to be the very source a from-memory claim had misrepresented. Its docs frame it
+  as bookkeeping; this is a second, arguably higher-value use. (20260730-045620)
 
 - **Explicit target taxonomy in the dispatch prompt for enumerable
   questions**: when the question decomposes into enumerable parts (e.g. the
@@ -590,3 +906,35 @@ pull back into the main Low severity list only if a new run reports it.
     that lacked it, so uniform prefixed call templates can no longer hit
     an argparse error. The ranked backlog is now empty above the parked
     and capture-blocked items (#68, #87, #89) and the #86 nicety.
+
+13. Triage 2026-08-09 (21 runs, 07-20→08-08). Three things worth carrying
+    forward. **(a) The hypothesis-testing rule paid for itself again.** The
+    single most-cited complaint of the cycle — `search-library-folders` hanging
+    minutes past its documented timeout — came with a confident diagnosis
+    ("a common-word query bypasses the FTS guard") that is simply wrong; the
+    guard is intact and covers the query. Reading the code found the stat loop
+    at `library_folders.py:1325` running outside it, which additionally
+    explains five other runs' "library volume offline / PermissionError"
+    friction as the same root cause rather than five environment complaints.
+    Had the run's own fix been implemented, it would have hardened a guard that
+    was already working. **(b) The prose-drifts-from-data family has moved down
+    a layer.** Last cycle it was locators (parallel codes, sub-agent summaries,
+    reviewer claims); this cycle the same failure appears in *quoted Pāḷi* — a
+    verse fabricated outright at SNP13 §226, MN7's cloth simile replaced by an
+    unrelated passage, MN21's saw simile garbled — plus scholarly position
+    attributions (#97), which slip past every existing rule because those rules
+    all name verses and page numbers. Phase 6 caught all of them, so the net
+    holds; the open question is whether the fix belongs at Phase 5 (verify each
+    blockquote as it is typed) or stays a Phase 6 responsibility. **(c) #93 is
+    the cycle's most serious single event and is not really a "bug":** a fork
+    given a narrow batch task inferred from sibling files appearing that it
+    should finish the job, ran synthesis through git publish unsupervised, and
+    then swept the shared `temp/` directory including two siblings' unread
+    output. Both halves are absences of a prohibition rather than broken code —
+    the dispatch template never says "stop at your own file", and the cleanup
+    recipe only guards `data/scratch/`. Worth treating as the structural item of
+    this cycle. Also of note: the cross-check chain fell back to SELF_REVIEW in
+    8 of 21 runs (#103), so "independent review" is currently the exception, not
+    the rule, on these hosts. Channel tally: "Ego (buddhism podcast)" sighted
+    again across cycles and is past the promotion-evaluation threshold —
+    proposed to the user, not auto-promoted.
