@@ -2528,13 +2528,47 @@ def _cli() -> int:
     def _slug_scratch(args):
         return _scratch_path(args.slug) if args.slug else None
 
+    def _read_text_arg(inline: str | None, path: Path | None) -> str | None:
+        """Prefer file/stdin text over an inline shell argument.
+
+        `-` reads stdin. The file form is the only channel the shell cannot
+        mangle: an unquoted backtick span inside a double-quoted --summary is
+        command-substituted away before the process ever sees it (issue #98).
+        """
+        if path is None:
+            return inline
+        if str(path) == "-":
+            return sys.stdin.read()
+        return path.read_text(encoding="utf-8")
+
+    def _shell_mangled_warning(text: str | None) -> str | None:
+        """Flag text that the shell probably ate part of.
+
+        A matched backtick pair is substituted away leaving no trace, so the
+        only detectable residue is an odd backtick count — one span consumed
+        while another survived. Advisory: a lone backtick can be legitimate.
+        """
+        if text and text.count("`") % 2 == 1:
+            return (
+                "text contains an unpaired backtick — if you passed it inside "
+                "double quotes, the shell may have command-substituted part of "
+                "it away and silently dropped a word. Check the logged entry, "
+                "and prefer --summary-file/--answer-file or single quotes."
+            )
+        return None
+
     def _handle_scratch_log(args):
+        try:
+            summary = _read_text_arg(args.summary, args.summary_file)
+        except OSError as e:
+            _dump({"ok": False, "error": f"could not read --summary-file: {e}"})
+            return _done(exit_code=1, autolog=False)
         try:
             path = scratch_log(
                 args.phase,
                 args.tool,
                 args=args.rest or None,
-                summary=args.summary,
+                summary=summary,
                 results_file=args.results,
                 hits=args.hits,
                 scratch=_slug_scratch(args),
@@ -2542,7 +2576,16 @@ def _cli() -> int:
         except (FileNotFoundError, ValueError) as e:
             _dump({"ok": False, "error": str(e)})
             return _done(exit_code=1, autolog=False)
-        _dump({"ok": True, "path": str(path), "phase": args.phase, "tool": args.tool})
+        payload = {
+            "ok": True,
+            "path": str(path),
+            "phase": args.phase,
+            "tool": args.tool,
+        }
+        warning = _shell_mangled_warning(summary)
+        if warning:
+            payload["warning"] = warning
+        _dump(payload)
         return _done()
 
     def _handle_scratch_gate(args):
@@ -2561,12 +2604,20 @@ def _cli() -> int:
         return _done(exit_code=0 if result.get("ok") else 1, autolog=False)
 
     def _handle_scratch_self_audit(args):
+        answers = args.answer
+        if args.answer_file:
+            try:
+                answers = [_read_text_arg(None, p) or "" for p in args.answer_file]
+            except OSError as e:
+                _dump({"ok": False, "error": f"could not read --answer-file: {e}"})
+                return _done(exit_code=1, autolog=False)
         try:
-            result = scratch_self_audit(
-                answers=args.answer, scratch=_slug_scratch(args)
-            )
+            result = scratch_self_audit(answers=answers, scratch=_slug_scratch(args))
         except (FileNotFoundError, ValueError) as e:
             result = {"ok": False, "error": str(e)}
+        warnings = [w for a in (answers or []) if (w := _shell_mangled_warning(a))]
+        if warnings and result.get("ok"):
+            result["warning"] = warnings[0]
         _dump(result)
         return _done(exit_code=0 if result.get("ok") else 1, autolog=False)
 
@@ -2876,6 +2927,15 @@ def _cli() -> int:
     )
     psl.add_argument("--summary", default=None)
     psl.add_argument(
+        "--summary-file",
+        default=None,
+        type=Path,
+        help="Read the summary from this file (or '-' for stdin) instead of "
+        "--summary. Use for any prose containing backticks or quotes: inside "
+        "a double-quoted --summary the shell command-substitutes a backtick "
+        "span away and silently drops the enclosed word.",
+    )
+    psl.add_argument(
         "--results",
         default=None,
         type=Path,
@@ -2924,6 +2984,16 @@ def _cli() -> int:
         metavar="TEXT",
         help="One answer per checklist question, in order; run with "
         "no --answer flags to print the questions.",
+    )
+    psa.add_argument(
+        "--answer-file",
+        action="append",
+        default=None,
+        type=Path,
+        metavar="PATH",
+        help="Read one answer per file, in order (or '-' for stdin), instead "
+        "of --answer. Shell-safe: a backtick span inside a double-quoted "
+        "--answer is substituted away and silently loses a word.",
     )
     psa.add_argument("--slug", default=None, help=_SLUG_HELP)
     psa.set_defaults(func=_handle_scratch_self_audit)

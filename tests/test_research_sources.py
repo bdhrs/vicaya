@@ -730,6 +730,143 @@ class TestGetEbcOverviewQuietFlag:
         assert rs._cli() == 1  # clean not-found exit, not an argparse error
 
 
+class TestShellSafeLoggedText:
+    """#98 — logged prose must survive the shell.
+
+    Backticks inside a double-quoted --summary/--answer are command-substituted
+    before the process sees the argument, silently deleting the enclosed word
+    from the audit trail. Two runs lost logged content this way.
+    """
+
+    def test_bash_eats_backticks_in_double_quotes(self):
+        # The failure mode itself, through a real shell: the word vanishes.
+        out = subprocess.run(
+            ['printf %s "a `gap` b"'],
+            shell=True,
+            capture_output=True,
+            text=True,
+        )
+        assert "gap" not in out.stdout
+        assert out.stdout == "a  b"
+
+    def test_single_quotes_and_files_preserve_backticks(self, tmp_path):
+        out = subprocess.run(
+            ["printf %s 'a `gap` b'"], shell=True, capture_output=True, text=True
+        )
+        assert out.stdout == "a `gap` b"
+        f = tmp_path / "summary.txt"
+        f.write_text("a `gap` b", encoding="utf-8")
+        assert f.read_text(encoding="utf-8") == "a `gap` b"
+
+    def test_scratch_log_reads_summary_from_file(self, tmp_path, monkeypatch):
+        import tools.research_sources as rs
+
+        captured = {}
+
+        def _fake_log(*_a, **kw):
+            captured.update(kw)
+            return tmp_path / "scratch.md"
+
+        monkeypatch.setattr(rs, "scratch_log", _fake_log)
+        summary = tmp_path / "summary.txt"
+        summary.write_text("kept the `backticked` word", encoding="utf-8")
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "research_sources.py",
+                "scratch-log",
+                "2",
+                "search-canon",
+                "--summary-file",
+                str(summary),
+            ],
+        )
+
+        assert rs._cli() == 0
+        assert captured["summary"] == "kept the `backticked` word"
+
+    def test_scratch_log_warns_on_unpaired_backtick(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        # An odd backtick count is the only detectable residue of a span the
+        # shell already consumed — a matched pair vanishes without a trace.
+        import tools.research_sources as rs
+
+        monkeypatch.setattr(rs, "scratch_log", lambda *_a, **_kw: tmp_path / "s.md")
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "research_sources.py",
+                "scratch-log",
+                "2",
+                "search-canon",
+                "--summary",
+                "one ` survived, another was eaten",
+            ],
+        )
+
+        assert rs._cli() == 0
+        assert "unpaired backtick" in capsys.readouterr().out
+
+    def test_scratch_log_quiet_when_backticks_balanced(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        import tools.research_sources as rs
+
+        monkeypatch.setattr(rs, "scratch_log", lambda *_a, **_kw: tmp_path / "s.md")
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "research_sources.py",
+                "scratch-log",
+                "2",
+                "search-canon",
+                "--summary",
+                "a `balanced` span is fine",
+            ],
+        )
+
+        assert rs._cli() == 0
+        assert "unpaired backtick" not in capsys.readouterr().out
+
+    def test_self_audit_reads_answers_from_files(self, tmp_path, monkeypatch):
+        import tools.research_sources as rs
+
+        captured = {}
+
+        def _fake_audit(**kw):
+            captured.update(kw)
+            return {"ok": True}
+
+        monkeypatch.setattr(rs, "scratch_self_audit", _fake_audit)
+        files = []
+        for i in range(2):
+            f = tmp_path / f"a{i}.txt"
+            f.write_text(f"answer {i} with `code`", encoding="utf-8")
+            files.append(str(f))
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "research_sources.py",
+                "scratch-self-audit",
+                "--answer-file",
+                files[0],
+                "--answer-file",
+                files[1],
+            ],
+        )
+
+        assert rs._cli() == 0
+        assert captured["answers"] == [
+            "answer 0 with `code`",
+            "answer 1 with `code`",
+        ]
+
+
 class TestVaultPathResolution:
     """#95 — every vault-facing command must accept the same path form.
 

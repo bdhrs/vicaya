@@ -97,6 +97,8 @@ It prints all `VICAYA_*` values as shell-quoted `export` lines with `~` expanded
 
 **`jq` may be absent on this machine** (same caveat as `rg` — it's a Claude Code wrapper, not always a real binary). To slice helper JSON, pipe to `uv run python3 -c "import json,sys; …"`, not `jq`.
 
+**Never put backticks inside a double-quoted `--summary` or `--answer`.** The shell command-substitutes the span *before* the helper runs, so the enclosed word is deleted from the logged entry and all you get is a stray `gap: command not found` on stderr — the dossier looks fine and is quietly missing a word. Two runs lost logged content this way (issue #98). Markdown prose is exactly the text most likely to carry backticks, so this is easy to hit. Use `--summary-file <path>` / `--answer-file <path>` (both accept `-` for stdin), which the shell cannot touch, or single-quote the argument. If the helper reports a `warning` about an unpaired backtick, part of your text was probably already eaten — re-check the entry it just wrote.
+
 Run from the project root:
 
 ```bash
@@ -2317,6 +2319,8 @@ uv run tools/research_sources.py scratch-self-audit \
   --answer "<a1>" --answer "<a2>" --answer "<a3>" \
   --answer "<a4>" --answer "<a5>" --answer "<a6>"
 ```
+
+If any answer contains backticks, pass it as `--answer-file <path>` (one file per answer, in order) instead — a backtick span inside a double-quoted `--answer` is eaten by the shell before the helper sees it, and the recorded answer silently loses a word.
 
 The six questions target the recurring end-of-run failure modes: easy-source
 bias, dropped user seeds, early stopping, artifact-vs-completion confusion,
