@@ -55,6 +55,14 @@ Prune dead links periodically.
 - Yongey Mingyur Rinpoche
 - Ajahn Anan Dhamma
 - Buddhist Society of Western Australia | UC6M_EhnSSdTG_SXUp6IAWmQ
+- Al Jazeera English
+- ThePrint
+- The Quint
+- TibetTV
+- Dalai Lama
+- Karmapa
+- Root Institute for Wisdom Culture
+- Tushita Meditation Centre
 
 ## probationary
 - Clear Mountain Monastery Project
