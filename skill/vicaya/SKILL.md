@@ -2438,6 +2438,15 @@ the vault path (`$VICAYA_VAULT_PATH/Vicaya/`). Obsidian will index it on
 next launch. Tell the user in the final report that they need to open Obsidian to use
 vault search next time.
 
+**Installer-update banners are handled for you** (issue #68). The desktop CLI
+sometimes prepends startup lines ("Loading updated app package…") to its
+output; `search-vault` strips them and parses the JSON underneath, and the
+zero-hit sentinel behind a banner still reads as zero hits. If the helper
+*does* raise "non-JSON output — likely an installer-update banner", the
+banner isn't the ordinary kind: update and restart the Obsidian app once
+(launch it, accept the update, quit, relaunch), then retry — don't spend the
+run fighting it; fall back to `rg` over `$VICAYA_VAULT_PATH` meanwhile.
+
 ## Style notes
 
 - **The note's primary job is to surface sources.** The user wants a research map they can follow themselves — every relevant canon passage, every library book, every credible web source, every Dhamma talk. The Findings section orients them; the Evidence sections are the point. A note with thin evidence and expansive analysis has failed. A note with comprehensive evidence and concise analysis has succeeded.

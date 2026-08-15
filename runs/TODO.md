@@ -186,6 +186,7 @@ the premise behind dropped #5.
 | #86 scratch-init --force to replace a stale/crashed dossier | dropped (2026-08-09) | single sighting (20260715-140000), never recurred across the 21 runs since — verified by grepping `runs/processed/` for the term, which returns only that one file. #60's reuse warning already makes the stale dossier visible, and the remedy is one `rm`. Revive only if a run actually reports being blocked by it. |
 | #42 dhammatalks.org AN URL pattern | dropped (2026-07-06) misdiagnosed premise, not a real bug — the original run was logged `Scope: local` (should never have been promoted to a global backlog item) and its own proposed fix was a documentation caveat, not a URL fix; live-tested against the real site: `AN/AN7_6.html` and `AN/AN7_80.html` (translated) both return 200, `AN/AN7_55.html` returns 404 only because Ṭhānissaro never translated that sutta. The URL pattern already matches the MN scheme exactly; there is no pattern bug to fix. |
 | #93 Gather fork ran the whole pipeline unsupervised, published, deleted siblings' work | done (2026-08-14) | `docs: add hard-stop dispatch SCOPE block and fan-out cleanup rules` — mechanism verified before writing: the per-phase template already carried phase prohibitions, but the incident was a *custom batch-worker fork* (the #101 lexicographic shape) that no template covered, plus a cleanup recipe that legitimately sweeps `temp/<slug>/`. Four coordinated SKILL.md changes: (1) dispatch rules list goes five→six, new rule 6 "Your assignment ends at your own output — finishing the run is never your job" (no sibling-file reads/writes/deletes, no synthesis/5/6/7, no vault write, no publish, no git; sibling files appearing = the fan-out working); (2) the dispatch prompt template gains a literal SCOPE block after `Phase assigned:` carrying the same prohibitions; (3) new "Custom dispatches (batch workers, forks, external-CLI sub-agents) carry the same hard stop" paragraph after the template — every custom dispatch prompt must include the SCOPE block adapted to name the worker's own output file, with the incident named as the unauthorized-publish path; plus two standing fan-out rules: shared tooling and sibling outputs the coordinator still needs live under `data/scratch/<slug>-shared/` (durable, Hard Rule 11), never `temp/` (disposable, swept at Phase 7 exit), and only the orchestrator runs the Phase 7 exit sequence — once, after every worker returned and every output was read; (4) the Phase 7 cleanup block now states orchestrator-only/once-at-the-end and why nothing needed-later may live in `temp/`. Docs-only; all 382 tests pass (1 expected env skip). |
+| #68 residue of #58: Obsidian installer-update banner also produces non-JSON stdout on `search_vault` | done (2026-08-15) | `fix: strip Obsidian update banners from vault search output` — mechanism verified before coding: the banner is prepended to a *successful* (exit 0) CLI run, while a genuinely absent app exits non-zero via the other branch, so the old "app may not be running" message on the non-JSON path was never the right diagnosis. `search_vault` now: (1) treats the zero-hit sentinel behind a banner as zero hits; (2) on JSON-parse failure, extracts the JSON payload between the first `{`/`[` and last `}`/`]` before giving up (banner-tolerant parse); (3) the new no-JSON error names the banner cause and the update-and-restart remedy plus the `rg` fallback, and explicitly says a missing app exits non-zero instead. SKILL.md "When Obsidian isn't running" documents the banner-tolerant behavior and the one-command remedy. 4 regression tests (banner+JSON parses; banner before sentinel → []; noise on both sides parses; pure banner raises naming "banner" and NOT "app may not be running"). All 385 tests pass; ruff + pyright clean. |
 
 ## Remaining — prioritized
 
@@ -314,21 +315,9 @@ _(#38 moved to Done — WisdomLib skip clause added 2026-06-20)_
 _(#51 moved to Done — thematic gate-vs-work clarification added 2026-06-20)_
 _(#52 moved to Done — comparative-religion T1 section documented 2026-06-20)_
 _(resolve-citation shell-loop pitfall moved to Done 2026-06-20)_
-- **#68 residue of #58: Obsidian installer-update banner also produces
-  non-JSON stdout on `search_vault`.** The zero-hit sentinel case is fixed
-  (see Done #58); a distinct variant — an installer-update banner printed
-  to stdout instead of JSON — still correctly raises `RuntimeError` today,
-  but the message ("app may not be running") is misleading for this cause.
-  **No longer capture-blocked:** 20260726-cognitive-biases records the actual
-  shape — Obsidian's desktop CLI prepends startup lines such as
-  `Loading updated app package…` before the JSON — and 20260813-155241
-  reports the banner blocking the CLI for an entire run (all searches via
-  `rg` fallback, note written via direct disk). Fix is now writable: strip
-  leading non-JSON lines before parsing (or detect the banner and retry),
-  and reserve the "app may not be running" message for genuine absence.
-  Both new sightings fell back to `rg` over `$VICAYA_VAULT_PATH` successfully.
-  (seen in 4 runs: 20260703-091816, 20260723-032557,
-  20260726-cognitive-biases, 20260813-155241)
+_(#68 moved to Done — search_vault now strips update banners from CLI
+output, parses the JSON underneath, and its error names the real cause,
+2026-08-15)_
 
 _(#81 moved to Done — --quiet added to get-ebc-overview, 2026-07-17)_
 
@@ -1227,3 +1216,14 @@ list at original severity on a fresh report.
     Baked into skill/vicaya-improve/SKILL.md the same session (Phase 3
     new-item rule, Phase 6 revival semantics, Parked-section description)
     so every future triage applies it by default rather than by memory.
+17. Session 2026-08-15: **#68 picked and closed** (the user's choice from
+    the re-ranked list; #119 was flagged as zero-sighting under the new rule
+    and stays parked unless the user orders it as tooling). The fix honored
+    the machine directive end to end: the mechanism was confirmed in current
+    code (banner rides an exit-0 run; absent app exits non-zero — so the old
+    error message was a misdiagnosis, and #58's sentinel work had left the
+    banner variant one branch away). Test-writing note: a speculative
+    "noise on both sides" case with brackets inside the noise broke the
+    first parser sketch — kept the fix to the reported shape (prepended
+    banners, bracket-free tail) rather than complicating it for input no run
+    has reported.

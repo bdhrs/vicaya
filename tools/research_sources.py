@@ -171,12 +171,35 @@ def search_vault(
     stdout = result.stdout.strip()
     if not stdout or stdout == "No matches found.":
         return []
+    # The zero-hit sentinel can be preceded by an installer-update banner.
+    if stdout.endswith("No matches found."):
+        return []
     try:
         data = json.loads(stdout)
     except json.JSONDecodeError:
-        raise RuntimeError(
-            f"obsidian CLI returned non-JSON (app may not be running): {stdout[:200]}"
-        )
+        # The desktop CLI sometimes prepends installer-update banners or
+        # startup lines ("Loading updated app package…") before the JSON
+        # (issue #68). A genuinely absent app surfaces as a non-zero exit
+        # above, not here — so extract the JSON payload from any noise and
+        # only fail if there is none.
+        starts = [i for i in (stdout.find("{"), stdout.find("[")) if i != -1]
+        ends = [i for i in (stdout.rfind("}"), stdout.rfind("]")) if i != -1]
+        data = None
+        if starts and ends and min(starts) < max(ends):
+            try:
+                data = json.loads(stdout[min(starts) : max(ends) + 1])
+            except json.JSONDecodeError:
+                data = None
+        if data is None:
+            first_line = stdout.splitlines()[0] if stdout.splitlines() else ""
+            raise RuntimeError(
+                "obsidian CLI returned non-JSON output — likely an "
+                "installer-update banner or startup line (first line: "
+                f"{first_line!r}). Update and restart the Obsidian app, or "
+                "fall back to rg over $VICAYA_VAULT_PATH. If the app truly "
+                "isn't running, the CLI exits non-zero instead of printing "
+                "this."
+            )
     hits: list[VaultHit] = []
     # Output shape: list of {file, matches: [{line, text}, ...]}
     if isinstance(data, list):

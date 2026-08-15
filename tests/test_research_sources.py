@@ -2749,6 +2749,58 @@ class TestSearchVaultErrorHandling:
         assert hits[0].snippet == "dukkha arises"
         assert hits[0].line == 3
 
+    def test_update_banner_before_json_still_parses(self, monkeypatch):
+        """Issue #68: installer banner prepended to valid JSON → hits, not an error."""
+        payload = (
+            '[{"file": "Vicaya/test.md", "matches": [{"text": "dukkha", "line": 1}]}]'
+        )
+        stdout = "Loading updated app package…\nUpdated app package loaded.\n" + payload
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            MagicMock(return_value=self._mock_run(stdout)),
+        )
+        hits = search_vault("dukkha")
+        assert len(hits) == 1
+        assert hits[0].path == "Vicaya/test.md"
+
+    def test_noise_on_both_sides_of_json_still_parses(self, monkeypatch):
+        """Issue #68: banner lines before AND plain text after the JSON → hits."""
+        payload = (
+            '[{"file": "Vicaya/a.md", "matches": [{"text": "anicca", "line": 2}]}]'
+        )
+        stdout = "Loading updated app package…\n" + payload + "\nupdated."
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            MagicMock(return_value=self._mock_run(stdout)),
+        )
+        hits = search_vault("anicca")
+        assert len(hits) == 1
+        assert hits[0].snippet == "anicca"
+
+    def test_banner_before_no_matches_sentinel_returns_empty_list(self, monkeypatch):
+        """Issue #68: banner + zero-hit sentinel (no JSON) → [], not an error."""
+        stdout = "Loading updated app package…\nNo matches found."
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            MagicMock(return_value=self._mock_run(stdout)),
+        )
+        assert search_vault("dukkha") == []
+
+    def test_pure_garbage_names_banner_not_missing_app(self, monkeypatch):
+        """Issue #68: no JSON anywhere → error names the banner cause, not 'app may not be running'."""
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            MagicMock(return_value=self._mock_run("Loading updated app package…")),
+        )
+        with pytest.raises(RuntimeError, match="non-JSON") as excinfo:
+            search_vault("dukkha")
+        assert "app may not be running" not in str(excinfo.value)
+        assert "banner" in str(excinfo.value)
+
 
 class TestEnvSubcommand:
     """`env` prints VICAYA_* config as eval-able shell export lines (#37)."""
