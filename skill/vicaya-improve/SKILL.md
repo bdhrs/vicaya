@@ -73,8 +73,14 @@ Then, for each surviving finding, in order:
    run IDs as evidence. If it predates the fix, drop it.
 2. **Matches a Remaining item** → append the run ID to its evidence and
    bump its count.
-3. **New** → add it under the right severity section with the next free
-   issue number.
+3. **New** → give it the next free issue number, then sort by evidence:
+   **2+ runs reported it** → add it under the right severity section.
+   **Exactly 1 run** → **it is not an issue yet**: park it (user rule,
+   2026-08-14 — one run's report is a hypothesis, not a pattern, and this
+   applies to every severity). Add it under `### Parked` in the
+   single-sighting population, recording its would-be severity so a second
+   sighting revives it in the right band. Its evidence line stays
+   `(seen in 1 run: <id>)`.
 
 Every Remaining issue must carry an evidence line:
 `(seen in N runs: <id>, <id>, …)` — list at most 5 IDs, then `+K more`.
@@ -111,8 +117,10 @@ toward recent runs (post-refactor reports count full, older ones less), with
 a tie-break bonus for quick wins (small, self-contained fixes). Issues
 marked `(stale — verify)` rank below everything verified. Items under
 `### Parked` and `### Content-specific guidance` are never ranked or
-presented as pick candidates — they surface again only when a new run
-re-reports them. Present a table:
+presented as pick candidates. A parked single-sighting item surfaces again
+only when a *second, independent* run reports it — at which point pull it
+back into the ranked list at its recorded severity, with both run IDs as
+evidence. Present a table:
 
 | # | Issue | Severity | Runs | Why now |
 
@@ -180,8 +188,9 @@ run any git commands — the user commits):
 ## Style rules for TODO.md
 
 - Keep the existing structure: `## Done` table, `## Remaining — prioritized`
-  with High/Medium/Low subsections, an optional `### Parked` subsection (see
-  below), `## Working well — preserve`, `## Notes for the next session`.
+  with High/Medium/Low subsections, a `### Parked` subsection (two
+  populations: single-sighting findings parked at birth per the Phase 3
+  rule, and dormant items with real historical evidence), `## Working well — preserve`, `## Notes for the next session`.
 - One issue = one bold-numbered paragraph, concrete fix suggestion included
   when the runs propose one.
 - Never delete an issue without moving it to Done or noting why it was
@@ -210,11 +219,15 @@ Remaining item, High through Low, into one of three buckets:
   before trusting the citation — it may have closed since the citing item's
   text was last touched.
 - **Park (move to `### Parked — minor, revive only if it resurfaces`)** —
-  the item has *real historical evidence* (multiple runs, or a clearly
-  described recurring friction, or a standing design direction likely to
-  spawn new concrete instances later) but nothing currently live: demand is
-  dormant (often tied to a specific environment, e.g. macOS-only, that isn't
-  being exercised right now), or every previously-named instance has closed.
+  two populations. First, single-sighting findings parked at creation by
+  the Phase 3 rule (one run's report is a hypothesis, not a pattern) —
+  revive on the second sighting at the recorded severity, nothing more
+  needed. Second, dormant items with *real historical evidence* (multiple
+  runs, or a clearly described recurring friction, or a standing design
+  direction likely to spawn new concrete instances later) but nothing
+  currently live: demand is dormant (often tied to a specific environment,
+  e.g. macOS-only, that isn't being exercised right now), or every
+  previously-named instance has closed.
   Keep a corrected one-line summary — don't carry forward a stale claim just
   because it's shorter to copy than to fix; drop it from Phase 6 ranking
   (Parked items are never presented as pick candidates) until a new run

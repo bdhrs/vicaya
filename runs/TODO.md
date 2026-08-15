@@ -191,6 +191,12 @@ the premise behind dropped #5.
 
 ### High severity
 
+_(2026-08-14 single-sighting rule, per user: an issue reported by one run is
+not an issue yet — it parks until a second run reports it. Parked from this
+section: none; from Medium: #96, #97, #100, #101 keeps 2 runs, #111, #112;
+from Low: #106, #108, #109, #110, #117, #118, #120, #121, #122, #123 —
+see `### Parked`.)_
+
 _(#61 moved to Done — FTS5 search now aborts on a wall-clock timeout instead of hanging, 2026-07-05)_
 
 _(#69 moved to Done — range uids now expand into member uids at index
@@ -249,56 +255,11 @@ dispatch rules list and the dispatch prompt template, 2026-07-17)_
 _(#95 moved to Done — vault-relative paths now resolve through one shared
 resolver used by both commands, 2026-08-10)_
 
-- **#96 Pāḷi blockquotes drafted from memory reach the Phase 5 draft.** Four
-  distinct instances across three runs: a *fabricated* Ratana Sutta verse at
-  SNP13 §226 that direct SQL confirmed exists in neither `s0501m_mul` nor
-  `s0505m_mul`; MN7's cloth simile replaced in the draft by an unrelated
-  mind-reading passage (*cetasā ceto paricca pajānāti*); MN21's saw simile
-  mis-quoted (`Ubhosu cepi me…hatthesu` for `Ubhatodaṇḍakena cepi…`); and a
-  ṭīkā paranum cited for a claim the cited paragraphs don't discuss. All were
-  caught at Phase 6 — which means the net works, but the existing rules
-  (never cite a verse from memory; Hard Rule 9) are aimed at *locators*, and
-  these are *quoted text*. Fix as proposed by two of the runs: a Phase 5
-  pre-writing hard check — every Pāḷi blockquote is grep/SQL-verified against
-  the canon DB at the moment it is typed into the draft, not left for Phase 6.
-  *(Authorship caveat, confirmed by git 2026-08-14: 2 of the 3 sighting runs
-  (20260806-174019, 20260808T065938Z) are SBS-resident, i.e. an outdated
-  checkout whose mistakes may simply be pre-fix code — per the user's
-  2026-08-14 directive, rank on this-machine evidence only, so the live
-  weight is 1 run (20260731-183100, bdhrs) plus the same-family locator
-  instance caught pre-note in 20260812-095506, also bdhrs.)*
-  (seen in 3 runs: 20260806-174019, 20260808T065938Z, 20260731-183100)
-
-- **#97 Position attributions written from model memory escape the
-  cite-from-memory rule.** A sentence attributing to Nattier a position on the
-  Mahādeva five theses was written mid-draft from memory and was substantively
-  backwards (Nattier and Prebish argue Mahādeva is *later* and unconnected to
-  the primary schism), in a paragraph where every numbered citation around it
-  was correctly sourced. The existing rule targets verses and page numbers, so
-  a claim of the form "X argues that…" / "modern scholarship holds…" passes
-  straight through. Fix: extend the Phase 5 drafting check to scholarly
-  position attributions — route each through a source read this session or
-  soften to tradition-level attribution. Caught, incidentally, by
-  `scratch-check-coverage` (see Working well). (seen in 1 run: 20260730-045620)
-
 _(#98 moved to Done — --summary-file/--answer-file give the shell no chance
 to eat logged prose, 2026-08-10)_
 
 _(#99 moved to Done — any (T1)-tagged evidence heading now satisfies the
 required section, 2026-08-10)_
-
-- **#100 sc-parallels `text_gaps` needs an explicit EBC fallback step.** A
-  Phase 2.5 agent reported SA 470 as a "hard text gap … cannot be
-  content-checked from local sources"; the Patton translation was sitting in
-  the EBC vault, and it turned out to be one of the most valuable sources in
-  the run (its closing verse forecloses a misreading the note would otherwise
-  have carried). The agent checked only the offline SuttaCentral archive and
-  treated absence there as absence everywhere. Fix: make the fallback an
-  explicit numbered step in the Phase 2.5 instructions — on non-empty
-  `text_gaps`, check `Agamas Dhamma pearls/<nik>-patton/` and
-  `Agamas BDK/<nik>-bdk/` before logging a gap. Same family as #70: a
-  metadata-level claim logged without checking the text underneath.
-  (seen in 1 run: 20260730-060651)
 
 - **#101 No documented run shape for lexicographic/glossary tasks.** A
   65-word dictionary cross-reference task does not map onto the standard
@@ -346,39 +307,6 @@ required section, 2026-08-10)_
   20260726-cognitive-biases, 20260726-logical-fallacies, 20260801-132709,
   20260806-174019, 20260808-170741, 20260808-upekkha-brahmavihara-
   practical-retreat, 20260814-101028; +1 contrary success: 20260814-052550)
-
-- **#111 Gather citations are verified only after the draft is written.** A
-  thematic teacher-comparison run's Phase 2 agent cited AN6.10 for content
-  that is AN6.9 (*Anussatiṭṭhānasuttaṃ*, s0403m2_mul:9); the off-by-one
-  propagated into two locations of the Phase 5 draft and was caught only at
-  Phase 6 self-review. The existing rules verify a *sample*, not the set:
-  #49 has the orchestrator re-verify the 2–3 highest-priority citations per
-  agent, #90 requires citations to be copied verbatim from a resolve log
-  (which was silent here because the gather agent never resolved this one).
-  Fix as the run proposes: before the Phase 5 draft is written, run
-  `resolve-citation`/`verify-citation` over *every* sutta citation the gather
-  agents produced — off-by-one paranums should fail at gather time, not in
-  Phase 6. Same defect-vs-discipline family as #96, one layer down
-  (locators, not quoted text). *(Evidence caveat: the sighting run is
-  SBS-resident — an outdated checkout per the user — so per the 2026-08-14
-  directive this is ranked only if it reproduces on this machine; #49's
-  sample-only rule exists in the current SKILL.md regardless, so the
-  discipline gap is plausible here too.)* (seen in 1 run: 20260813-155241)
-
-- **#112 resolve-citation answers in CST-internal numbering for the verse
-  books, diverging from conventional citations.** Asked to resolve the
-  Theragāthā row standard scholarship cites as Thag 10.1, resolve-citation
-  returned "TH233 Kāḷudāyittheragāthā" — CST's per-book sutta index, not the
-  chapter.verse form every modern edition and the note's readers use. The
-  reverse direction is already handled (`verify-citation "Thag 10.1"`
-  resolves correctly; SKILL.md tells agents to cite by chapter.verse), but
-  resolve-citation's own label silently produces citations nobody recognises,
-  and in this run it took an independent reviewer re-checking against the
-  bilara text to catch it. Fix: for Thag/Thig/Khp, surface the conventional
-  chapter.verse alongside (or instead of) the internal index, and flag the
-  divergence in the book-code map. Distinct from Done #29 (Thag/Thig/Kp
-  *aliases* in verify-citation) — this is the numbering layer.
-  (seen in 1 run: 20260814-053113)
 
 ### Low severity
 
@@ -462,13 +390,6 @@ _(#104 moved to Done — --quiet accepted, folded into the #95 commit,
   putting them where the agent looks.)
   (seen in 3 runs: 20260801-155704, 20260813-081200, 20260814-053113)
 
-- **#106 Gather dispatch prompts should name the hypothesis to test, not only
-  the search terms.** A Phase 2 agent given the explicit proposition to check
-  ("whether paṭigha ceasing at the anāgāmī stage implies domanassa ends before
-  arahantship") searched the fetter/citta classification rather than thematic
-  stems, and produced the run's cleanest structural argument. Fix: add to the
-  dispatch-prompt guidance. (seen in 1 run: 20260730-060651)
-
 - **#107 Comparative Indo-Aryan dictionary access notes.** Three runs
   re-derived the same access facts: DSAL's CDIAL search CGI
   (`dsal.uchicago.edu/cgi-bin/romad/cdial.pl`) now 404s after a platform
@@ -479,30 +400,6 @@ _(#104 moved to Done — --quiet accepted, folded into the #95 commit,
   transliteration (ā=A, ś=S, ṛ=f, ṇ=R) — search `darSiv`, not `darśivas`.
   Fix: record both in the Phase 4a/web guidance.
   (seen in 3 runs: 20260721-154716, 20260721-172000, 20260801-155704)
-
-- **#108 Several Khuddaka texts have empty `english_translation` in the canon
-  DB.** SNP7 Vasalasuttaṃ para 136 carried Pāḷi with no English; the run
-  reports the same shape for other SNP and Thag rows. Not a skill bug — a data
-  completeness question worth an audit (which books/how many rows) before
-  deciding whether it needs filling or just documenting.
-  *(Verify-first: the reporting run is SBS-resident with an unconfirmable
-  checkout — audit the canon DB on this machine before treating it as a
-  live data gap.)* (seen in 1 run: 20260726-logical-fallacies)
-
-- **#109 No per-phase summary helper for very large scratch dossiers.** A
-  650KB scratch file needed careful offset/limit reads plus grep to navigate
-  after compaction; a 42k-line one recurred later in the cycle. Resume works
-  correctly — this is a navigation-cost nicety, not a correctness gap. Fix
-  sketch: a `scratch-summary` subcommand extracting the key findings per phase.
-  (seen in 1 run: 20260720-141435)
-
-- **#110 Undocumented what `subagent_type: "fork"` actually does in this
-  harness.** A run planning a 5-way parallel fan-out found Agent calls
-  resolving synchronously ("you are now the fork") rather than backgrounding,
-  and fell back to serial in-session batch processing at high context cost.
-  Fix: state the observed behavior in the Sub-agent dispatch section so a
-  large task doesn't have to discover it mid-run.
-  (seen in 1 run: 20260801-150452)
 
 - **#113 The `Calibre #<id>` token has two candidate ids and only one is
   right.** Two runs stumbled over the same ambiguity from different sides:
@@ -555,6 +452,145 @@ _(#104 moved to Done — --quiet accepted, folded into the #95 commit,
   says a concept is "frequently mentioned", read that as a claim about the
   family, not the compound. (seen in 2 runs: 20260812-093512, 20260812-095506)
 
+- **#119 Run retrospectives don't record the vicaya repo commit they ran
+  against.** The 2026-08-10 triage found 9 of 21 runs came from a machine
+  whose checkout version can't be confirmed, forcing staleness to be
+  reconstructed from commit authorship — which is why #96's evidence needed
+  an authorship caveat and #108 needed a verify-first flag. Fix: add a
+  `vicaya_commit:` field to the reflection template's frontmatter
+  (`git rev-parse --short HEAD` at Phase 0) so every run's code vintage is
+  self-declared. (evidence: triage 2026-08-10 note 14, confirmed again
+  2026-08-14 while annotating #96)
+
+### Parked — minor, revive only if it resurfaces
+
+Two populations live here (user rule, 2026-08-14): single-sighting issues —
+one run reported it, so it is not an issue yet; park it and revive only when
+a *second, independent* run reports the same thing (ranked on this machine's
+runs per the same day's machine directive) — and older dormant items with
+real historical evidence. Never ranked in Phase 6; pull back into the ranked
+list at original severity on a fresh report.
+
+**Single-sighting (parked 2026-08-14):**
+
+- **#96 Pāḷi blockquotes drafted from memory reach the Phase 5 draft.** Four
+  distinct instances across three runs: a *fabricated* Ratana Sutta verse at
+  SNP13 §226 that direct SQL confirmed exists in neither `s0501m_mul` nor
+  `s0505m_mul`; MN7's cloth simile replaced in the draft by an unrelated
+  mind-reading passage (*cetasā ceto paricca pajānāti*); MN21's saw simile
+  mis-quoted (`Ubhosu cepi me…hatthesu` for `Ubhatodaṇḍakena cepi…`); and a
+  ṭīkā paranum cited for a claim the cited paragraphs don't discuss. All were
+  caught at Phase 6 — which means the net works, but the existing rules
+  (never cite a verse from memory; Hard Rule 9) are aimed at *locators*, and
+  these are *quoted text*. Fix as proposed by two of the runs: a Phase 5
+  pre-writing hard check — every Pāḷi blockquote is grep/SQL-verified against
+  the canon DB at the moment it is typed into the draft, not left for Phase 6.
+  *(Authorship caveat, confirmed by git 2026-08-14: 2 of the 3 sighting runs
+  (20260806-174019, 20260808T065938Z) are SBS-resident, i.e. an outdated
+  checkout whose mistakes may simply be pre-fix code — per the user's
+  2026-08-14 directive, rank on this-machine evidence only, so the live
+  weight is 1 run (20260731-183100, bdhrs) plus the same-family locator
+  instance caught pre-note in 20260812-095506, also bdhrs.)*
+  (seen in 3 runs: 20260806-174019, 20260808T065938Z, 20260731-183100)
+  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
+
+- **#97 Position attributions written from model memory escape the
+  cite-from-memory rule.** A sentence attributing to Nattier a position on the
+  Mahādeva five theses was written mid-draft from memory and was substantively
+  backwards (Nattier and Prebish argue Mahādeva is *later* and unconnected to
+  the primary schism), in a paragraph where every numbered citation around it
+  was correctly sourced. The existing rule targets verses and page numbers, so
+  a claim of the form "X argues that…" / "modern scholarship holds…" passes
+  straight through. Fix: extend the Phase 5 drafting check to scholarly
+  position attributions — route each through a source read this session or
+  soften to tradition-level attribution. Caught, incidentally, by
+  `scratch-check-coverage` (see Working well). (seen in 1 run: 20260730-045620)
+  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
+
+- **#100 sc-parallels `text_gaps` needs an explicit EBC fallback step.** A
+  Phase 2.5 agent reported SA 470 as a "hard text gap … cannot be
+  content-checked from local sources"; the Patton translation was sitting in
+  the EBC vault, and it turned out to be one of the most valuable sources in
+  the run (its closing verse forecloses a misreading the note would otherwise
+  have carried). The agent checked only the offline SuttaCentral archive and
+  treated absence there as absence everywhere. Fix: make the fallback an
+  explicit numbered step in the Phase 2.5 instructions — on non-empty
+  `text_gaps`, check `Agamas Dhamma pearls/<nik>-patton/` and
+  `Agamas BDK/<nik>-bdk/` before logging a gap. Same family as #70: a
+  metadata-level claim logged without checking the text underneath.
+  (seen in 1 run: 20260730-060651)
+  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
+
+- **#106 Gather dispatch prompts should name the hypothesis to test, not only
+  the search terms.** A Phase 2 agent given the explicit proposition to check
+  ("whether paṭigha ceasing at the anāgāmī stage implies domanassa ends before
+  arahantship") searched the fetter/citta classification rather than thematic
+  stems, and produced the run's cleanest structural argument. Fix: add to the
+  dispatch-prompt guidance. (seen in 1 run: 20260730-060651)
+  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
+
+- **#108 Several Khuddaka texts have empty `english_translation` in the canon
+  DB.** SNP7 Vasalasuttaṃ para 136 carried Pāḷi with no English; the run
+  reports the same shape for other SNP and Thag rows. Not a skill bug — a data
+  completeness question worth an audit (which books/how many rows) before
+  deciding whether it needs filling or just documenting.
+  *(Verify-first: the reporting run is SBS-resident with an unconfirmable
+  checkout — audit the canon DB on this machine before treating it as a
+  live data gap.)* (seen in 1 run: 20260726-logical-fallacies)
+  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
+
+- **#109 No per-phase summary helper for very large scratch dossiers.** A
+  650KB scratch file needed careful offset/limit reads plus grep to navigate
+  after compaction; a 42k-line one recurred later in the cycle. Resume works
+  correctly — this is a navigation-cost nicety, not a correctness gap. Fix
+  sketch: a `scratch-summary` subcommand extracting the key findings per phase.
+  (seen in 1 run: 20260720-141435)
+  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
+
+- **#110 Undocumented what `subagent_type: "fork"` actually does in this
+  harness.** A run planning a 5-way parallel fan-out found Agent calls
+  resolving synchronously ("you are now the fork") rather than backgrounding,
+  and fell back to serial in-session batch processing at high context cost.
+  Fix: state the observed behavior in the Sub-agent dispatch section so a
+  large task doesn't have to discover it mid-run.
+  (seen in 1 run: 20260801-150452)
+  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
+
+- **#111 Gather citations are verified only after the draft is written.** A
+  thematic teacher-comparison run's Phase 2 agent cited AN6.10 for content
+  that is AN6.9 (*Anussatiṭṭhānasuttaṃ*, s0403m2_mul:9); the off-by-one
+  propagated into two locations of the Phase 5 draft and was caught only at
+  Phase 6 self-review. The existing rules verify a *sample*, not the set:
+  #49 has the orchestrator re-verify the 2–3 highest-priority citations per
+  agent, #90 requires citations to be copied verbatim from a resolve log
+  (which was silent here because the gather agent never resolved this one).
+  Fix as the run proposes: before the Phase 5 draft is written, run
+  `resolve-citation`/`verify-citation` over *every* sutta citation the gather
+  agents produced — off-by-one paranums should fail at gather time, not in
+  Phase 6. Same defect-vs-discipline family as #96, one layer down
+  (locators, not quoted text). *(Evidence caveat: the sighting run is
+  SBS-resident — an outdated checkout per the user — so per the 2026-08-14
+  directive this is ranked only if it reproduces on this machine; #49's
+  sample-only rule exists in the current SKILL.md regardless, so the
+  discipline gap is plausible here too.)* (seen in 1 run: 20260813-155241)
+  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
+
+- **#112 resolve-citation answers in CST-internal numbering for the verse
+  books, diverging from conventional citations.** Asked to resolve the
+  Theragāthā row standard scholarship cites as Thag 10.1, resolve-citation
+  returned "TH233 Kāḷudāyittheragāthā" — CST's per-book sutta index, not the
+  chapter.verse form every modern edition and the note's readers use. The
+  reverse direction is already handled (`verify-citation "Thag 10.1"`
+  resolves correctly; SKILL.md tells agents to cite by chapter.verse), but
+  resolve-citation's own label silently produces citations nobody recognises,
+  and in this run it took an independent reviewer re-checking against the
+  bilara text to catch it. Fix: for Thag/Thig/Khp, surface the conventional
+  chapter.verse alongside (or instead of) the internal index, and flag the
+  divergence in the book-code map. Distinct from Done #29 (Thag/Thig/Kp
+  *aliases* in verify-citation) — this is the numbering layer.
+  (seen in 1 run: 20260814-053113)
+  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
+
 - **#117 Teacher-identity runs need setup guardrails.** A teacher with a
   short, commonly-shared name ("Ajahn Poh") let the Phase 4a agent conflate
   two different monks (the Malaysian Chinese Kittisobhano/Huat Poh and an
@@ -568,6 +604,7 @@ _(#104 moved to Done — --quiet accepted, folded into the #95 commit,
   early. *(Sighting run is SBS-resident/outdated — verify the gap still
   bites on this machine before spending a session.)*
   (seen in 1 run: 20260813-155241)
+  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
 
 - **#118 The orchestrator's own inline calls are exempted from the phase
   pin by implication.** SKILL.md says there is "nothing to pin" while a
@@ -579,16 +616,7 @@ _(#104 moved to Done — --quiet accepted, folded into the #95 commit,
   block — pin on every helper call once you are working more than one phase
   in a session, orchestrator or not.
   (seen in 1 run: 20260814-101028)
-
-- **#119 Run retrospectives don't record the vicaya repo commit they ran
-  against.** The 2026-08-10 triage found 9 of 21 runs came from a machine
-  whose checkout version can't be confirmed, forcing staleness to be
-  reconstructed from commit authorship — which is why #96's evidence needed
-  an authorship caveat and #108 needed a verify-first flag. Fix: add a
-  `vicaya_commit:` field to the reflection template's frontmatter
-  (`git rev-parse --short HEAD` at Phase 0) so every run's code vintage is
-  self-declared. (evidence: triage 2026-08-10 note 14, confirmed again
-  2026-08-14 while annotating #96)
+  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
 
 - **#120 Library availability is discovered mid-run, not at Phase 0.** A
   run lost the whole modern-scholarship gather (Anālayo, Bhikkhu Bodhi,
@@ -602,6 +630,7 @@ _(#104 moved to Done — --quiet accepted, folded into the #95 commit,
   reports is environment, though, and #92's tri-state probe is current
   here; the preflight idea stands on its own merits.)*
   (seen in 1 run: 20260809-230226)
+  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
 
 - **#121 Stratum-distribution scan is hand-written SQL every time.** The
   single most useful operation for "when does X first appear" questions —
@@ -612,6 +641,7 @@ _(#104 moved to Done — --quiet accepted, folded into the #95 commit,
   across all canon tables). Same shape as the Working-well entry on
   per-stratum term-counts as accretion evidence.
   (seen in 1 run: 20260814-053113)
+  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
 
 - **#122 Enrichment triage re-reads the old note by hand every time.** A
   run noted that identifying what an existing note already covers required
@@ -621,6 +651,7 @@ _(#104 moved to Done — --quiet accepted, folded into the #95 commit,
   the existing note's Critical Gaps table *is* the research plan — this
   would automate its discovery, not replace it.
   (seen in 1 run: 20260810-042343)
+  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
 
 - **#123 The second-reviewer prompt carries a Claude-Code-specific
   prohibition.** The "Do NOT use SendMessage" line in the Phase 6
@@ -629,11 +660,9 @@ _(#104 moved to Done — --quiet accepted, folded into the #95 commit,
   run had to override the prompt's own instruction to make the reviewer
   work. Fix: a harness note next to the line (mirrors the #78
   harness-fallbacks pattern). (seen in 1 run: 20260812-095506)
+  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
 
-### Parked — minor, revive only if it resurfaces
-
-Real evidence exists but demand is currently dormant. Not ranked in Phase 6;
-pull back into the main Low severity list only if a new run reports it.
+**Older dormant items:**
 
 - **#10 residue: optional `vault-write` wrapper** — disk fallback and
   final-report declaration are already documented (see Done); build the
@@ -1180,3 +1209,21 @@ pull back into the main Low severity list only if a new run reports it.
     layers (rules list, dispatch template, custom-dispatch paragraph)
     plus the durable-tooling rule that would have saved the siblings'
     files.
+
+16. User rule (2026-08-14, applied immediately): **an issue reported by one
+    run is not an issue yet.** Asked to work #112 (verse-book citation
+    numbering) the user first asked how many runs reported it — the answer
+    was 1 — and directed that single-sighting items are never ranked or
+    worked; they park until a *second, independent* run reports the same
+    thing (sightings counted on this machine's runs only, per the same
+    session's machine directive). Applied retroactively: 14 one-sighting
+    issues (#97, #100, #106, #108, #109, #110, #111, #112, #117, #118,
+    #120, #121, #122, #123) plus #96 (3 raw sightings, 1 after discounting
+    the two resident runs) moved to `### Parked`. Still ranked: only
+    multi-run issues (#103 9, #68 4, #102/#105/#107 3, #101/#113–#116 2,
+    #89 as 8-run residue) and #119 (evidence is recurring triage cost, not
+    retrospectives). Consequence for future triages: a new finding's first
+    sighting parks it; the second unparks it at its recorded severity.
+    Baked into skill/vicaya-improve/SKILL.md the same session (Phase 3
+    new-item rule, Phase 6 revival semantics, Parked-section description)
+    so every future triage applies it by default rather than by memory.
