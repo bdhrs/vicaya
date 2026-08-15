@@ -191,6 +191,7 @@ the premise behind dropped #5.
 | #102 Parallel gather dispatch works but is undocumented | done (2026-08-15) | `docs: sanction parallel gather dispatch with three safety rules` — all three sighting runs confirmed bdhrs by git before writing (machine directive). The Sub-agent dispatch mandate now reads: sequential (spawn, spot-check, spawn next) is the default shape; parallel dispatch of the applicable gather agents as one concurrent wave is sanctioned — three real runs, zero misfiling, zero `phase-source: run-pointer` leaks, substantial wall-clock savings — subject to three rules: gates are still written ascending (a finished agent waits; one cheap backfill pass at the end), spot-checks still run per agent (batched after the wave returns: content, run-pointer markers, top-citation re-verify, before synthesis builds on anything), and one-agent-per-phase still holds (a wave is not permission for one agent to run several phases). The spot-check heading now names the wave variant. Docs-only; all 392 tests pass. |
 | #105 Thematic-run gate documentation cluster | done (2026-08-15) | `docs: add a thematic gate map naming exactly which gates auto-skip` — three confusions, one root: the rules lived in prose far from the call sites. The Sub-agent dispatch thematic paragraph is now a compact gate map stating exactly two gates auto-skip on `--class thematic` (2.5, 3b), every other gather gate (1, 2, 3, 4, 4b, 4c) is gated normally, an explicit call on an auto-skipped gate demands logged evidence, and gating Phase 4 does not gate 4a/4b/4c. Callouts at the three places agents act: Critical-execution-rules item 2 names the two auto-skipped gates explicitly; the Phase 2.5 exit line warns thematic runs not to call it explicitly (work still runs when angle 16 is applicable); the Phase 4 exit line states 4b/4c still need their own explicit gates on every run. Docs-only; all 392 tests pass. |
 | #107 Comparative Indo-Aryan dictionary access notes | done (2026-08-15) | `docs: record comparative Indo-Aryan dictionary access in Phase 4a` — all three sighting runs confirmed bdhrs by git. New Phase 4a paragraph: DSAL CDIAL search CGI 404s (platform migrated) and the Internet Archive Turner copy is lending-only, so Wiktionary root entries are the working proxy for the Mayrhofer/Turner consensus; the Cologne `csl-orig` plain-text dictionaries (`mw.txt`, `ap90.txt`) fetch verbatim MW/Apte entries from raw.githubusercontent.com but use SLP1-style transliteration (ā=A, ś=S, ṛ=f, ṇ=R) — search `darSiv` not `darśivas`; and Mayrhofer EWA / Turner CDIAL / Whitney Roots are typically scanned/OCR-less, so budget a curl of Cologne CDSD or an archive.org full-text copy up front. Docs-only; all 392 tests pass. |
+| #101 No documented run shape for lexicographic/glossary tasks | done (2026-08-15) | `docs: document the lexicographic/glossary run shape in Phase 7` — both sighting runs are bdhrs and are the same 65-word task run two ways (one serial, one parallel), so the shape is a verified consensus. The "Caller-supplied fixed formats" paragraph is now "…and non-essay deliverables (series; glossaries, catalogues, comparative tables)" and a new "Lexicographic / glossary tasks" block documents the adapted shape: build the shared lookup tool once from raw dictionary source files before fan-out; find the primary text first via `search-library-folders` (nīti literature lives there, not the canon DB) and never trust a gloss over the attested verse (the DPD *vibudha* backwards-gloss case named); batch-parallel gather in ~13-word batches as one concurrent wave; single synthesis; and the note shape (frontmatter/Question/Findings/tail + a Summary Table and Word-by-Word Findings replacing the evidence sections). The two other global findings from these runs (rogue-fork hard-stop, check-citation-shape path) were already closed as #93 and #95 — not re-raised. Docs-only; all 392 tests pass. |
 
 ## Remaining — prioritized
 
@@ -266,19 +267,9 @@ to eat logged prose, 2026-08-10)_
 _(#99 moved to Done — any (T1)-tagged evidence heading now satisfies the
 required section, 2026-08-10)_
 
-- **#101 No documented run shape for lexicographic/glossary tasks.** A
-  65-word dictionary cross-reference task does not map onto the standard
-  one-question / seven-gather-phase structure. Both runs adapted the same way
-  — merge canon+library into one ad hoc "dictionary gather" phase per batch,
-  skip 4a/4b/4c with logged justification, and replace the evidence sections
-  with a summary table plus per-word findings — but had to improvise it,
-  since SKILL.md's fixed-format guidance names only the series and
-  comparative-religion templates. Fix: generalize "Caller-supplied fixed
-  formats" to cover structurally non-essay deliverables (glossaries,
-  catalogues, comparative tables) under the existing rule (keep frontmatter /
-  Question / Findings overview / tail sections; substitute the evidence
-  headings), and name the batch-parallel-gather + single-synthesis shape.
-  (seen in 2 runs: 20260801-150452, 20260801-171000)
+_(#101 moved to Done — lexicographic/glossary run shape documented in
+Phase 7 (shared lookup tool, primary-text-first, batch-parallel gather,
+summary table + word-by-word findings), 2026-08-15)_
 
 _(#102 moved to Done — parallel gather dispatch sanctioned with the
 ascending-gate, batched-spot-check, one-agent-per-phase rules, 2026-08-15)_
@@ -1217,3 +1208,11 @@ list at original severity on a fresh report.
     csl-orig SLP1) were re-read from the run files, not the issue text, so
     the transliteration table is exactly what the runs verified. Ranked
     backlog after: the 2-run doc items #101, #113–#116; #119 parked.
+22. Session 2026-08-15 (sixth pick): **#101 closed** — docs-only. The two
+    evidence runs turned out to be the same 65-word task run twice (serial
+    and parallel), so the shape is one consensus, not two independent
+    reports — noted because it slightly overstates the recurrence count;
+    the frequency signal is unaffected. The runs' other globals (fork
+    hard-stop, check-citation-shape path) were already Done as #93 and #95.
+    Ranked backlog after: the 2-run doc items #113–#116; #89 (8-run
+    residue), #119 parked.

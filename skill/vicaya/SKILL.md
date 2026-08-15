@@ -1907,10 +1907,13 @@ Pāḷi/English presentation rules in Style notes — *before* writing the first
 line of the draft. Drafting from memory of the template has produced notes in
 the wrong shape that needed a full rewrite before validation.
 
-**Caller-supplied fixed formats (e.g. the "What the suttas say about X"
-series).** When the user's command supplies a fixed note format, do not choose
-between that format and the template below — use the established hybrid. This
-paragraph is the spec; do not reverse-engineer the shape from sibling notes.
+**Caller-supplied fixed formats and non-essay deliverables (e.g. the "What
+the suttas say about X" series; glossaries, catalogues, comparative tables).**
+When the user's command supplies a fixed note format — or asks for a structured
+non-essay output such as a word-list glossary, a catalogue, or a three-column
+comparison table — do not choose between that format and the template below;
+use the established hybrid. This paragraph is the spec; do not reverse-engineer
+the shape from sibling notes.
 
 - Keep the standard frontmatter, `## Question`, and a short `## Findings`
   overview (a few orienting paragraphs). The validator hard-requires all
@@ -1931,6 +1934,34 @@ paragraph is the spec; do not reverse-engineer the shape from sibling notes.
   A real run nearly called the mirage simile a later Mahāyāna development
   when SN22.95 uses it for saññā — the miss came from searching prose stems
   only and skipping the aggregate-simile verse.
+
+**Lexicographic / glossary tasks (a word list, not a research question).** A
+batch task like "research these N words — spelling, part of speech, translation
+— in a table" does not map onto the seven-gather-phase flow, because the unit
+of work is the word, not the topic. Two real runs converged on the same adapted
+shape; use it instead of improvising:
+
+- **Build the shared lookup tool once, before fan-out.** Check for raw
+  dictionary source files under a repo's exporter/build tooling before
+  assuming a dictionary is unqueryable — one `lookup.py` written against the
+  local Cone/CPD/CPED/PEU/MW/Apte/Nyanatiloka/DPR/DPD corpus turned every
+  later word into a single command instead of nine format investigations.
+- **Find the primary text first.** `search-library-folders` for the source
+  text's name (nīti literature and modern translations live there, not in the
+  canon DB); verifying each word in its real verse context is what catches
+  gloss errors — a DPD headword (*vibudha*) was glossed backwards ("with
+  distorted wisdom") when the verse context and the MW Sanskrit cognate
+  establish the opposite "very wise" sense. Never trust a dictionary gloss
+  over the attested text.
+- **Batch-parallel gather, single synthesis.** Split the list into ~13-word
+  batches and gather them as one concurrent wave (see Parallel dispatch); one
+  synthesis pass assembles the result. Skip 4a/4b/4c with a logged
+  justification when the task has no web/YouTube/WisdomLib dimension.
+- **Note shape:** keep the standard frontmatter, `## Question`, a short
+  `## Findings` overview, and the standard tail; replace the evidence sections
+  with a `## Summary Table` (spelling | part of speech | translation) plus a
+  `## Word-by-Word Findings` section of per-word entries carrying the
+  dictionary cross-references and the attested verse context.
 
 **Comparative-religion questions (non-Buddhist tradition as primary subject).** When the research question centres on a tradition with no canon-DB primary text (e.g. Christianity, Islam, Judaism, Stoicism), replace `## Canon Evidence (T1)` with a tradition-appropriate heading — `## Biblical Evidence (T1)`, `## Quranic Evidence (T1)`, `## Stoic Sources (T1)`, etc. The validator accepts any `## * Evidence (T1)` heading and does not warn. Use the same blockquote + citation discipline as the standard Canon Evidence section: verbatim primary-text quotes with source attribution, not paraphrase. The Buddhist canon evidence (if any parallel is relevant) goes in a separate `## Canon Evidence (T1)` section alongside.
 
