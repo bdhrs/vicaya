@@ -1631,6 +1631,21 @@ Use `WebSearch` (and `WebFetch` to read the most promising results). Use as many
 - Older Thanissaro + other translators: `accesstoinsight.org/tipitaka/`
 - When no web mirror is available, quote directly from the canon DB using `search-canon` + `resolve-citation`.
 
+**Comparative Indo-Aryan dictionaries (philological/etymology questions).**
+The DSAL CDIAL search CGI (`dsal.uchicago.edu/cgi-bin/romad/cdial.pl`) 404s —
+the platform migrated and the old path is dead — and the Internet Archive
+Turner CDIAL copy is lending-only (full text not downloadable). Wiktionary's
+root entries encode the Mayrhofer/Turner consensus and work as the practical
+proxy for PIIr reconstructions. For Monier-Williams / Apte verbatim entries,
+the Cologne `csl-orig` plain-text dictionaries (`mw.txt`, `ap90.txt`) are
+directly fetchable from `raw.githubusercontent.com` but use SLP1-style
+transliteration (ā=A, ś=S, ṛ=f, ṇ=R) — search `darSiv`, not `darśivas`. Budget
+a `curl` of Cologne CDSD or an archive.org full-text copy up front for
+Mayrhofer EWA / Turner CDIAL / Whitney Roots: these are typically
+scanned/OCR-less and DSAL CDIAL lacks some headwords, so discover the gap
+early rather than at synthesis (three runs re-derived all of this before it
+was written down — issue #107).
+
 → **Phase 4 exit:** `scratch-gate 4`. For each web fetch, run `scratch-log 4 web <url> --summary "<one line>"` since `WebFetch` isn't a helper subcommand and won't auto-log. **Gating Phase 4 does NOT gate 4a/4b/4c** — on every run, thematic included, 4b and 4c still need their own explicit `scratch-gate 4b` / `scratch-gate 4c`.
 
 ### Phase 4b — YouTube search
