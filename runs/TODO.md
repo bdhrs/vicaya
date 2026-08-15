@@ -189,6 +189,7 @@ the premise behind dropped #5.
 | #68 residue of #58: Obsidian installer-update banner also produces non-JSON stdout on `search_vault` | done (2026-08-15) | `fix: strip Obsidian update banners from vault search output` — mechanism verified before coding: the banner is prepended to a *successful* (exit 0) CLI run, while a genuinely absent app exits non-zero via the other branch, so the old "app may not be running" message on the non-JSON path was never the right diagnosis. `search_vault` now: (1) treats the zero-hit sentinel behind a banner as zero hits; (2) on JSON-parse failure, extracts the JSON payload between the first `{`/`[` and last `}`/`]` before giving up (banner-tolerant parse); (3) the new no-JSON error names the banner cause and the update-and-restart remedy plus the `rg` fallback, and explicitly says a missing app exits non-zero instead. SKILL.md "When Obsidian isn't running" documents the banner-tolerant behavior and the one-command remedy. 4 regression tests (banner+JSON parses; banner before sentinel → []; noise on both sides parses; pure banner raises naming "banner" and NOT "app may not be running"). All 385 tests pass; ruff + pyright clean. |
 | #103 Cross-check chain fails silently; pi doc line suppressed real reviews | done (2026-08-15) | `fix: name the failing cross-check entry and preflight the chain` — both halves live on this machine (052550 got a real 5-issue review; 101028 got a silent sentinel after 180s), and the machine directive's discounting of the 7 resident sightings doesn't change the fix. **Code:** `_run_chain_subprocess` split into a status-returning engine (`_run_chain_subprocess_status → (text, reason)`) with four distinct reasons — `timed out after Ns` / `exited N: <stderr tail, ANSI-stripped>` / `could not start` / `no output` — while the old `str|None` wrapper stays for the #71 process-group regression tests; `_run_opencode`/`_run_agy` return the tuple; `cross_check()` collects per-entry failures and builds a sentinel whose header either says "VICAYA_CROSS_CHECK_CHAIN is not set" or lists "- app:model — reason" plus "fix the named cause and retry once"; unknown-app entries now named instead of skipped silently. New `cross-check --preflight --timeout 60` (no stdin needed) probes every entry with the tiny prompt "Reply with exactly: OK" and prints per-entry status JSON, exit 0/1. **Verified live on this machine:** real preflight against the configured deepseek-v4-pro chain → `ok: true` in seconds; bogus model → sentinel naming `opencode:no-such-model — exited 1: Error: …`. **Docs:** harness-fallbacks line rewritten from "SELF_REVIEW is the expected outcome" to "run the cross-check; never pre-assume the fallback — preflight first; on sentinel read the named cause, fix, retry once; never re-invoke after a substantive review (a re-run clobbered a real review once)"; Phase 6 recipe gains the preflight line + the retry-once/no-reinvoke rules; helper table and env-var bullet updated. 7 new tests (sentinel names entries+reasons; unconfigured-chain distinction; unknown-app naming; four live engine probes; preflight ok/failure/tiny-prompt/unconfigured). All 392 tests pass; ruff + pyright clean. |
 | #102 Parallel gather dispatch works but is undocumented | done (2026-08-15) | `docs: sanction parallel gather dispatch with three safety rules` — all three sighting runs confirmed bdhrs by git before writing (machine directive). The Sub-agent dispatch mandate now reads: sequential (spawn, spot-check, spawn next) is the default shape; parallel dispatch of the applicable gather agents as one concurrent wave is sanctioned — three real runs, zero misfiling, zero `phase-source: run-pointer` leaks, substantial wall-clock savings — subject to three rules: gates are still written ascending (a finished agent waits; one cheap backfill pass at the end), spot-checks still run per agent (batched after the wave returns: content, run-pointer markers, top-citation re-verify, before synthesis builds on anything), and one-agent-per-phase still holds (a wave is not permission for one agent to run several phases). The spot-check heading now names the wave variant. Docs-only; all 392 tests pass. |
+| #105 Thematic-run gate documentation cluster | done (2026-08-15) | `docs: add a thematic gate map naming exactly which gates auto-skip` — three confusions, one root: the rules lived in prose far from the call sites. The Sub-agent dispatch thematic paragraph is now a compact gate map stating exactly two gates auto-skip on `--class thematic` (2.5, 3b), every other gather gate (1, 2, 3, 4, 4b, 4c) is gated normally, an explicit call on an auto-skipped gate demands logged evidence, and gating Phase 4 does not gate 4a/4b/4c. Callouts at the three places agents act: Critical-execution-rules item 2 names the two auto-skipped gates explicitly; the Phase 2.5 exit line warns thematic runs not to call it explicitly (work still runs when angle 16 is applicable); the Phase 4 exit line states 4b/4c still need their own explicit gates on every run. Docs-only; all 392 tests pass. |
 
 ## Remaining — prioritized
 
@@ -338,22 +339,9 @@ verify-citation, and fetch-transcript, 2026-07-17)_
 _(#104 moved to Done — --quiet accepted, folded into the #95 commit,
 2026-08-10)_
 
-- **#105 Thematic-run gate documentation cluster.** Three confusions, one
-  root: the thematic auto-skip rules live in prose far from the call sites.
-  (a) The original sighting: gating Phase 4 does not auto-gate 4b/4c — only
-  2.5 and 3b auto-skip on `--class thematic`, and a run assumed the Phase 4
-  gate covered 4a–4c, with `scratch-verify` reporting 4b/4c missing
-  afterwards (20260801-155704). (b) Muscle memory from sutta-anchored runs
-  had an agent call `scratch-gate 2.5` explicitly on a thematic run and get
-  the by-design refusal (20260813-081200). (c) The work-vs-gate rule ("DO
-  the work for applicable angles, let the gate auto-write, never call it
-  explicitly") remains easy to misread mid-run (20260814-053113). Fix: one
-  compact block in the thematic section naming exactly which phases
-  auto-skip, which need explicit gates, and that an explicit gate call on an
-  auto-skipped phase demands evidence by design — plus a one-line callout
-  at each gate example. (#83 documented the mechanics; this issue is about
-  putting them where the agent looks.)
-  (seen in 3 runs: 20260801-155704, 20260813-081200, 20260814-053113)
+_(#105 moved to Done — thematic gate map: exactly 2.5/3b auto-skip, every
+other gather gate explicit, explicit calls on auto-skipped gates demand
+evidence, 2026-08-15)_
 
 - **#107 Comparative Indo-Aryan dictionary access notes.** Three runs
   re-derived the same access facts: DSAL's CDIAL search CGI
@@ -1222,3 +1210,11 @@ list at original severity on a fresh report.
     mid-cycle, so authorship lookups need `--all` and the historic path
     runs/<id>.md). Ranked backlog after: #105 (3), #107 (3), then 2-run
     items #101, #113–#116; #119 parked.
+20. Session 2026-08-15 (fourth pick): **#105 closed** — the issue's own fix
+    (a compact block where agents look) was implemented literally: the gate
+    map replaced the ambiguous thematic paragraph, with callouts at the
+    three documented call sites (execution rules item 2, Phase 2.5 exit,
+    Phase 4 exit). Docs-only; the machinery (2.5/3b auto-skip, explicit-call
+    evidence demand) was already correct per #83 — this closes the
+    readability gap, not a mechanism bug. Ranked backlog after: #107 (3),
+    then 2-run items #101, #113–#116; #119 parked.
