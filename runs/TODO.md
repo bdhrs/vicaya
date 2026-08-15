@@ -187,6 +187,7 @@ the premise behind dropped #5.
 | #42 dhammatalks.org AN URL pattern | dropped (2026-07-06) misdiagnosed premise, not a real bug — the original run was logged `Scope: local` (should never have been promoted to a global backlog item) and its own proposed fix was a documentation caveat, not a URL fix; live-tested against the real site: `AN/AN7_6.html` and `AN/AN7_80.html` (translated) both return 200, `AN/AN7_55.html` returns 404 only because Ṭhānissaro never translated that sutta. The URL pattern already matches the MN scheme exactly; there is no pattern bug to fix. |
 | #93 Gather fork ran the whole pipeline unsupervised, published, deleted siblings' work | done (2026-08-14) | `docs: add hard-stop dispatch SCOPE block and fan-out cleanup rules` — mechanism verified before writing: the per-phase template already carried phase prohibitions, but the incident was a *custom batch-worker fork* (the #101 lexicographic shape) that no template covered, plus a cleanup recipe that legitimately sweeps `temp/<slug>/`. Four coordinated SKILL.md changes: (1) dispatch rules list goes five→six, new rule 6 "Your assignment ends at your own output — finishing the run is never your job" (no sibling-file reads/writes/deletes, no synthesis/5/6/7, no vault write, no publish, no git; sibling files appearing = the fan-out working); (2) the dispatch prompt template gains a literal SCOPE block after `Phase assigned:` carrying the same prohibitions; (3) new "Custom dispatches (batch workers, forks, external-CLI sub-agents) carry the same hard stop" paragraph after the template — every custom dispatch prompt must include the SCOPE block adapted to name the worker's own output file, with the incident named as the unauthorized-publish path; plus two standing fan-out rules: shared tooling and sibling outputs the coordinator still needs live under `data/scratch/<slug>-shared/` (durable, Hard Rule 11), never `temp/` (disposable, swept at Phase 7 exit), and only the orchestrator runs the Phase 7 exit sequence — once, after every worker returned and every output was read; (4) the Phase 7 cleanup block now states orchestrator-only/once-at-the-end and why nothing needed-later may live in `temp/`. Docs-only; all 382 tests pass (1 expected env skip). |
 | #68 residue of #58: Obsidian installer-update banner also produces non-JSON stdout on `search_vault` | done (2026-08-15) | `fix: strip Obsidian update banners from vault search output` — mechanism verified before coding: the banner is prepended to a *successful* (exit 0) CLI run, while a genuinely absent app exits non-zero via the other branch, so the old "app may not be running" message on the non-JSON path was never the right diagnosis. `search_vault` now: (1) treats the zero-hit sentinel behind a banner as zero hits; (2) on JSON-parse failure, extracts the JSON payload between the first `{`/`[` and last `}`/`]` before giving up (banner-tolerant parse); (3) the new no-JSON error names the banner cause and the update-and-restart remedy plus the `rg` fallback, and explicitly says a missing app exits non-zero instead. SKILL.md "When Obsidian isn't running" documents the banner-tolerant behavior and the one-command remedy. 4 regression tests (banner+JSON parses; banner before sentinel → []; noise on both sides parses; pure banner raises naming "banner" and NOT "app may not be running"). All 385 tests pass; ruff + pyright clean. |
+| #103 Cross-check chain fails silently; pi doc line suppressed real reviews | done (2026-08-15) | `fix: name the failing cross-check entry and preflight the chain` — both halves live on this machine (052550 got a real 5-issue review; 101028 got a silent sentinel after 180s), and the machine directive's discounting of the 7 resident sightings doesn't change the fix. **Code:** `_run_chain_subprocess` split into a status-returning engine (`_run_chain_subprocess_status → (text, reason)`) with four distinct reasons — `timed out after Ns` / `exited N: <stderr tail, ANSI-stripped>` / `could not start` / `no output` — while the old `str|None` wrapper stays for the #71 process-group regression tests; `_run_opencode`/`_run_agy` return the tuple; `cross_check()` collects per-entry failures and builds a sentinel whose header either says "VICAYA_CROSS_CHECK_CHAIN is not set" or lists "- app:model — reason" plus "fix the named cause and retry once"; unknown-app entries now named instead of skipped silently. New `cross-check --preflight --timeout 60` (no stdin needed) probes every entry with the tiny prompt "Reply with exactly: OK" and prints per-entry status JSON, exit 0/1. **Verified live on this machine:** real preflight against the configured deepseek-v4-pro chain → `ok: true` in seconds; bogus model → sentinel naming `opencode:no-such-model — exited 1: Error: …`. **Docs:** harness-fallbacks line rewritten from "SELF_REVIEW is the expected outcome" to "run the cross-check; never pre-assume the fallback — preflight first; on sentinel read the named cause, fix, retry once; never re-invoke after a substantive review (a re-run clobbered a real review once)"; Phase 6 recipe gains the preflight line + the retry-once/no-reinvoke rules; helper table and env-var bullet updated. 7 new tests (sentinel names entries+reasons; unconfigured-chain distinction; unknown-app naming; four live engine probes; preflight ok/failure/tiny-prompt/unconfigured). All 392 tests pass; ruff + pyright clean. |
 
 ## Remaining — prioritized
 
@@ -290,24 +291,9 @@ required section, 2026-08-10)_
   afterwards rather than between each. (seen in 3 runs: 20260721-172000,
   20260730-045620, 20260730-060651)
 
-- **#103 The cross-check chain fails slowly, and the pi doc line is now
-  stale in the harmful direction.** Originally 8 runs fell back to the
-  `# SELF_REVIEW:` sentinel (7 of them from one machine whose checkout and
-  config can't be confirmed). The 2026-08-14 pair flips the picture on this
-  host: the chain IS configured (deepseek-v4-pro via opencode/openrouter) and
-  one run got a genuine 5-issue review, while the other got a silent sentinel
-  after 180s with no error surfaced — so both halves are live: the skill
-  still says SELF_REVIEW is "the expected outcome on pi" (now wrong here, and
-  it suppresses running the check at all), and a failing chain entry waits
-  out its full timeout before failing without saying which entry failed or
-  why. Fix, ascending: correct the pi cross-check line to "run it, don't
-  assume the fallback"; preflight the chain with a tiny prompt before a long
-  wait and report which entry failed; capture first-successful-output (don't
-  re-invoke a chain that already returned a substantive review).
-  (seen in 9 runs: 20260723-032557, 20260724-vassa-split-two-places,
-  20260726-cognitive-biases, 20260726-logical-fallacies, 20260801-132709,
-  20260806-174019, 20260808-170741, 20260808-upekkha-brahmavihara-
-  practical-retreat, 20260814-101028; +1 contrary success: 20260814-052550)
+_(#103 moved to Done — the sentinel names the failing entry and reason,
+preflight probes the chain for seconds before the long wait, and the stale
+"expect self-review" doc line is gone, 2026-08-15)_
 
 ### Low severity
 
@@ -1227,3 +1213,16 @@ list at original severity on a fresh report.
     first parser sketch — kept the fix to the reported shape (prepended
     banners, bracket-free tail) rather than complicating it for input no run
     has reported.
+18. Session 2026-08-15 (second pick): **#103 closed.** The live preflight
+    against this machine's real chain returned ok in seconds — direct proof
+    of the issue's premise that the stale doc line was suppressing a working
+    reviewer. Two implementation notes: (a) keeping `_run_chain_subprocess`
+    as a thin `str|None` wrapper over the new status engine meant the #71
+    process-group regression tests (real bash children, no mocks) survived
+    the refactor untouched — prefer that over updating live-subprocess tests
+    to the new contract; (b) live verification caught ANSI color codes
+    leaking from opencode's stderr into the diagnostic tail — stripped in
+    the reason formatter, worth remembering for any stderr-surfacing code.
+    Ranked backlog after this session: #102 (3), #105 (3), #107 (3), then
+    the 2-run items (#101, #113-#116) and #119 (zero-sighting, stays parked
+    unless ordered).

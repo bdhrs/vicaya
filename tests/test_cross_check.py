@@ -79,13 +79,13 @@ def test_cross_check_opencode_success(monkeypatch):
     monkeypatch.setenv(
         "VICAYA_CROSS_CHECK_CHAIN", "opencode:deepseek/deepseek-v4-flash"
     )
-    monkeypatch.setattr(rs, "_run_opencode", lambda p, m, t: "hello")
+    monkeypatch.setattr(rs, "_run_opencode", lambda p, m, t: ("hello", ""))
     assert rs.cross_check("hi") == "hello"
 
 
 def test_cross_check_agy_success(monkeypatch):
     monkeypatch.setenv("VICAYA_CROSS_CHECK_CHAIN", "agy:Gemini 3.5 Flash (High)")
-    monkeypatch.setattr(rs, "_run_agy", lambda p, m, t: "hello")
+    monkeypatch.setattr(rs, "_run_agy", lambda p, m, t: ("hello", ""))
     assert rs.cross_check("hi") == "hello"
 
 
@@ -97,8 +97,10 @@ def test_cross_check_first_fails_second_succeeds(monkeypatch):
         "VICAYA_CROSS_CHECK_CHAIN",
         "opencode:bad|agy:good",
     )
-    monkeypatch.setattr(rs, "_run_opencode", lambda p, m, t: None)
-    monkeypatch.setattr(rs, "_run_agy", lambda p, m, t: "second wins")
+    monkeypatch.setattr(
+        rs, "_run_opencode", lambda p, m, t: (None, "timed out after 180s")
+    )
+    monkeypatch.setattr(rs, "_run_agy", lambda p, m, t: ("second wins", ""))
     assert rs.cross_check("hi") == "second wins"
 
 
@@ -110,8 +112,10 @@ def test_cross_check_all_fail_returns_self_review(monkeypatch):
         "VICAYA_CROSS_CHECK_CHAIN",
         "opencode:bad|agy:also-bad",
     )
-    monkeypatch.setattr(rs, "_run_opencode", lambda p, m, t: None)
-    monkeypatch.setattr(rs, "_run_agy", lambda p, m, t: None)
+    monkeypatch.setattr(
+        rs, "_run_opencode", lambda p, m, t: (None, "timed out after 180s")
+    )
+    monkeypatch.setattr(rs, "_run_agy", lambda p, m, t: (None, "timed out after 180s"))
     assert rs.cross_check("hi").startswith("# SELF_REVIEW:")
 
 
@@ -128,7 +132,7 @@ def test_cross_check_unknown_app_falls_through_to_valid(monkeypatch):
         "VICAYA_CROSS_CHECK_CHAIN",
         "unknown:model|opencode:good",
     )
-    monkeypatch.setattr(rs, "_run_opencode", lambda p, m, t: "opencode text")
+    monkeypatch.setattr(rs, "_run_opencode", lambda p, m, t: ("opencode text", ""))
     assert rs.cross_check("hi") == "opencode text"
 
 
@@ -176,3 +180,96 @@ def test_self_review_lists_all_checklist_items(monkeypatch):
         "General",
     ):
         assert label in out
+
+
+# ---------- issue #103: the sentinel names the failure ----------
+
+
+def test_sentinel_names_each_failed_entry_and_reason(monkeypatch):
+    """Issue #103: a silent sentinel cannot be acted on — it must say who
+    failed and why (timeout vs exit vs missing binary)."""
+    monkeypatch.setenv("VICAYA_CROSS_CHECK_CHAIN", "opencode:m1|agy:m2")
+    monkeypatch.setattr(
+        rs, "_run_opencode", lambda p, m, t: (None, "timed out after 180s")
+    )
+    monkeypatch.setattr(
+        rs, "_run_agy", lambda p, m, t: (None, "exited 1: auth token expired")
+    )
+    out = rs.cross_check("hi")
+    assert out.startswith("# SELF_REVIEW:")
+    assert "opencode:m1 — timed out after 180s" in out
+    assert "agy:m2 — exited 1: auth token expired" in out
+    assert "retry once" in out
+
+
+def test_sentinel_distinguishes_unconfigured_chain(monkeypatch):
+    """Issue #103: 'chain not set' and 'chain configured but failing' are
+    different diagnoses — the sentinel header must separate them."""
+    monkeypatch.delenv("VICAYA_CROSS_CHECK_CHAIN", raising=False)
+    out = rs.cross_check("hi")
+    assert "VICAYA_CROSS_CHECK_CHAIN is not set" in out
+    assert "failed" not in out.split("Run the Phase 6 checklist")[0]
+
+
+def test_sentinel_names_unknown_app_entries(monkeypatch):
+    monkeypatch.setenv("VICAYA_CROSS_CHECK_CHAIN", "mystery:m|agy:ok")
+    monkeypatch.setattr(rs, "_run_agy", lambda p, m, t: (None, "no output"))
+    out = rs.cross_check("hi")
+    assert "mystery:m — unknown app (supported: opencode, agy)" in out
+    assert "agy:ok — no output" in out
+
+
+def test_chain_subprocess_status_reasons_cover_failure_modes():
+    """Direct engine probes: each failure mode yields a distinct reason."""
+    ok, reason = rs._run_chain_subprocess_status(["bash", "-c", "echo hi"], timeout=10)
+    assert (ok, reason) == ("hi", "")
+    _, reason = rs._run_chain_subprocess_status(["bash", "-c", "exit 3"], timeout=10)
+    assert reason.startswith("exited 3")
+    _, reason = rs._run_chain_subprocess_status(
+        ["definitely-not-a-binary-xyz"], timeout=10
+    )
+    assert reason.startswith("could not start")
+    _, reason = rs._run_chain_subprocess_status(["bash", "-c", "sleep 5"], timeout=1)
+    assert reason == "timed out after 1s"
+    _, reason = rs._run_chain_subprocess_status(["bash", "-c", "true"], timeout=10)
+    assert reason == "no output"
+
+
+# ---------- issue #103: preflight ----------
+
+
+def test_preflight_reports_ok_entry(monkeypatch):
+    monkeypatch.setenv("VICAYA_CROSS_CHECK_CHAIN", "opencode:m1")
+    monkeypatch.setattr(rs, "_run_opencode", lambda p, m, t: ("OK", ""))
+    result = rs.cross_check_preflight(timeout=5)
+    assert result["ok"] is True
+    assert result["chain_configured"] is True
+    assert result["entries"][0]["app"] == "opencode"
+    assert result["entries"][0]["ok"] is True
+
+
+def test_preflight_reports_failure_reason_and_prompt_is_tiny(monkeypatch):
+    monkeypatch.setenv("VICAYA_CROSS_CHECK_CHAIN", "opencode:m1|agy:m2")
+    seen_prompts = []
+
+    def fake_opencode(prompt, model, timeout):
+        seen_prompts.append((prompt, timeout))
+        return (None, "timed out after 60s")
+
+    monkeypatch.setattr(rs, "_run_opencode", fake_opencode)
+    monkeypatch.setattr(rs, "_run_agy", lambda p, m, t: ("OK", ""))
+    result = rs.cross_check_preflight(timeout=60)
+    assert result["ok"] is True  # second entry answered
+    assert result["entries"][0]["reason"] == "timed out after 60s"
+    assert result["entries"][0]["ok"] is False
+    # the probe prompt is tiny, not the draft — cheap and fast
+    assert seen_prompts[0][0] == "Reply with exactly: OK"
+    assert seen_prompts[0][1] == 60
+
+
+def test_preflight_on_unconfigured_chain(monkeypatch):
+    monkeypatch.delenv("VICAYA_CROSS_CHECK_CHAIN", raising=False)
+    result = rs.cross_check_preflight(timeout=5)
+    assert result["ok"] is False
+    assert result["chain_configured"] is False
+    assert result["entries"] == []

@@ -1621,8 +1621,16 @@ def _parse_cross_check_chain() -> list[tuple[str, str]]:
     return entries
 
 
-def _run_chain_subprocess(cmd: list[str], timeout: int) -> str | None:
+def _run_chain_subprocess_status(
+    cmd: list[str], timeout: int
+) -> tuple[str | None, str]:
     """Run one cross-check chain entry with a hard wall-clock ceiling.
+
+    Returns `(text, "")` on success and `(None, reason)` on failure, the
+    reason naming which of the four failure modes fired (issue #103: all
+    failures previously collapsed into a silent `None`, so a sentinel could
+    not say whether the binary was missing, auth failed, the entry timed
+    out, or the model returned nothing).
 
     `subprocess.run(timeout=…)` kills only the direct child; a CLI like
     opencode spawns node grandchildren that inherit the stdout pipe, and the
@@ -1641,10 +1649,10 @@ def _run_chain_subprocess(cmd: list[str], timeout: int) -> str | None:
             text=True,
             start_new_session=True,
         )
-    except OSError:
-        return None
+    except OSError as e:
+        return None, f"could not start ({e.strerror or e})"
     try:
-        stdout, _ = proc.communicate(timeout=timeout)
+        stdout, stderr = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         try:
             os.killpg(proc.pid, signal.SIGKILL)
@@ -1654,24 +1662,40 @@ def _run_chain_subprocess(cmd: list[str], timeout: int) -> str | None:
             proc.communicate(timeout=5)
         except (subprocess.TimeoutExpired, ValueError, OSError):
             pass
-        return None
+        return None, f"timed out after {timeout}s"
     if proc.returncode != 0:
-        return None
+        tail = (stderr or "").strip()
+        tail = _re.sub(
+            _re.escape("\x1b") + r"\[[0-9;]*m", "", tail
+        )  # strip ANSI colors
+        tail = tail.replace("\n", " ")[:120]
+        detail = f": {tail}" if tail else ""
+        return None, f"exited {proc.returncode}{detail}"
     text = (stdout or "").strip()
-    return text if text else None
+    if not text:
+        return None, "no output"
+    return text, ""
 
 
-def _run_opencode(prompt: str, model: str, timeout: int) -> str | None:
-    return _run_chain_subprocess(["opencode", "run", "-m", model, prompt], timeout)
+def _run_chain_subprocess(cmd: list[str], timeout: int) -> str | None:
+    """Backward-compatible text-or-None view of `_run_chain_subprocess_status`."""
+    text, _reason = _run_chain_subprocess_status(cmd, timeout)
+    return text
 
 
-def _run_agy(prompt: str, model: str, timeout: int) -> str | None:
-    return _run_chain_subprocess(["agy", "--print", prompt, "--model", model], timeout)
+def _run_opencode(prompt: str, model: str, timeout: int) -> tuple[str | None, str]:
+    return _run_chain_subprocess_status(
+        ["opencode", "run", "-m", model, prompt], timeout
+    )
 
 
-_SELF_REVIEW_SENTINEL = """# SELF_REVIEW: cross-check unavailable.
+def _run_agy(prompt: str, model: str, timeout: int) -> tuple[str | None, str]:
+    return _run_chain_subprocess_status(
+        ["agy", "--print", prompt, "--model", model], timeout
+    )
 
-Run the Phase 6 checklist on your own synthesis before writing the note.
+
+_SELF_REVIEW_CHECKLIST = """Run the Phase 6 checklist on your own synthesis before writing the note.
 For each item, either fix the synthesis or note "no issue":
 
 1. Perspective coverage — Are named positions underrepresented or
@@ -1688,6 +1712,16 @@ For each item, either fix the synthesis or note "no issue":
 5. General — Any other factual errors, oversights, or alternative
    interpretations not captured above.
 """
+
+
+def _self_review_sentinel(detail: str) -> str:
+    """Build the SELF_REVIEW sentinel, stating exactly why the chain failed."""
+    return (
+        "# SELF_REVIEW: cross-check unavailable.\n\n"
+        + detail.strip()
+        + "\n\n"
+        + _SELF_REVIEW_CHECKLIST
+    )
 
 
 # ---------- Citation verification ----------
@@ -2089,21 +2123,75 @@ def cross_check(prompt: str, timeout: int = 180) -> str:
     Returns the model's text on success. On any failure (empty chain, every
     entry failing, unknown app tokens) returns the `# SELF_REVIEW:` sentinel
     so the calling agent can run the checklist on its own synthesis instead.
+    The sentinel header states which entry failed and why (issue #103) —
+    fix the named cause and retry once before accepting self-review.
 
     Chain format: pipe-separated `app:model` entries, tried in order.
     Supported apps: `opencode`, `agy`.
     """
     chain = _parse_cross_check_chain()
+    if not chain:
+        return _self_review_sentinel(
+            "VICAYA_CROSS_CHECK_CHAIN is not set (or has no valid app:model "
+            "entry) — configure a pipe-separated chain, e.g. "
+            "opencode:openrouter/deepseek/v4, or run the checklist below."
+        )
+    failures: list[str] = []
     for app, model in chain:
         if app == "opencode":
-            text = _run_opencode(prompt, model, timeout)
+            text, reason = _run_opencode(prompt, model, timeout)
         elif app == "agy":
-            text = _run_agy(prompt, model, timeout)
+            text, reason = _run_agy(prompt, model, timeout)
         else:
+            failures.append(f"{app}:{model} — unknown app (supported: opencode, agy)")
             continue
         if text is not None:
             return annotate_citations(text)
-    return _SELF_REVIEW_SENTINEL
+        failures.append(f"{app}:{model} — {reason}")
+    return _self_review_sentinel(
+        "Every VICAYA_CROSS_CHECK_CHAIN entry failed:\n"
+        + "\n".join(f"- {f}" for f in failures)
+        + "\n\nFix the named cause and retry once; if it fails again, run the "
+        "checklist below."
+    )
+
+
+_CROSS_CHECK_PREFLIGHT_PROMPT = "Reply with exactly: OK"
+
+
+def cross_check_preflight(timeout: int = 60) -> dict:
+    """Cheap reachability probe of every chain entry before the long wait.
+
+    Runs a tiny prompt through each entry with a short per-entry budget and
+    reports per-entry status (issue #103: a failing chain previously waited
+    out the full cross-check timeout before failing silently). Returns a
+    dict with `ok` (any entry answered) and per-entry `entries` results.
+    """
+    chain = _parse_cross_check_chain()
+    entries: list[dict] = []
+    for app, model in chain:
+        if app == "opencode":
+            text, reason = _run_opencode(_CROSS_CHECK_PREFLIGHT_PROMPT, model, timeout)
+        elif app == "agy":
+            text, reason = _run_agy(_CROSS_CHECK_PREFLIGHT_PROMPT, model, timeout)
+        else:
+            entries.append(
+                {
+                    "app": app,
+                    "model": model,
+                    "ok": False,
+                    "reason": "unknown app (supported: opencode, agy)",
+                }
+            )
+            continue
+        entries.append(
+            {"app": app, "model": model, "ok": text is not None, "reason": reason}
+        )
+    return {
+        "ok": any(e["ok"] for e in entries) if entries else False,
+        "chain_configured": bool(entries),
+        "entries": entries,
+    }
 
 
 # ---------- CST book translator (sibling dpd-db) ----------
@@ -2398,6 +2486,15 @@ def _cli() -> int:
         return _done()
 
     def _handle_cross_check(args):
+        if args.preflight:
+            result = cross_check_preflight(timeout=args.timeout)
+            _dump(result, quiet=args.quiet)
+            return _done(
+                ["<stdin>"],
+                {"preflight": result},
+                exit_code=0 if result["ok"] else 1,
+                autolog=False,
+            )
         prompt = sys.stdin.read()
         if not prompt.strip():
             print("error: empty prompt on stdin", file=sys.stderr)
@@ -2757,6 +2854,14 @@ def _cli() -> int:
         "Reads prompt from stdin.",
     )
     pcc.add_argument("--timeout", type=int, default=180)
+    pcc.add_argument(
+        "--preflight",
+        action="store_true",
+        help="probe every chain entry with a tiny prompt (uses --timeout, "
+        "typically passed as --timeout 60) and print per-entry status JSON "
+        "instead of running a full cross-check",
+    )
+    pcc.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
     pcc.set_defaults(func=_handle_cross_check)
 
     py = sub.add_parser("search-youtube")
