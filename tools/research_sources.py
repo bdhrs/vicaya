@@ -1695,6 +1695,25 @@ def _run_agy(prompt: str, model: str, timeout: int) -> tuple[str | None, str]:
     )
 
 
+def _run_pi(prompt: str, model: str, timeout: int) -> tuple[str | None, str]:
+    return _run_chain_subprocess_status(
+        [
+            "pi",
+            "-p",
+            "--model",
+            model,
+            "--no-tools",
+            "--no-session",
+            "--no-extensions",
+            "--no-skills",
+            "--offline",
+            "--no-context-files",
+            prompt,
+        ],
+        timeout,
+    )
+
+
 _SELF_REVIEW_CHECKLIST = """Run the Phase 6 checklist on your own synthesis before writing the note.
 For each item, either fix the synthesis or note "no issue":
 
@@ -2127,14 +2146,14 @@ def cross_check(prompt: str, timeout: int = 180) -> str:
     fix the named cause and retry once before accepting self-review.
 
     Chain format: pipe-separated `app:model` entries, tried in order.
-    Supported apps: `opencode`, `agy`.
+    Supported apps: `opencode`, `agy`, `pi`.
     """
     chain = _parse_cross_check_chain()
     if not chain:
         return _self_review_sentinel(
             "VICAYA_CROSS_CHECK_CHAIN is not set (or has no valid app:model "
             "entry) — configure a pipe-separated chain, e.g. "
-            "opencode:openrouter/deepseek/v4, or run the checklist below."
+            "pi:zai/glm-5.3, or run the checklist below."
         )
     failures: list[str] = []
     for app, model in chain:
@@ -2142,8 +2161,12 @@ def cross_check(prompt: str, timeout: int = 180) -> str:
             text, reason = _run_opencode(prompt, model, timeout)
         elif app == "agy":
             text, reason = _run_agy(prompt, model, timeout)
+        elif app == "pi":
+            text, reason = _run_pi(prompt, model, timeout)
         else:
-            failures.append(f"{app}:{model} — unknown app (supported: opencode, agy)")
+            failures.append(
+                f"{app}:{model} — unknown app (supported: opencode, agy, pi)"
+            )
             continue
         if text is not None:
             return annotate_citations(text)
@@ -2174,13 +2197,15 @@ def cross_check_preflight(timeout: int = 60) -> dict:
             text, reason = _run_opencode(_CROSS_CHECK_PREFLIGHT_PROMPT, model, timeout)
         elif app == "agy":
             text, reason = _run_agy(_CROSS_CHECK_PREFLIGHT_PROMPT, model, timeout)
+        elif app == "pi":
+            text, reason = _run_pi(_CROSS_CHECK_PREFLIGHT_PROMPT, model, timeout)
         else:
             entries.append(
                 {
                     "app": app,
                     "model": model,
                     "ok": False,
-                    "reason": "unknown app (supported: opencode, agy)",
+                    "reason": "unknown app (supported: opencode, agy, pi)",
                 }
             )
             continue

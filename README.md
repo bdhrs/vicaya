@@ -34,7 +34,7 @@ Each source is optional — if the tool or path isn't configured it is silently 
 
 1. `cp .env.example .env` and edit the paths to match your vault, library,
    and canon database.
-2. Install whichever of these you want to use: `obsidian` CLI, `yt-dlp`, `sqlite3`, `opencode` CLI, `agy`.
+2. Install whichever of these you want to use: `obsidian` CLI, `yt-dlp`, `sqlite3`, `opencode` CLI, `agy`, `pi` CLI.
    For richer text extraction from library folders: `pdftotext`, `ebook-convert` (ships with Calibre).
 3. `uv sync` to install Python dependencies.
 4. Symlink the main skill folder into your agents' skills directories. Using
@@ -227,6 +227,7 @@ which ebook-convert  # Calibre — optional (extracts Kindle/Mobipocket ebooks i
 which yt-dlp      # yt-dlp — optional (YouTube search)
 which opencode    # opencode CLI — optional (cross-check chain)
 which agy         # agy CLI — optional (cross-check chain)
+which pi          # pi CLI — optional (cross-check chain; original Z.ai/DeepSeek APIs)
 python3 --version # system Python — only needed if uv is absent
 ```
 
@@ -251,6 +252,9 @@ brew install opencode               # macOS; or: curl -fsSL https://opencode.ai/
 
 # agy CLI (optional — cross-check chain)
 brew install antigravity           # macOS; or check https://github.com/google-gemini for other platforms
+
+# pi CLI (optional — cross-check chain via original Z.ai/DeepSeek APIs)
+npm install -g --ignore-scripts @earendil-works/pi-coding-agent   # then: pi auth check --provider zai
 
 # Gemini CLI — requires Google AI Studio API key
 npm install -g @google/gemini-cli   # or follow https://github.com/google-gemini/gemini-cli

@@ -89,6 +89,72 @@ def test_cross_check_agy_success(monkeypatch):
     assert rs.cross_check("hi") == "hello"
 
 
+def test_cross_check_pi_success(monkeypatch):
+    monkeypatch.setenv("VICAYA_CROSS_CHECK_CHAIN", "pi:zai/glm-5.3")
+    monkeypatch.setattr(rs, "_run_pi", lambda p, m, t: ("hello", ""))
+    assert rs.cross_check("hi") == "hello"
+
+
+def test_cross_check_pi_model_keeps_slash_after_colon_split(monkeypatch):
+    """`pi:zai/glm-5.3` must split on the FIRST colon only — the model keeps
+    its provider/id slash (that's the whole point of the pi entry form)."""
+    seen = {}
+
+    def fake_pi(prompt, model, timeout):
+        seen["model"] = model
+        return ("ok", "")
+
+    monkeypatch.setenv("VICAYA_CROSS_CHECK_CHAIN", "pi:zai/glm-5.3")
+    monkeypatch.setattr(rs, "_run_pi", fake_pi)
+    assert rs.cross_check("hi") == "ok"
+    assert seen["model"] == "zai/glm-5.3"
+
+
+def test_cross_check_pi_thinking_suffix_passes_through(monkeypatch):
+    """`pi:zai/glm-5.3:off` — pi's own `--model` syntax carries an optional
+    `:thinking` level. The chain parser must not eat it: without a pinned
+    level the entry inherits the machine's defaultThinkingLevel (max on
+    this machine = 12–17 min per review), so entries pin one explicitly."""
+    seen = {}
+
+    def fake_pi(prompt, model, timeout):
+        seen["model"] = model
+        return ("ok", "")
+
+    monkeypatch.setenv("VICAYA_CROSS_CHECK_CHAIN", "pi:zai/glm-5.3:off")
+    monkeypatch.setattr(rs, "_run_pi", fake_pi)
+    assert rs.cross_check("hi") == "ok"
+    assert seen["model"] == "zai/glm-5.3:off"
+
+
+def test_run_pi_command_shape(monkeypatch):
+    """The pi builder must pin --no-tools/--no-session (a pure model call,
+    no agent machinery) and pass the prompt as the trailing argv element."""
+    seen = {}
+
+    def fake_status(cmd, timeout):
+        seen["cmd"] = cmd
+        return ("ok", "")
+
+    monkeypatch.setattr(rs, "_run_chain_subprocess_status", fake_status)
+    text, reason = rs._run_pi("prompt text", "zai/glm-5.3", 10)
+    assert (text, reason) == ("ok", "")
+    cmd = seen["cmd"]
+    assert cmd[0] == "pi"
+    assert "-p" in cmd
+    assert cmd[cmd.index("--model") + 1] == "zai/glm-5.3"
+    for flag in (
+        "--no-tools",
+        "--no-session",
+        "--no-extensions",
+        "--no-skills",
+        "--offline",
+        "--no-context-files",
+    ):
+        assert flag in cmd
+    assert cmd[-1] == "prompt text"
+
+
 # ---------- cross_check: fallthrough ----------
 
 
@@ -102,6 +168,15 @@ def test_cross_check_first_fails_second_succeeds(monkeypatch):
     )
     monkeypatch.setattr(rs, "_run_agy", lambda p, m, t: ("second wins", ""))
     assert rs.cross_check("hi") == "second wins"
+
+
+def test_cross_check_pi_falls_through_to_next_entry(monkeypatch):
+    """Empty output with exit 0 is a real pi failure mode (observed in a
+    live probe) — it must fall through, not return the empty string."""
+    monkeypatch.setenv("VICAYA_CROSS_CHECK_CHAIN", "pi:zai/glm-5.3|opencode:good")
+    monkeypatch.setattr(rs, "_run_pi", lambda p, m, t: (None, "no output"))
+    monkeypatch.setattr(rs, "_run_opencode", lambda p, m, t: ("fallback", ""))
+    assert rs.cross_check("hi") == "fallback"
 
 
 # ---------- cross_check: all fail ----------
@@ -215,7 +290,7 @@ def test_sentinel_names_unknown_app_entries(monkeypatch):
     monkeypatch.setenv("VICAYA_CROSS_CHECK_CHAIN", "mystery:m|agy:ok")
     monkeypatch.setattr(rs, "_run_agy", lambda p, m, t: (None, "no output"))
     out = rs.cross_check("hi")
-    assert "mystery:m — unknown app (supported: opencode, agy)" in out
+    assert "mystery:m — unknown app (supported: opencode, agy, pi)" in out
     assert "agy:ok — no output" in out
 
 
@@ -246,6 +321,17 @@ def test_preflight_reports_ok_entry(monkeypatch):
     assert result["chain_configured"] is True
     assert result["entries"][0]["app"] == "opencode"
     assert result["entries"][0]["ok"] is True
+
+
+def test_preflight_reports_pi_entry(monkeypatch):
+    monkeypatch.setenv("VICAYA_CROSS_CHECK_CHAIN", "pi:zai/glm-5.3")
+    monkeypatch.setattr(rs, "_run_pi", lambda p, m, t: ("OK", ""))
+    result = rs.cross_check_preflight(timeout=5)
+    assert result["ok"] is True
+    assert result["entries"][0]["app"] == "pi"
+    assert result["entries"][0]["model"] == "zai/glm-5.3"
+    assert result["entries"][0]["ok"] is True
+    assert result["entries"][0]["reason"] == ""
 
 
 def test_preflight_reports_failure_reason_and_prompt_is_tiny(monkeypatch):

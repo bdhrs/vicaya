@@ -66,6 +66,7 @@ Seven phases (see `SKILL.md`):
 | `yt-dlp` | yes (YouTube search) | `yt-dlp --version` |
 | `opencode` CLI | optional (cross-check chain) | `opencode --version` |
 | `agy` CLI | optional (cross-check chain) | `agy --version` |
+| `pi` CLI | optional (cross-check chain; original Z.ai/DeepSeek APIs) | `pi --version` |
 | `uv` | yes (to run helpers) | `uv --version` |
 
 ## Configuration
