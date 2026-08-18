@@ -142,13 +142,21 @@ the commit is saved locally — nothing is lost.
 
 Deliberately lighter than a `vicaya` research note (no
 `canon_refs`/`library_refs`/`web_refs` — those are for citation-complete
-notes, not this):
+notes, not this). It does carry `model` and `harness`, self-identified the
+same way `vicaya`'s Rule F5 does (`skill/vicaya/SKILL.md`) — same lookup
+method, same "never guess, write `unknown` if it can't be determined"
+discipline — just split into two separate fields instead of one combined
+`agent` string: `model` is the family+version (e.g. `"Claude Sonnet 4.6"`,
+`"GLM 5.2"`), `harness` is the host app/CLI you're running inside (e.g.
+`"Claude Code"`, `"pi"`, `"opencode"`).
 
 ```yaml
 ---
 date: 2026-07-24
 topic: "<the title, verbatim>"
 tool: "https://github.com/bdhrs/vicaya"
+model: "<Family Version, self-identified per Rule F5>"
+harness: "<host app/CLI, self-identified per Rule F5>"
 tags:
   - digest
 ---
