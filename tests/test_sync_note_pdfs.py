@@ -104,7 +104,7 @@ def test_fix_generates_missing_and_deletes_orphans(
     assert rendered == [missing]
     assert missing.exists()
     assert not orphan.exists()
-    assert "1 generated, 1 deleted" in output
+    assert "1 generated, 0 regenerated, 1 deleted" in output
     # The tree is a mirror again.
     assert sync_note_pdfs.audit(notes_root).clean
 
@@ -134,6 +134,35 @@ def test_fix_prunes_a_subfolder_left_empty(tmp_path: Path, monkeypatch) -> None:
     assert sync_note_pdfs.main(["--fix"]) == 0
     assert not stale.exists()
     assert (notes_root / "PDF").is_dir()
+
+
+def test_rebuild_regenerates_every_existing_pdf_too(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """--rebuild exists so a PDF-rendering change (e.g. turning on footnote
+    handling) reaches PDFs that already exist, not just missing ones."""
+    notes_root = _vault(tmp_path, monkeypatch)
+    rendered = _fake_render(monkeypatch)
+
+    exit_code = sync_note_pdfs.main(["--fix", "--rebuild"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert sorted(rendered) == sorted(
+        notes_root / "PDF" / relative
+        for relative in ("2099-01-01 - root.pdf", "Digest/2099-01-02 - digest.pdf")
+    )
+    assert "0 generated, 2 regenerated, 0 deleted" in output
+
+
+def test_rebuild_without_fix_is_a_no_op(tmp_path: Path, monkeypatch) -> None:
+    _vault(tmp_path, monkeypatch)
+    rendered = _fake_render(monkeypatch)
+
+    exit_code = sync_note_pdfs.main(["--rebuild"])
+
+    assert exit_code == 0
+    assert rendered == []
 
 
 def test_missing_vault_path_is_an_error(tmp_path: Path, monkeypatch, capsys) -> None:

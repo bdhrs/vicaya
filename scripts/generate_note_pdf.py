@@ -6,6 +6,7 @@ import argparse
 import importlib.util
 import os
 import platform
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -27,12 +28,65 @@ except ModuleNotFoundError:
 
 
 PDF_CSS = (
-    "@page { margin: 20mm; } "
+    "@page { margin: 20mm; "
+    "@footnote { border-top: 0.6pt solid #999; padding-top: 3pt; margin-top: 8pt; } } "
     "body { font-family: Georgia, serif; font-size: 11pt; line-height: 1.6; } "
     # Images wider than the content area must scale down to the page width,
     # otherwise they run off the edge of the page in the generated PDF.
-    "img { max-width: 100%; height: auto; }"
+    "img { max-width: 100%; height: auto; } "
+    ".pagefn { float: footnote; footnote-display: block; font-size: 0.72em; line-height: 1.3; } "
+    ".pagefn.missing { color: #b00020; font-weight: bold; } "
+    "::footnote-call { color: #7a2e2e; font-size: 0.72em; vertical-align: super; "
+    # Without this, two adjacent footnote markers (e.g. [^a][^b]) render as
+    # touching digits that read as one number.
+    "padding-left: 1pt; }"
 )
+
+_FOOTNOTE_CALL_RE = re.compile(
+    r'<sup id="fnref\d*:([^"]+)"><a class="footnote-ref"[^>]*>\d+</a></sup>'
+)
+_FOOTNOTE_DEF_RE = re.compile(r'<li id="fn:([^"]+)">(.*?)</li>', re.S)
+_FOOTNOTE_BACKREF_RE = re.compile(r'(?:&#160;)?<a class="footnote-backref".*?</a>')
+_SOLE_PARAGRAPH_RE = re.compile(r"^<p>(.*)</p>$", re.S)
+_FOOTNOTE_BLOCK_RE = re.compile(r'<div class="footnote">.*?</div>\s*', re.S)
+
+
+def _footnote_definition_html(content: str) -> str:
+    """A footnote `<li>`'s inner HTML, backref arrow stripped. A single
+    paragraph — the vault's own footnote convention, and the common case —
+    unwraps its `<p>` tags; a multi-paragraph definition keeps them all, so
+    later content is never silently dropped."""
+    content = _FOOTNOTE_BACKREF_RE.sub("", content).strip()
+    sole_paragraph = _SOLE_PARAGRAPH_RE.match(content)
+    return sole_paragraph.group(1) if sole_paragraph else content
+
+
+def _place_footnotes_at_page_foot(html_body: str) -> str:
+    """Move each footnote's text to sit under the page that cites it.
+
+    The markdown `footnotes` extension emits a calling marker plus a
+    definitions list at the very end. WeasyPrint's `float: footnote` puts an
+    element at the bottom of whatever page it lands on, so replacing each
+    calling marker with its own definition text — wrapped for that float —
+    turns the trailing list into true per-page notes with no manual page
+    tracking required.
+    """
+    notes = {
+        fid: _footnote_definition_html(content)
+        for fid, content in _FOOTNOTE_DEF_RE.findall(html_body)
+    }
+
+    def _replace_call(match: re.Match[str]) -> str:
+        fid = match.group(1)
+        if fid not in notes:
+            # A dangling [^id] with no matching definition: render an
+            # obviously-wrong marker instead of a silently blank note, so a
+            # typo'd id is visible in the PDF rather than hidden by it.
+            return f'<span class="pagefn missing">[missing footnote: {fid}]</span>'
+        return f'<span class="pagefn">{notes[fid]}</span>'
+
+    html_body = _FOOTNOTE_CALL_RE.sub(_replace_call, html_body)
+    return _FOOTNOTE_BLOCK_RE.sub("", html_body)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -76,7 +130,10 @@ def render_pdf(markdown_body: str, output_path: Path) -> None:
     from weasyprint import CSS, HTML
     from weasyprint.text.fonts import FontConfiguration
 
-    html_body = markdown.markdown(markdown_body, extensions=["tables", "fenced_code"])
+    html_body = markdown.markdown(
+        markdown_body, extensions=["tables", "fenced_code", "footnotes"]
+    )
+    html_body = _place_footnotes_at_page_foot(html_body)
     font_config = FontConfiguration()
     css = CSS(string=PDF_CSS, font_config=font_config)
     HTML(string=f"<html><body>{html_body}</body></html>").write_pdf(

@@ -69,6 +69,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Generate the missing PDFs and delete the orphans (default: report only).",
     )
+    parser.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="With --fix, also regenerate every existing PDF, not just the missing ones.",
+    )
     args = parser.parse_args(argv)
 
     env = {**note_checks.load_dotenv(_REPO_ROOT / ".env"), **os.environ}
@@ -86,7 +91,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"notes root: {notes_root}")
     print(f"notes: {len(notes)}")
 
-    if result.clean:
+    rebuild = args.fix and args.rebuild
+    if result.clean and not rebuild:
         print("every note has its PDF twin and the PDF tree holds nothing else")
         return 0
 
@@ -102,17 +108,28 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    for note, pdf in result.missing:
+    missing_pdfs = {pdf for _note, pdf in result.missing}
+    targets = notes if rebuild else [note for note, _pdf in result.missing]
+    regenerated = 0
+    for note in targets:
+        pdf = note_checks.resolve_pdf_path(note, notes_root)
         pdf.parent.mkdir(parents=True, exist_ok=True)
         body = note_checks.strip_frontmatter(note.read_text(encoding="utf-8"))
         generate_note_pdf.render_pdf(body, pdf)
-        print(f"generated: {pdf.relative_to(notes_root)}")
+        if pdf in missing_pdfs:
+            print(f"generated: {pdf.relative_to(notes_root)}")
+        else:
+            print(f"regenerated: {pdf.relative_to(notes_root)}")
+            regenerated += 1
     for path in result.orphans:
         path.unlink()
         print(f"deleted: {path.relative_to(notes_root)}")
 
     _prune_empty_dirs(notes_root / PDF_DIR_NAME)
-    print(f"\nfixed: {len(result.missing)} generated, {len(result.orphans)} deleted")
+    print(
+        f"\nfixed: {len(result.missing)} generated, {regenerated} regenerated, "
+        f"{len(result.orphans)} deleted"
+    )
     return 0
 
 
