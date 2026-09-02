@@ -897,6 +897,7 @@ writes the Phase 0 exit gate in one shot:
   complete research question.
 - `scope_assumptions` (`--scope-assumptions`): inferred textual scope,
   interpretive scope, depth, practical angle, and seed sources.
+  End the string with one falsifier line — `Falsifier: <the finding that would show the expected answer is wrong>`. Name a concrete finding, not a hedge: "a canonical passage using the term in the opposite sense" is a falsifier, "the sources might disagree" is not. Written before any searching, it is the one field that can stop a run from confirming its own framing.
 - `ambiguity_status` (`--ambiguity`): `clear`, `minor_uncertainty`, or
   `unclear`.
 
@@ -926,6 +927,7 @@ Assumptions:
 - Depth: <full note / focused answer>
 - Practical angle: <included/excluded>
 - Seeds: <texts/scholars/notes inferred>
+- Falsifier: <the finding that would show the expected answer is wrong>
 
 Please confirm or correct this before I begin.
 ```
@@ -1866,13 +1868,16 @@ Return your report as your final message. Do NOT use SendMessage — the
 dispatching session is not addressable from a sub-agent, and a report sent
 that way is lost.
 
-Report against these five, specifically or "no issue":
+Report against these six, specifically or "no issue":
 1. Perspective coverage — named positions underrepresented or mischaracterised; schools, teachers, or scholarly voices missing entirely.
 2. Tier integrity — anything attributed to the root canon (mūla) that originates in the commentaries (aṭṭhakathā / ṭīkā); any teacher's interpretation presented as canonical.
 3. Disputed consensus — a live interpretive dispute presented as settled.
 4. Factual accuracy — errors in Pāḷi terminology, sutta references, historical claims, scholarly attributions. Verify each against the mūla.
 5. General — other errors, oversights, or alternative interpretations.
+6. Quote-to-claim fit — for each blockquote, resolve the passage and check whether it says what the sentence built on it claims. Report over-reading (the quote is weaker than the claim), misreading (the Pāḷi does not mean what the claim takes it to mean), and conflation (two distinct terms treated as one). Paste the resolved text that establishes each finding.
 ```
+
+Point 6 is the reason this reviewer is source-armed. Existence checks confirm a citation is a real sutta and the shape check confirms it is well-formed; neither looks at whether the quoted passage carries the weight the sentence puts on it. Real runs have lost `asantasanto` to `asanta` and conflated distinct terms with every other check green.
 
 Integrate its findings under the same discipline as the external review: verify before accepting, drop anything you cannot substantiate, and never write that a review surfaced something (the IRON RULE applies unchanged).
 
