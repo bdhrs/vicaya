@@ -1950,3 +1950,36 @@ def test_ocr_fallback_closes_the_worker_pipe(tmp_path, monkeypatch):
     library_folders._extract_pdf(tmp_path / "scan.pdf")
 
     assert cast(_FakePopen, seen["proc"]).stdout.closed is True
+
+
+def test_real_hanging_worker_is_killed_and_partial_text_kept(tmp_path, monkeypatch):
+    """Spawn a genuinely hung child, not a fake, and require prompt recovery.
+
+    Regression for 2026-09-03: the stall was detected on time, then the parent
+    deadlocked closing the pipe while the reader thread was blocked in
+    readline() holding the buffered-reader lock. A refresh sat for over two
+    hours with the stall already found. The fake-based tests could not catch
+    it because their close() returns immediately.
+    """
+    hang_snippet = (
+        "import json, sys, time\n"
+        "from tools.library_folders import _OCR_REPLY_MARKER\n"
+        "for reply in ({'kind': 'meta', 'page_count': 150, 'last_page': 150},\n"
+        "              {'kind': 'chunk', 'through_page': 10, 'text': 'first ten'}):\n"
+        "    sys.stdout.write('\\n' + _OCR_REPLY_MARKER + json.dumps(reply) + '\\n')\n"
+        "    sys.stdout.flush()\n"
+        "time.sleep(600)\n"
+    )
+    monkeypatch.setattr(library_folders, "_OCR_WORKER_SNIPPET", hang_snippet)
+    monkeypatch.setattr(library_folders, "OCR_CHUNK_TIMEOUT", 3.0)
+    monkeypatch.setattr(library_folders, "OCR_FIRST_CHUNK_TIMEOUT", 3.0)
+    _empty_pdftotext(monkeypatch)
+
+    started = time.monotonic()
+    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+    elapsed = time.monotonic() - started
+
+    assert extracted.status == "partial: ocr stalled at page 10 of 150"
+    assert extracted.text == "first ten"
+    # The whole point: bounded. Deadlocked, this never returns at all.
+    assert elapsed < 30, f"took {elapsed:.1f}s — the stall path is not bounded"

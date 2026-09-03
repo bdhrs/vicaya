@@ -587,14 +587,27 @@ def _extract_pdf_ocr_fallback(path: Path) -> ExtractedText | None:
             )
         except OSError as exc:
             return ExtractedText(text="", status=f"error: pdf ocr subprocess: {exc}")
+        outcome = None
         try:
             outcome = _collect_ocr_chunks(proc)
         finally:
+            # Kill before touching the pipe: a stalled reader thread is blocked
+            # in readline() and only the child's death unblocks it.
             if proc.poll() is None:
                 proc.kill()
             proc.wait()
+            if outcome is not None and outcome.reader is not None:
+                outcome.reader.join(timeout=5.0)
+            if proc.stdout is not None:
+                try:
+                    proc.stdout.close()
+                except OSError:
+                    pass
         errfile.seek(0)
         stderr = errfile.read().strip()
+    # _collect_ocr_chunks either returns or raises, so the finally above cannot
+    # leave this unbound; the None start exists only so that block can see it.
+    assert outcome is not None
 
     if outcome.unsupported:
         return None
@@ -639,6 +652,7 @@ class _OcrOutcome:
     stalled: bool
     unsupported: bool
     junk: str | None
+    reader: threading.Thread | None = None
 
 
 def _collect_ocr_chunks(proc: subprocess.Popen[str]) -> _OcrOutcome:
@@ -709,12 +723,12 @@ def _collect_ocr_chunks(proc: subprocess.Popen[str]) -> _OcrOutcome:
             parts.append(str(reply.get("text") or ""))
             pages_done = int(reply.get("through_page") or pages_done)
 
-    try:
-        stdout.close()
-    except OSError:
-        pass
-    reader.join(timeout=5.0)
-
+    # Deliberately no stdout.close() or reader.join() here. On a stall the
+    # reader thread is blocked in readline() holding the buffered-reader lock,
+    # so closing from this thread deadlocks against it (observed 2026-09-03:
+    # a refresh sat for over two hours with the stall already detected). The
+    # child must be killed first, which is the caller's finally block; only
+    # then does readline() return and the pipe become safe to close.
     return _OcrOutcome(
         parts=parts,
         page_count=page_count,
@@ -722,6 +736,7 @@ def _collect_ocr_chunks(proc: subprocess.Popen[str]) -> _OcrOutcome:
         stalled=stalled,
         unsupported=unsupported,
         junk=junk,
+        reader=reader,
     )
 
 
