@@ -588,6 +588,8 @@ vicaya/
 If you are contributing to this project, please install the pre-commit hooks to ensure code quality:
 
 ```bash
-uv pip install pre-commit
+uv sync
 uv run pre-commit install
 ```
+
+`pre-commit` ships in the `dev` dependency group, so `uv sync` installs it. Do not install it with `uv pip install` — a later `uv sync` removes it, and the generated hook then fails on every commit with `No module named pre_commit`.
