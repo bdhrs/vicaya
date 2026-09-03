@@ -5,7 +5,9 @@ from __future__ import annotations
 import bz2
 import hashlib
 import io
+import json
 import os
+import queue
 import re
 import shutil
 import sqlite3
@@ -20,6 +22,7 @@ import zipfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from collections.abc import Iterator
 from typing import Any, Callable
 from xml.etree import ElementTree
 
@@ -39,7 +42,18 @@ from tools._common import (  # noqa: E402
 SOURCES_ENV = "VICAYA_LIBRARY_FOLDERS"
 INDEX_ENV = "VICAYA_LIBRARY_FOLDERS_INDEX"
 EXCLUDE_ENV = "VICAYA_LIBRARY_FOLDERS_EXCLUDE"
-SCHEMA_VERSION = "2"
+OCR_KILL_SWITCH_ENV = "VICAYA_LIBRARY_FOLDERS_OCR"
+OCR_PAGE_CAP = 150
+OCR_CHUNK_PAGES = 10
+OCR_CHUNK_TIMEOUT = 120
+# The first chunk also pays interpreter startup, the pdf_inspector import, ONNX
+# runtime init, the PDFium load, and on a machine that has never run OCR a
+# one-time model download. Every measured timing was warm-start, so this grace
+# is generous on purpose.
+OCR_FIRST_CHUNK_TIMEOUT = 600
+OCR_SUBPROCESS_TIMEOUT = 1800
+REFRESH_COMMIT_SECONDS = 30.0
+SCHEMA_VERSION = "3"
 TEXT_EXTENSIONS = {".txt", ".md", ".json", ".jsonl", ".py"}
 HTML_EXTENSIONS = {".htm", ".html", ".shtml", ".xhtml", ".xht", ".xml"}
 EPUB_EXTENSIONS = {".epub"}
@@ -181,6 +195,13 @@ def _utc_now() -> str:
 
 
 def initialize_schema(conn: sqlite3.Connection) -> None:
+    # Write-ahead logging so a search can read the index while a refresh is
+    # part-way through writing it, and so a killed refresh leaves the
+    # already-committed files behind instead of rolling the whole walk back.
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+    except sqlite3.OperationalError:
+        pass
     try:
         version = conn.execute(
             "SELECT value FROM index_meta WHERE key = 'schema_version'"
@@ -372,11 +393,20 @@ def _extract_zip_members(
 
 
 def _extract_pdf(path: Path) -> ExtractedText:
+    result = _extract_pdf_pdftotext(path)
+    if result.status == "ok":
+        return result
+    return _extract_pdf_ocr_fallback(path) or result
+
+
+def _extract_pdf_pdftotext(path: Path) -> ExtractedText:
     if shutil.which("pdftotext") is None:
         return ExtractedText(text="", status="unsupported: pdftotext not found")
     try:
+        # Reading-order mode (no -layout): keeps two-column books in column
+        # sequence instead of interleaving them line-by-line.
         result = subprocess.run(
-            ["pdftotext", "-layout", str(path), "-"],
+            ["pdftotext", str(path), "-"],
             capture_output=True,
             encoding="utf-8",
             errors="replace",
@@ -390,6 +420,304 @@ def _extract_pdf(path: Path) -> ExtractedText:
         return ExtractedText(text="", status=f"error: {message[0]}")
     text = result.stdout
     return ExtractedText(text=text, status="ok" if text.strip() else "empty")
+
+
+def _ort_dylib_path() -> str | None:
+    """Return the onnxruntime shared library path, when the wheel is installed."""
+    try:
+        import onnxruntime
+    except ImportError:
+        return None
+    capi = Path(onnxruntime.__file__).resolve().parent / "capi"
+    for candidate in sorted(capi.glob("libonnxruntime.so.*")):
+        return str(candidate)
+    return None
+
+
+def _ocr_worker_chunks(path: str) -> Iterator[dict[str, Any]]:
+    """Yield one reply per OCR'd chunk of a PDF, newest work last.
+
+    Runs inside a dedicated subprocess (see _extract_pdf_ocr_fallback) because
+    process_pdf_with_ocr has been observed to deadlock without bound on some
+    scanned books; a subprocess turns that hang into a killable timeout.
+
+    Yields a "meta" reply first, then a "chunk" reply per completed chunk.
+    Emitting per chunk is what lets the caller bound each chunk separately and
+    keep the pages that finished: a stall was measured on 2 of 12 real scanned
+    books (2026-09-03), and one of them had already OCR'd 130 of 150 pages.
+    """
+    import pdf_inspector  # noqa: PLC0415 - optional dependency, lazy import
+
+    detect = getattr(pdf_inspector, "detect_pdf", None)
+    process_with_ocr = getattr(pdf_inspector, "process_pdf_with_ocr", None)
+    if detect is None or process_with_ocr is None:
+        yield {"kind": "unsupported", "detail": "pdf-inspector lacks OCR API"}
+        return
+    if not os.environ.get("ORT_DYLIB_PATH"):
+        dylib = _ort_dylib_path()
+        if dylib is not None:
+            os.environ["ORT_DYLIB_PATH"] = dylib
+    detection = detect(path)
+    page_count = int(detection.page_count)
+    last_page = min(page_count, OCR_PAGE_CAP)
+    yield {"kind": "meta", "page_count": page_count, "last_page": last_page}
+    # Chunked calls: a single multi-hundred-page process_pdf_with_ocr call
+    # deadlocks (observed on 150 dense pages); 10-page chunks return in
+    # seconds each.
+    for start in range(1, last_page + 1, OCR_CHUNK_PAGES):
+        chunk = list(range(start, min(start + OCR_CHUNK_PAGES, last_page + 1)))
+        ocr = process_with_ocr(path, page_numbers=chunk)
+        yield {
+            "kind": "chunk",
+            "through_page": chunk[-1],
+            "text": ocr.markdown or "",
+        }
+
+
+def extraction_succeeded(status: str) -> bool:
+    """Whether an extraction_status counts as done and needs no re-extraction.
+
+    The vocabulary is a prefix contract, relied on by _should_skip, the two
+    just recipes, README.md, kamma/tech.md and skill/vicaya/SKILL.md:
+
+      "ok"           full text extracted
+      "ok: ..."      a success with a note (OCR stopped at OCR_PAGE_CAP);
+                     re-running would redo identical pages, so it is done
+      "partial: ..." some text, but the attempt did not finish and a retry
+                     is expected to do better (an intermittent OCR stall)
+      everything else ("empty", "unsupported: ...", "error: ...") failed
+    """
+    return status == "ok" or status.startswith("ok:")
+
+
+def _ocr_status(text: str, page_count: int, pages_done: int) -> str:
+    """The extraction status for OCR that reached pages_done of page_count."""
+    if not text:
+        return "empty"
+    # finding 6: page_count 0 means the meta reply never arrived, so how far
+    # the OCR actually got is unknown — never claim a complete "ok" from it.
+    if page_count > 0 and pages_done >= page_count:
+        return "ok"
+    # An "ok: ..." status is a success with a note: the row is queryable and
+    # _should_skip leaves it alone on --retry-failed, because re-running would
+    # redo the same pages. Finishing it means a deliberate re-run at a raised
+    # cap.
+    if pages_done >= OCR_PAGE_CAP:
+        return f"ok: ocr truncated at {OCR_PAGE_CAP} of {page_count} pages"
+    # A stall is not deterministic: both books measured as stalling on
+    # 2026-09-03 completed cleanly on the next attempt. So a stalled row keeps
+    # the pages it got but stays retryable — anything not starting with "ok"
+    # is re-extracted by --retry-failed, and a retry will usually finish it.
+    return f"partial: ocr stalled at page {pages_done} of {page_count}"
+
+
+# The worker's stdout also carries whatever pdf-inspector, onnxruntime and
+# PDFium print; every reply is framed so noise cannot be mistaken for one.
+_OCR_REPLY_MARKER = "__VICAYA_OCR_REPLY__"
+_OCR_WORKER_SNIPPET = (
+    "import json, sys\n"
+    "from tools.library_folders import _OCR_REPLY_MARKER, _ocr_worker_chunks\n"
+    "for reply in _ocr_worker_chunks(sys.argv[1]):\n"
+    "    sys.stdout.write('\\n' + _OCR_REPLY_MARKER + json.dumps(reply) + '\\n')\n"
+    "    sys.stdout.flush()\n"
+)
+
+
+def _parse_ocr_worker_reply(line: str) -> dict[str, Any] | None:
+    """Pull a framed JSON reply out of one line of worker stdout, or None."""
+    marker_at = line.rfind(_OCR_REPLY_MARKER)
+    if marker_at < 0:
+        return None
+    try:
+        payload = json.loads(line[marker_at + len(_OCR_REPLY_MARKER) :].strip())
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _extract_pdf_ocr_fallback(path: Path) -> ExtractedText | None:
+    """OCR PDFs whose text layer is empty, broken, or unreadable by pdftotext.
+
+    Uses pdf-inspector's selective OCR (pdf-inspector + onnxruntime are main
+    dependencies; needs PDFIUM_LIB_PATH pointing at a PDFium shared library).
+    Returns None when OCR is disabled or unavailable, so the caller can keep
+    the pdftotext result unchanged.
+
+    The OCR runs in a dedicated subprocess because process_pdf_with_ocr can
+    deadlock without bound. The worker streams one framed reply per chunk and
+    each chunk is bounded separately (OCR_CHUNK_TIMEOUT, or
+    OCR_FIRST_CHUNK_TIMEOUT for the first, which also pays startup and any
+    one-time model download); OCR_SUBPROCESS_TIMEOUT remains a whole-file
+    backstop. Bounding per chunk is what keeps the pages a stalled book had
+    already finished — measured 2026-09-03, 2 of 12 real scanned books stalled
+    mid-book and the previous whole-file timeout discarded up to 130 completed
+    pages each time.
+
+    Work per file is capped at the first OCR_PAGE_CAP pages. Statuses follow
+    the extraction_succeeded contract: "ok: ocr truncated ..." for a cap that
+    cut a book short (deterministic, so it is not retried) and
+    "partial: ocr stalled ..." for a stall (intermittent, so it is).
+    """
+    if os.environ.get(OCR_KILL_SWITCH_ENV) == "0":
+        return None
+    try:
+        import pdf_inspector  # noqa: F401,PLC0415 - availability probe only
+    except ImportError:
+        return None
+    env = dict(os.environ)
+    existing_path = os.environ.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = (
+        f"{_REPO_ROOT}{os.pathsep}{existing_path}" if existing_path else str(_REPO_ROOT)
+    )
+    with tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as errfile:
+        try:
+            proc = subprocess.Popen(
+                [sys.executable, "-c", _OCR_WORKER_SNIPPET, str(path)],
+                stdout=subprocess.PIPE,
+                stderr=errfile,
+                encoding="utf-8",
+                errors="replace",
+                cwd=str(_REPO_ROOT),
+                env=env,
+            )
+        except OSError as exc:
+            return ExtractedText(text="", status=f"error: pdf ocr subprocess: {exc}")
+        try:
+            outcome = _collect_ocr_chunks(proc)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait()
+        errfile.seek(0)
+        stderr = errfile.read().strip()
+
+    if outcome.unsupported:
+        return None
+    text = "\n\n".join(part for part in outcome.parts if part).strip()
+    if text:
+        if not outcome.stalled and proc.returncode != 0:
+            # Keep the pages that landed, but do not call a crash a stall.
+            return ExtractedText(
+                text=text,
+                status=(
+                    f"partial: ocr worker died at page {outcome.pages_done} "
+                    f"of {outcome.page_count}"
+                ),
+            )
+        return ExtractedText(
+            text=text,
+            status=_ocr_status(text, outcome.page_count, outcome.pages_done),
+        )
+    if outcome.stalled:
+        return ExtractedText(
+            text="",
+            status=(
+                "error: pdf ocr stalled before any pages "
+                f"(no chunk in {OCR_CHUNK_TIMEOUT}s)"
+            ),
+        )
+    if outcome.junk is not None:
+        return ExtractedText(
+            text="", status=f"error: pdf ocr worker returned junk: {outcome.junk}"
+        )
+    if proc.returncode != 0:
+        message = stderr.splitlines()[-1] if stderr else "pdf ocr subprocess failed"
+        return ExtractedText(text="", status=f"error: {message}")
+    return ExtractedText(text="", status="empty")
+
+
+@dataclass
+class _OcrOutcome:
+    parts: list[str]
+    page_count: int
+    pages_done: int
+    stalled: bool
+    unsupported: bool
+    junk: str | None
+
+
+def _collect_ocr_chunks(proc: subprocess.Popen[str]) -> _OcrOutcome:
+    """Read framed chunk replies, bounding each chunk rather than the file.
+
+    A whole-file timeout throws away every completed chunk when one hangs, and
+    charges the full OCR_SUBPROCESS_TIMEOUT for a book that produced nothing.
+    Bounding each chunk instead turns a hang into a ~OCR_CHUNK_TIMEOUT cost
+    with the finished pages kept.
+    """
+    parts: list[str] = []
+    page_count = 0
+    pages_done = 0
+    stalled = False
+    unsupported = False
+    junk: str | None = None
+
+    assert proc.stdout is not None
+    stdout = proc.stdout
+    # A reader thread rather than a poll on the pipe: a wedged worker leaves
+    # the read blocked forever, and only a separate thread lets the deadline
+    # below still fire. It also keeps this readable from any file-like object.
+    inbox: queue.Queue[str | None] = queue.Queue()
+
+    def pump() -> None:
+        try:
+            for line in iter(stdout.readline, ""):
+                inbox.put(line)
+        except (OSError, ValueError):
+            pass
+        finally:
+            inbox.put(None)
+
+    reader = threading.Thread(target=pump, daemon=True)
+    reader.start()
+
+    started = time.monotonic()
+    last_progress = started
+    while True:
+        now = time.monotonic()
+        deadline = OCR_CHUNK_TIMEOUT if pages_done else OCR_FIRST_CHUNK_TIMEOUT
+        if now - last_progress > deadline:
+            stalled = True
+            break
+        if now - started > OCR_SUBPROCESS_TIMEOUT:
+            stalled = True
+            break
+        try:
+            line = inbox.get(timeout=0.2)
+        except queue.Empty:
+            continue
+        if line is None:
+            break
+        reply = _parse_ocr_worker_reply(line)
+        if reply is None:
+            if junk is None and line.strip():
+                junk = line.strip()[:120]
+            continue
+        junk = None
+        last_progress = time.monotonic()
+        kind = reply.get("kind")
+        if kind == "unsupported":
+            unsupported = True
+            break
+        if kind == "meta":
+            page_count = int(reply.get("page_count") or 0)
+        elif kind == "chunk":
+            parts.append(str(reply.get("text") or ""))
+            pages_done = int(reply.get("through_page") or pages_done)
+
+    try:
+        stdout.close()
+    except OSError:
+        pass
+    reader.join(timeout=5.0)
+
+    return _OcrOutcome(
+        parts=parts,
+        page_count=page_count,
+        pages_done=pages_done,
+        stalled=stalled,
+        unsupported=unsupported,
+        junk=junk,
+    )
 
 
 def _run_doc_extractor(command: list[str], label: str) -> ExtractedText:
@@ -820,7 +1148,7 @@ def _should_skip(
         return False
     if int(row[0]) != size or float(row[1]) != mtime:
         return False
-    if retry_failed and row[2] != "ok":
+    if retry_failed and not extraction_succeeded(str(row[2])):
         return False
     return True
 
@@ -884,6 +1212,7 @@ def refresh(
     deleted = 0
     errors: list[dict[str, str]] = []
     seen_source_paths: set[str] = set()
+    last_commit = time.monotonic()
     with sqlite3.connect(index) as conn:
         initialize_schema(conn)
         progress = tqdm(
@@ -950,6 +1279,12 @@ def refresh(
                 extracted_count += 1
             else:
                 metadata_only += 1
+            # A full OCR pass runs for hours; commit on a clock rather than a
+            # file count so an interruption costs at most one interval either
+            # way — thousands of instant text files or one slow scanned book.
+            if time.monotonic() - last_commit >= REFRESH_COMMIT_SECONDS:
+                conn.commit()
+                last_commit = time.monotonic()
         if limit is None:
             deleted = _delete_missing_documents(
                 conn, seen_source_paths, available_roots

@@ -3,7 +3,13 @@
 # These wrap the library-folders subcommands of tools/research_sources.py.
 # Multiple source trees (including Calibre libraries) are indexed together into
 # one SQLite FTS5 database. Paths come from .env (VICAYA_LIBRARY_FOLDERS /
-# _INDEX / _EXCLUDE). Only lf-refresh touches the source trees; the rest are read-only.
+# _INDEX / _EXCLUDE). Only the lf-refresh* recipes touch the source trees; the rest are read-only.
+#
+# A full rebuild is `just lf-rebuild-from-scratch`, which runs these in order:
+#   1. `just lf-refresh-text`  — every file, OCR off. Fast. Scanned PDFs land as `empty`.
+#   2. `just lf-refresh-retry` — only the rows the text pass could not read, OCR on. Slow (hours).
+#   3. `just lf-refresh-retry` again — OCR stalls are intermittent, so a second pass recovers them.
+# Running pass 2 first would work but would hold the whole library hostage to the scans.
 
 # List all recipes.
 default:
@@ -17,7 +23,27 @@ lf-check:
 lf-refresh *args:
     uv run tools/research_sources.py library-folders-refresh {{args}}
 
-# Like lf-refresh, but also re-extracts previously-failed files (run after adding extractor support, e.g. new ebook formats).
+# Full rebuild in one command: the text pass, the OCR pass, then one more OCR pass for books that stalled. Takes hours — run it in its own terminal, not inside an agent session.
+lf-rebuild-from-scratch *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "==> pass 1/3 text-only, OCR off  $(date +%H:%M:%S)"
+    VICAYA_LIBRARY_FOLDERS_OCR=0 uv run tools/research_sources.py library-folders-refresh {{args}}
+    echo "==> pass 2/3 OCR what pass 1 could not read  $(date +%H:%M:%S)"
+    uv run tools/research_sources.py library-folders-refresh --retry-failed {{args}}
+    # OCR stalls are intermittent: 2 of 12 sampled books stalled on one attempt
+    # and completed on the next, so one more pass recovers them. It also re-tries
+    # genuinely unextractable files, which is wasted but bounded.
+    echo "==> pass 3/3 retry books that stalled  $(date +%H:%M:%S)"
+    uv run tools/research_sources.py library-folders-refresh --retry-failed {{args}}
+    echo "==> done  $(date +%H:%M:%S)"
+    uv run tools/research_sources.py library-folders-check
+
+# Rebuild pass 1 of 3: every file, OCR fallback off. Fast; scanned PDFs stay `empty` for pass 2 to pick up.
+lf-refresh-text *args:
+    VICAYA_LIBRARY_FOLDERS_OCR=0 uv run tools/research_sources.py library-folders-refresh {{args}}
+
+# Rebuild pass 2 (and 3) of 3: re-extract only the rows the previous pass could not read, PDF OCR fallback on. Slow — hours on a large library. Also the recipe to run after adding extractor support (e.g. new ebook formats).
 lf-refresh-retry *args:
     uv run tools/research_sources.py library-folders-refresh --retry-failed {{args}}
 

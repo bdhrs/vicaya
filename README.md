@@ -163,7 +163,8 @@ short recipes (run `just` to list them):
 ```bash
 just lf-check                      # read-only preflight: config + index health (run before refreshing)
 just lf-refresh                    # build/update the index by walking the tree (skips unchanged files; slow first run; add --limit N to bound it)
-just lf-refresh-retry              # like lf-refresh, but also re-extracts previously-failed files (run once after adding extractor support)
+just lf-refresh-text               # rebuild pass 1 of 2: every file, PDF OCR fallback off (fast; scanned PDFs stay empty)
+just lf-refresh-retry              # rebuild pass 2 of 2: re-extract only what pass 1 could not read, OCR on (slow); also the recipe to run after adding extractor support
 just lf-search "dhamma" --limit 5  # full-text search the index
 just lf-dups --samples 10          # read-only duplicate diagnostic
 ```
@@ -182,6 +183,16 @@ bounded by per-archive caps of 5,000 members, 2 GB uncompressed, and a 5-minute
 wall-clock. A normal refresh skips files whose size and
 mtime are unchanged, so after installing a new extractor re-run with
 `--retry-failed` / `just lf-refresh-retry` once; later refreshes skip them again.
+
+Scanned PDFs (no usable text layer) are OCR'd as a fallback during refresh,
+over the first 150 pages of each book. That is slow — hours across a large
+library — so a full rebuild is best run as two passes: `just lf-refresh-text`
+first to get every readable file indexed fast, then `just lf-refresh-retry` to
+OCR only what the first pass could not read. When the 150-page cap cuts a book
+short, its status records it (`ok: ocr truncated at 150 of 600 pages`) so
+partially-indexed books are queryable rather than silently incomplete. Set
+`VICAYA_LIBRARY_FOLDERS_OCR=0` to turn the fallback off. A refresh commits as it
+goes, so an interrupted run keeps the files it had finished.
 
 Duplicate handling is conservative. Exact byte duplicates and identical
 normalized extracted text are collapsed by default; `--include-duplicates`

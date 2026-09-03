@@ -11,9 +11,11 @@ import sqlite3
 import subprocess
 import sys
 import tarfile
+import threading
 import time
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 from typing import cast
 
 import pytest
@@ -1181,3 +1183,763 @@ def test_7z_extractor_handles_inner_text(tmp_path):
 
     assert extracted.status == "ok"
     assert "sevenzip target" in extracted.text
+
+
+def _drain_ocr_worker(path: str) -> dict[str, str]:
+    """Run the real worker generator and reduce it the way production does.
+
+    Production drives _ocr_worker_chunks from the worker snippet and reduces
+    the replies in _collect_ocr_chunks / _ocr_status. This mirrors that
+    reduction so the worker tests exercise the shipped generator rather than a
+    parallel implementation of it.
+    """
+    page_count = 0
+    pages_done = 0
+    parts: list[str] = []
+    for reply in library_folders._ocr_worker_chunks(path):
+        if reply["kind"] == "unsupported":
+            return {"status": "unsupported", "text": ""}
+        if reply["kind"] == "meta":
+            page_count = int(reply["page_count"])
+        elif reply["kind"] == "chunk":
+            parts.append(str(reply["text"]))
+            pages_done = int(reply["through_page"])
+    text = "\n\n".join(part for part in parts if part).strip()
+    return {
+        "status": library_folders._ocr_status(text, page_count, pages_done),
+        "text": text,
+    }
+
+
+def _empty_pdftotext(monkeypatch):
+    monkeypatch.setattr(
+        library_folders,
+        "_extract_pdf_pdftotext",
+        lambda _path: library_folders.ExtractedText(text="", status="empty"),
+    )
+
+
+def test_ocr_worker_extracts_scanned_pdf(tmp_path, monkeypatch):
+    calls: dict[str, object] = {}
+
+    def fake_with_ocr(path, page_numbers=None):
+        calls["path"] = path
+        calls["page_numbers"] = page_numbers
+        return SimpleNamespace(markdown="ocr target text", pages=[])
+
+    stub = SimpleNamespace(
+        detect_pdf=lambda _path: SimpleNamespace(page_count=3),
+        process_pdf_with_ocr=fake_with_ocr,
+    )
+    monkeypatch.setitem(sys.modules, "pdf_inspector", stub)
+    monkeypatch.setenv("ORT_DYLIB_PATH", "/tmp/fake/libonnxruntime.so")
+
+    payload = _drain_ocr_worker(str(tmp_path / "scan.pdf"))
+
+    assert payload["status"] == "ok"
+    assert payload["text"] == "ocr target text"
+    assert calls["path"] == str(tmp_path / "scan.pdf")
+    assert calls["page_numbers"] == [1, 2, 3]
+
+
+def test_ocr_worker_missing_ocr_api_returns_unsupported(tmp_path, monkeypatch):
+    stub = SimpleNamespace()  # no detect_pdf / process_pdf_with_ocr
+    monkeypatch.setitem(sys.modules, "pdf_inspector", stub)
+
+    payload = _drain_ocr_worker(str(tmp_path / "scan.pdf"))
+
+    assert payload["status"] == "unsupported"
+
+
+def test_ocr_worker_reports_empty_when_no_text_recognised(tmp_path, monkeypatch):
+    stub = SimpleNamespace(
+        detect_pdf=lambda _path: SimpleNamespace(page_count=2),
+        process_pdf_with_ocr=lambda _path, page_numbers=None: SimpleNamespace(
+            markdown="", pages=[]
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "pdf_inspector", stub)
+    monkeypatch.setenv("ORT_DYLIB_PATH", "/tmp/fake/libonnxruntime.so")
+
+    payload = _drain_ocr_worker(str(tmp_path / "scan.pdf"))
+
+    assert payload["status"] == "empty"
+    assert payload["text"] == ""
+
+
+def test_ocr_worker_caps_pages(tmp_path, monkeypatch):
+    calls: list[list[int]] = []
+
+    def fake_with_ocr(path, page_numbers: list[int] | None = None):
+        calls.append(page_numbers or [])
+        return SimpleNamespace(markdown="partial ocr text", pages=[])
+
+    stub = SimpleNamespace(
+        detect_pdf=lambda _path: SimpleNamespace(page_count=1000),
+        process_pdf_with_ocr=fake_with_ocr,
+    )
+    monkeypatch.setitem(sys.modules, "pdf_inspector", stub)
+    monkeypatch.setenv("ORT_DYLIB_PATH", "/tmp/fake/libonnxruntime.so")
+
+    payload = _drain_ocr_worker(str(tmp_path / "scan.pdf"))
+
+    assert payload["status"].startswith("ok:")
+    # 1000-page pdf capped at OCR_PAGE_CAP, fetched in OCR_CHUNK_PAGES chunks
+    assert calls[0] == list(range(1, library_folders.OCR_CHUNK_PAGES + 1))
+    assert len(calls) == library_folders.OCR_PAGE_CAP // library_folders.OCR_CHUNK_PAGES
+    assert calls[-1] == list(
+        range(
+            library_folders.OCR_PAGE_CAP - library_folders.OCR_CHUNK_PAGES + 1,
+            library_folders.OCR_PAGE_CAP + 1,
+        )
+    )
+    assert all(len(chunk) <= library_folders.OCR_CHUNK_PAGES for chunk in calls)
+
+
+def test_ocr_worker_records_truncation_in_status(tmp_path, monkeypatch):
+    stub = SimpleNamespace(
+        detect_pdf=lambda _path: SimpleNamespace(page_count=600),
+        process_pdf_with_ocr=lambda _path, page_numbers=None: SimpleNamespace(
+            markdown="partial ocr text", pages=[]
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "pdf_inspector", stub)
+    monkeypatch.setenv("ORT_DYLIB_PATH", "/tmp/fake/libonnxruntime.so")
+
+    payload = _drain_ocr_worker(str(tmp_path / "scan.pdf"))
+
+    assert payload["status"] == (
+        f"ok: ocr truncated at {library_folders.OCR_PAGE_CAP} of 600 pages"
+    )
+    assert payload["text"].startswith("partial ocr text")
+
+
+def test_ocr_worker_does_not_flag_truncation_at_the_cap(tmp_path, monkeypatch):
+    stub = SimpleNamespace(
+        detect_pdf=lambda _path: SimpleNamespace(
+            page_count=library_folders.OCR_PAGE_CAP
+        ),
+        process_pdf_with_ocr=lambda _path, page_numbers=None: SimpleNamespace(
+            markdown="whole book", pages=[]
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "pdf_inspector", stub)
+    monkeypatch.setenv("ORT_DYLIB_PATH", "/tmp/fake/libonnxruntime.so")
+
+    payload = _drain_ocr_worker(str(tmp_path / "scan.pdf"))
+
+    assert payload["status"] == "ok"
+
+
+def test_pdf_ocr_fallback_keeps_original_status_without_pdf_inspector(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setitem(sys.modules, "pdf_inspector", None)  # import raises
+    _empty_pdftotext(monkeypatch)
+
+    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+
+    assert extracted.status == "empty"
+    assert extracted.text == ""
+
+
+def test_pdf_ocr_fallback_kill_switch(tmp_path, monkeypatch):
+    def boom(_path, **_kwargs):
+        raise AssertionError("OCR fallback must not run when disabled")
+
+    stub = SimpleNamespace(detect_pdf=boom, process_pdf_with_ocr=boom)
+    monkeypatch.setitem(sys.modules, "pdf_inspector", stub)
+    monkeypatch.setenv(library_folders.OCR_KILL_SWITCH_ENV, "0")
+    _empty_pdftotext(monkeypatch)
+
+    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+
+    assert extracted.status == "empty"
+    assert extracted.text == ""
+
+
+def test_pdf_ocr_fallback_not_tried_when_pdftotext_succeeds(tmp_path, monkeypatch):
+    def boom(_path):
+        raise AssertionError("OCR must only run as a fallback")
+
+    monkeypatch.setattr(
+        library_folders,
+        "_extract_pdf_pdftotext",
+        lambda _path: library_folders.ExtractedText(text="real layer", status="ok"),
+    )
+    monkeypatch.setattr(library_folders, "_extract_pdf_ocr_fallback", boom)
+
+    extracted = library_folders._extract_pdf(tmp_path / "book.pdf")
+
+    assert extracted.status == "ok"
+    assert extracted.text == "real layer"
+
+
+class _FakeWorkerStdout:
+    """Replay canned worker lines, then optionally block like a wedged chunk."""
+
+    def __init__(self, text: str, stall: bool) -> None:
+        self._lines = text.splitlines(keepends=True)
+        self._at = 0
+        self._stall = stall
+        self._released = threading.Event()
+        self.closed = False
+
+    def readline(self) -> str:
+        if self._at < len(self._lines):
+            self._at += 1
+            return self._lines[self._at - 1]
+        if self._stall:
+            # Bounded so the reader thread cannot outlive the test run.
+            self._released.wait(5)
+        return ""
+
+    def release(self) -> None:
+        self._released.set()
+
+    def close(self) -> None:
+        self._released.set()
+        self.closed = True
+
+
+class _FakePopen:
+    """Stand-in for the OCR worker subprocess."""
+
+    def __init__(
+        self,
+        cmd: list[str],
+        stdout_text: str = "",
+        returncode: int = 0,
+        stall: bool = False,
+        stderr_text: str = "",
+        **kwargs: object,
+    ) -> None:
+        self.cmd = cmd
+        self.stdout = _FakeWorkerStdout(stdout_text, stall)
+        self._returncode = returncode
+        self._exited = not stall
+        self.killed = False
+        errfile = kwargs.get("stderr")
+        if stderr_text and hasattr(errfile, "write"):
+            errfile.write(stderr_text)  # type: ignore[union-attr]
+
+    @property
+    def returncode(self) -> int:
+        return self._returncode
+
+    def poll(self) -> int | None:
+        return self._returncode if self._exited else None
+
+    def kill(self) -> None:
+        self.killed = True
+        self._exited = True
+        self.stdout.release()
+
+    def wait(self, timeout: float | None = None) -> int:
+        self._exited = True
+        self.stdout.release()
+        return self._returncode
+
+
+def _fake_worker(monkeypatch, **popen_kwargs) -> dict[str, object]:
+    """Point the OCR fallback at a canned worker; returns a seen-args dict."""
+    seen: dict[str, object] = {}
+
+    def fake_popen(cmd, **kwargs):
+        seen["cmd"] = cmd
+        seen["env"] = kwargs.get("env")
+        proc = _FakePopen(cmd, **popen_kwargs, **kwargs)
+        seen["proc"] = proc
+        return proc
+
+    monkeypatch.setattr(library_folders.subprocess, "Popen", fake_popen)
+    return seen
+
+
+def _ocr_stream(*replies: dict[str, object], noise: str = "") -> str:
+    out = noise
+    for reply in replies:
+        out += library_folders._OCR_REPLY_MARKER + json.dumps(reply) + "\n"
+    return out
+
+
+def _meta(page_count: int) -> dict[str, object]:
+    return {
+        "kind": "meta",
+        "page_count": page_count,
+        "last_page": min(page_count, library_folders.OCR_PAGE_CAP),
+    }
+
+
+def _chunk(through_page: int, text: str) -> dict[str, object]:
+    return {"kind": "chunk", "through_page": through_page, "text": text}
+
+
+@pytest.mark.parametrize("original", ["empty", "error: pdftotext timed out"])
+def test_pdf_ocr_fallback_escalates_from_every_non_ok_status(
+    tmp_path, monkeypatch, original
+):
+    _fake_worker(
+        monkeypatch,
+        stdout_text=_ocr_stream(_meta(10), _chunk(10, "ocr text")),
+    )
+    monkeypatch.setattr(
+        library_folders,
+        "_extract_pdf_pdftotext",
+        lambda _path: library_folders.ExtractedText(text="", status=original),
+    )
+
+    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+
+    assert extracted.status == "ok"
+    assert extracted.text == "ocr text"
+
+
+def test_ocr_fallback_spawns_worker_and_returns_ok(tmp_path, monkeypatch):
+    seen = _fake_worker(
+        monkeypatch,
+        stdout_text=_ocr_stream(
+            _meta(20), _chunk(10, "page one"), _chunk(20, "page two")
+        ),
+    )
+    _empty_pdftotext(monkeypatch)
+
+    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+
+    assert extracted.status == "ok"
+    assert extracted.text == "page one\n\npage two"
+    cmd = cast(list[str], seen["cmd"])
+    assert "-c" in cmd and str(tmp_path / "scan.pdf") in cmd
+
+
+def test_ocr_fallback_passes_truncated_status_through(tmp_path, monkeypatch):
+    _fake_worker(
+        monkeypatch,
+        stdout_text=_ocr_stream(
+            _meta(600), _chunk(library_folders.OCR_PAGE_CAP, "partial")
+        ),
+    )
+    _empty_pdftotext(monkeypatch)
+
+    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+
+    assert extracted.status == (
+        f"ok: ocr truncated at {library_folders.OCR_PAGE_CAP} of 600 pages"
+    )
+    assert extracted.text == "partial"
+
+
+def test_ocr_fallback_keeps_the_chunks_a_stalled_book_finished(tmp_path, monkeypatch):
+    """A wedged chunk must not discard the pages that already succeeded.
+
+    Measured 2026-09-03: 2 of 12 real scanned books stalled mid-book, and the
+    whole-file timeout threw away up to 130 already-OCR'd pages each time.
+    """
+    monkeypatch.setattr(library_folders, "OCR_CHUNK_TIMEOUT", 0.5)
+    seen = _fake_worker(
+        monkeypatch,
+        stdout_text=_ocr_stream(
+            _meta(150), _chunk(10, "first ten"), _chunk(20, "next ten")
+        ),
+        stall=True,
+    )
+    _empty_pdftotext(monkeypatch)
+
+    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+
+    assert extracted.status == "partial: ocr stalled at page 20 of 150"
+    assert extracted.text == "first ten\n\nnext ten"
+    assert cast(_FakePopen, seen["proc"]).killed is True
+
+
+def test_ocr_fallback_stall_before_any_page_is_an_error(tmp_path, monkeypatch):
+    # No chunk has landed, so the first-chunk deadline is the one in force.
+    monkeypatch.setattr(library_folders, "OCR_FIRST_CHUNK_TIMEOUT", 0.5)
+    monkeypatch.setattr(library_folders, "OCR_CHUNK_TIMEOUT", 0.5)
+    _fake_worker(monkeypatch, stdout_text=_ocr_stream(_meta(150)), stall=True)
+    _empty_pdftotext(monkeypatch)
+
+    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+
+    assert extracted.status.startswith("error: pdf ocr stalled before any pages")
+    assert extracted.text == ""
+
+
+def test_ocr_fallback_whole_file_timeout_still_backstops(tmp_path, monkeypatch):
+    monkeypatch.setattr(library_folders, "OCR_CHUNK_TIMEOUT", 30.0)
+    monkeypatch.setattr(library_folders, "OCR_SUBPROCESS_TIMEOUT", 0.5)
+    _fake_worker(
+        monkeypatch,
+        stdout_text=_ocr_stream(_meta(150), _chunk(10, "first ten")),
+        stall=True,
+    )
+    _empty_pdftotext(monkeypatch)
+
+    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+
+    assert extracted.status == "partial: ocr stalled at page 10 of 150"
+    assert extracted.text == "first ten"
+
+
+def test_ocr_fallback_prepends_repo_root_to_an_existing_pythonpath(
+    tmp_path, monkeypatch
+):
+    seen = _fake_worker(
+        monkeypatch, stdout_text=_ocr_stream(_meta(10), _chunk(10, "ocr text"))
+    )
+    monkeypatch.setenv("PYTHONPATH", "/somewhere/else")
+    _empty_pdftotext(monkeypatch)
+
+    library_folders._extract_pdf(tmp_path / "scan.pdf")
+
+    env = cast(dict[str, str], seen["env"])
+    assert env["PYTHONPATH"].split(os.pathsep)[0] == str(library_folders._REPO_ROOT)
+    assert "/somewhere/else" in env["PYTHONPATH"].split(os.pathsep)
+
+
+def test_ocr_fallback_survives_library_noise_on_stdout(tmp_path, monkeypatch):
+    _fake_worker(
+        monkeypatch,
+        stdout_text=_ocr_stream(
+            _meta(10),
+            _chunk(10, "ocr text"),
+            noise="onnxruntime: using CPUExecutionProvider\n{}\n",
+        ),
+    )
+    _empty_pdftotext(monkeypatch)
+
+    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+
+    assert extracted.status == "ok"
+    assert extracted.text == "ocr text"
+
+
+def test_ocr_fallback_worker_crash(tmp_path, monkeypatch):
+    _fake_worker(
+        monkeypatch,
+        returncode=1,
+        stderr_text="Traceback...\nValueError: failed to load PDFium\n",
+    )
+    _empty_pdftotext(monkeypatch)
+
+    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+
+    assert extracted.status == "error: ValueError: failed to load PDFium"
+    assert extracted.text == ""
+
+
+def test_ocr_fallback_unsupported_payload_keeps_original_status(tmp_path, monkeypatch):
+    _fake_worker(
+        monkeypatch,
+        stdout_text=_ocr_stream(
+            {"kind": "unsupported", "detail": "pdf-inspector lacks OCR API"}
+        ),
+    )
+    _empty_pdftotext(monkeypatch)
+
+    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+
+    assert extracted.status == "empty"
+    assert extracted.text == ""
+
+
+def test_ocr_fallback_unframed_reply_reports_the_offending_output(
+    tmp_path, monkeypatch
+):
+    _fake_worker(monkeypatch, stdout_text='{"kind": "chunk", "text": "unframed"}\n')
+    _empty_pdftotext(monkeypatch)
+
+    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+
+    assert extracted.status.startswith("error: pdf ocr worker returned junk")
+    assert "unframed" in extracted.status
+    assert extracted.text == ""
+
+
+def test_ocr_fallback_junk_payload_reports_the_offending_output(tmp_path, monkeypatch):
+    _fake_worker(
+        monkeypatch,
+        stdout_text="pdfium warning\n"
+        + library_folders._OCR_REPLY_MARKER
+        + "not json\n",
+    )
+    _empty_pdftotext(monkeypatch)
+
+    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+
+    assert extracted.status.startswith("error: pdf ocr worker returned junk")
+    assert extracted.text == ""
+
+
+def test_ocr_worker_snippet_streams_each_chunk(tmp_path, monkeypatch):
+    snippet = library_folders._OCR_WORKER_SNIPPET
+    assert "_OCR_REPLY_MARKER" in snippet
+    assert "_ocr_worker_chunks" in snippet
+    # One reply per chunk, flushed as it lands — that is what makes a
+    # per-chunk deadline possible at all.
+    assert "for reply in" in snippet
+    assert "flush()" in snippet
+
+
+def test_ort_dylib_path_found(tmp_path, monkeypatch):
+    capi = tmp_path / "capi"
+    capi.mkdir()
+    dylib = capi / "libonnxruntime.so.1.29.0"
+    dylib.write_bytes(b"")
+    fake = SimpleNamespace(__file__=str(tmp_path / "__init__.py"))
+    monkeypatch.setitem(sys.modules, "onnxruntime", fake)
+
+    assert library_folders._ort_dylib_path() == str(dylib)
+
+
+def test_ort_dylib_path_none_without_onnxruntime(monkeypatch):
+    monkeypatch.setitem(sys.modules, "onnxruntime", None)  # import raises
+
+    assert library_folders._ort_dylib_path() is None
+
+
+def test_retry_failed_leaves_ocr_truncated_documents_alone(tmp_path, monkeypatch):
+    root = tmp_path / "root"
+    root.mkdir()
+    scan = root / "scan.pdf"
+    scan.write_bytes(b"%PDF scanned")
+    index = tmp_path / "folder.sqlite"
+    config = LibraryFoldersConfig(roots=[root], index=index)
+    truncated = f"ok: ocr truncated at {library_folders.OCR_PAGE_CAP} of 600 pages"
+
+    monkeypatch.setattr(
+        library_folders,
+        "extract_text",
+        lambda _path: library_folders.ExtractedText(
+            text="first 150 pages", status=truncated
+        ),
+    )
+    refresh(config)
+    with sqlite3.connect(index) as conn:
+        assert (
+            conn.execute(
+                "SELECT extraction_status FROM documents WHERE rel_path = 'scan.pdf'"
+            ).fetchone()[0]
+            == truncated
+        )
+
+    def must_not_reextract(_path):
+        raise AssertionError("a truncated-but-ok row must not be re-OCR'd on retry")
+
+    monkeypatch.setattr(library_folders, "extract_text", must_not_reextract)
+
+    retried = refresh(config, retry_failed=True)
+
+    assert retried["skipped"] == 1
+    assert retried["written"] == 0
+
+
+def test_index_uses_write_ahead_logging(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "a.txt").write_text("wal target text", encoding="utf-8")
+    index = tmp_path / "folder.sqlite"
+
+    refresh(LibraryFoldersConfig(roots=[root], index=index))
+
+    with sqlite3.connect(index) as conn:
+        assert conn.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+
+
+def test_interrupted_refresh_keeps_the_files_it_finished(tmp_path, monkeypatch):
+    root = tmp_path / "root"
+    root.mkdir()
+    for name in ("a.txt", "b.txt", "c.txt", "d.txt"):
+        (root / name).write_text(f"{name} durable target", encoding="utf-8")
+    index = tmp_path / "folder.sqlite"
+    config = LibraryFoldersConfig(roots=[root], index=index)
+
+    monkeypatch.setattr(library_folders, "REFRESH_COMMIT_SECONDS", 0.0)
+    real_extract = library_folders.extract_text
+    seen: list[str] = []
+
+    def die_part_way(path: Path):
+        if len(seen) >= 2:
+            raise KeyboardInterrupt("refresh killed part-way")
+        seen.append(path.name)
+        return real_extract(path)
+
+    monkeypatch.setattr(library_folders, "extract_text", die_part_way)
+
+    with pytest.raises(KeyboardInterrupt):
+        refresh(config)
+
+    with sqlite3.connect(index) as conn:
+        kept = {row[0] for row in conn.execute("SELECT rel_path FROM documents")}
+    assert kept == set(seen)
+
+    monkeypatch.setattr(library_folders, "extract_text", real_extract)
+    report = refresh(config)
+
+    assert report["skipped"] == 2
+    assert report["written"] == 2
+
+
+def test_search_works_while_a_refresh_holds_an_open_write(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "a.txt").write_text("concurrent target text", encoding="utf-8")
+    index = tmp_path / "folder.sqlite"
+    config = LibraryFoldersConfig(roots=[root], index=index)
+    refresh(config)
+
+    writer = sqlite3.connect(index)
+    try:
+        initialize_schema(writer)
+        writer.execute(
+            "INSERT INTO index_meta(key, value) VALUES ('mid_refresh', '1')"
+        )  # open write transaction, deliberately uncommitted
+
+        hits = search("concurrent", config)
+    finally:
+        writer.rollback()
+        writer.close()
+
+    assert [hit["relative_path"] for hit in hits] == ["a.txt"]
+
+
+def test_schema_version_change_drops_and_rebuilds_the_index(tmp_path, monkeypatch):
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "a.txt").write_text("versioned target text", encoding="utf-8")
+    index = tmp_path / "folder.sqlite"
+    config = LibraryFoldersConfig(roots=[root], index=index)
+
+    refresh(config)
+    with sqlite3.connect(index) as conn:
+        assert (
+            conn.execute(
+                "SELECT value FROM index_meta WHERE key = 'schema_version'"
+            ).fetchone()[0]
+            == library_folders.SCHEMA_VERSION
+        )
+    assert refresh(config)["skipped"] == 1
+
+    # A new extractor ships as a schema bump: the old rows are dropped so
+    # every file is re-extracted once rather than left as a silent mixture.
+    monkeypatch.setattr(library_folders, "SCHEMA_VERSION", "next")
+    report = refresh(config)
+
+    assert report["skipped"] == 0
+    assert report["written"] == 1
+    with sqlite3.connect(index) as conn:
+        assert (
+            conn.execute(
+                "SELECT value FROM index_meta WHERE key = 'schema_version'"
+            ).fetchone()[0]
+            == "next"
+        )
+
+
+def test_retry_failed_reextracts_an_ocr_stalled_document(tmp_path, monkeypatch):
+    """A stall is intermittent, so a stalled row must stay retryable.
+
+    Contrast test_retry_failed_leaves_ocr_truncated_documents_alone: a
+    page-cap truncation is deterministic and re-running redoes identical
+    pages, but both books measured as stalling on 2026-09-03 completed on the
+    next attempt.
+    """
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "scan.pdf").write_bytes(b"%PDF scanned")
+    index = tmp_path / "folder.sqlite"
+    config = LibraryFoldersConfig(roots=[root], index=index)
+
+    monkeypatch.setattr(
+        library_folders,
+        "extract_text",
+        lambda _path: library_folders.ExtractedText(
+            text="first 20 pages", status="partial: ocr stalled at page 20 of 150"
+        ),
+    )
+    refresh(config)
+    assert refresh(config)["skipped"] == 1  # a plain refresh still skips it
+
+    monkeypatch.setattr(
+        library_folders,
+        "extract_text",
+        lambda _path: library_folders.ExtractedText(text="all 150 pages", status="ok"),
+    )
+    retried = refresh(config, retry_failed=True)
+
+    assert retried["written"] == 1
+    assert retried["skipped"] == 0
+    with sqlite3.connect(index) as conn:
+        assert (
+            conn.execute(
+                "SELECT extraction_status FROM documents WHERE rel_path = 'scan.pdf'"
+            ).fetchone()[0]
+            == "ok"
+        )
+
+
+@pytest.mark.parametrize(
+    ("status", "done"),
+    [
+        ("ok", True),
+        ("ok: ocr truncated at 150 of 600 pages", True),
+        ("partial: ocr stalled at page 20 of 150", False),
+        ("partial: ocr worker died at page 20 of 150", False),
+        ("empty", False),
+        ("unsupported: pdftotext not found", False),
+        ("error: pdf ocr subprocess failed", False),
+    ],
+)
+def test_extraction_succeeded_contract(status, done):
+    assert library_folders.extraction_succeeded(status) is done
+
+
+def test_ocr_status_will_not_claim_ok_without_a_page_count():
+    """A lost meta reply must not be reported as a complete extraction."""
+    assert library_folders._ocr_status("some text", 0, 20).startswith("partial:")
+
+
+def test_ocr_fallback_labels_a_crashed_worker_as_died_not_stalled(
+    tmp_path, monkeypatch
+):
+    _fake_worker(
+        monkeypatch,
+        stdout_text=_ocr_stream(_meta(150), _chunk(20, "first twenty")),
+        returncode=1,
+        stderr_text="ValueError: boom\n",
+    )
+    _empty_pdftotext(monkeypatch)
+
+    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+
+    assert extracted.status == "partial: ocr worker died at page 20 of 150"
+    assert extracted.text == "first twenty"
+    assert library_folders.extraction_succeeded(extracted.status) is False
+
+
+def test_first_chunk_gets_a_longer_deadline_than_later_chunks(tmp_path, monkeypatch):
+    """Startup plus a one-time model download must not read as a stall."""
+    assert library_folders.OCR_FIRST_CHUNK_TIMEOUT > library_folders.OCR_CHUNK_TIMEOUT
+    monkeypatch.setattr(library_folders, "OCR_CHUNK_TIMEOUT", 0.01)
+    monkeypatch.setattr(library_folders, "OCR_FIRST_CHUNK_TIMEOUT", 30.0)
+    _fake_worker(
+        monkeypatch,
+        stdout_text=_ocr_stream(_meta(150), _chunk(10, "slow first chunk")),
+    )
+    _empty_pdftotext(monkeypatch)
+
+    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+
+    assert extracted.text == "slow first chunk"
+
+
+def test_ocr_fallback_closes_the_worker_pipe(tmp_path, monkeypatch):
+    """~2,000 scanned books a pass: the pipe must not wait on the collector."""
+    seen = _fake_worker(
+        monkeypatch, stdout_text=_ocr_stream(_meta(10), _chunk(10, "ocr text"))
+    )
+    _empty_pdftotext(monkeypatch)
+
+    library_folders._extract_pdf(tmp_path / "scan.pdf")
+
+    assert cast(_FakePopen, seen["proc"]).stdout.closed is True
