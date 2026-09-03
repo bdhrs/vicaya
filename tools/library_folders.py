@@ -5,7 +5,6 @@ from __future__ import annotations
 import bz2
 import hashlib
 import io
-import json
 import os
 import re
 import shutil
@@ -40,10 +39,6 @@ from tools._common import (  # noqa: E402
 SOURCES_ENV = "VICAYA_LIBRARY_FOLDERS"
 INDEX_ENV = "VICAYA_LIBRARY_FOLDERS_INDEX"
 EXCLUDE_ENV = "VICAYA_LIBRARY_FOLDERS_EXCLUDE"
-OCR_KILL_SWITCH_ENV = "VICAYA_LIBRARY_FOLDERS_OCR"
-OCR_PAGE_CAP = 150
-OCR_CHUNK_PAGES = 10
-OCR_SUBPROCESS_TIMEOUT = 1800
 SCHEMA_VERSION = "2"
 TEXT_EXTENSIONS = {".txt", ".md", ".json", ".jsonl", ".py"}
 HTML_EXTENSIONS = {".htm", ".html", ".shtml", ".xhtml", ".xht", ".xml"}
@@ -377,20 +372,11 @@ def _extract_zip_members(
 
 
 def _extract_pdf(path: Path) -> ExtractedText:
-    result = _extract_pdf_pdftotext(path)
-    if result.status == "ok":
-        return result
-    return _extract_pdf_ocr_fallback(path) or result
-
-
-def _extract_pdf_pdftotext(path: Path) -> ExtractedText:
     if shutil.which("pdftotext") is None:
         return ExtractedText(text="", status="unsupported: pdftotext not found")
     try:
-        # Reading-order mode (no -layout): keeps two-column books in column
-        # sequence instead of interleaving them line-by-line.
         result = subprocess.run(
-            ["pdftotext", str(path), "-"],
+            ["pdftotext", "-layout", str(path), "-"],
             capture_output=True,
             encoding="utf-8",
             errors="replace",
@@ -404,111 +390,6 @@ def _extract_pdf_pdftotext(path: Path) -> ExtractedText:
         return ExtractedText(text="", status=f"error: {message[0]}")
     text = result.stdout
     return ExtractedText(text=text, status="ok" if text.strip() else "empty")
-
-
-def _ort_dylib_path() -> str | None:
-    """Return the onnxruntime shared library path, when the wheel is installed."""
-    try:
-        import onnxruntime
-    except ImportError:
-        return None
-    capi = Path(onnxruntime.__file__).resolve().parent / "capi"
-    for candidate in sorted(capi.glob("libonnxruntime.so.*")):
-        return str(candidate)
-    return None
-
-
-def _ocr_worker_main(path: str) -> dict[str, str]:
-    """Run chunked selective OCR for one PDF and return a result dict.
-
-    Runs inside a dedicated subprocess (see _extract_pdf_ocr_fallback) because
-    process_pdf_with_ocr has been observed to deadlock without bound on some
-    scanned books; a subprocess turns that hang into a killable timeout.
-    """
-    import pdf_inspector  # noqa: PLC0415 - optional dependency, lazy import
-
-    detect = getattr(pdf_inspector, "detect_pdf", None)
-    process_with_ocr = getattr(pdf_inspector, "process_pdf_with_ocr", None)
-    if detect is None or process_with_ocr is None:
-        return {"status": "unsupported", "detail": "pdf-inspector lacks OCR API"}
-    if not os.environ.get("ORT_DYLIB_PATH"):
-        dylib = _ort_dylib_path()
-        if dylib is not None:
-            os.environ["ORT_DYLIB_PATH"] = dylib
-    detection = detect(path)
-    last_page = min(int(detection.page_count), OCR_PAGE_CAP)
-    # Chunked calls: a single multi-hundred-page process_pdf_with_ocr call
-    # deadlocks (observed on 150 dense pages); 10-page chunks return in
-    # seconds each and keep a hung chunk from losing all prior work.
-    parts: list[str] = []
-    for start in range(1, last_page + 1, OCR_CHUNK_PAGES):
-        chunk = list(range(start, min(start + OCR_CHUNK_PAGES, last_page + 1)))
-        ocr = process_with_ocr(path, page_numbers=chunk)
-        parts.append(ocr.markdown or "")
-    text = "\n\n".join(part for part in parts if part).strip()
-    return {"status": "ok" if text else "empty", "text": text}
-
-
-_OCR_WORKER_SNIPPET = (
-    "import json, sys\n"
-    "from tools.library_folders import _ocr_worker_main\n"
-    "print(json.dumps(_ocr_worker_main(sys.argv[1])))\n"
-)
-
-
-def _extract_pdf_ocr_fallback(path: Path) -> ExtractedText | None:
-    """OCR PDFs whose text layer is empty, broken, or unreadable by pdftotext.
-
-    Uses pdf-inspector's selective OCR (pdf-inspector + onnxruntime are main
-    dependencies; needs PDFIUM_LIB_PATH pointing at a PDFium shared library).
-    Returns None when OCR is disabled or unavailable, so the caller can keep
-    the pdftotext result unchanged. The OCR runs in a dedicated subprocess
-    bounded by OCR_SUBPROCESS_TIMEOUT: process_pdf_with_ocr can deadlock
-    without bound, and a killed subprocess records an error status instead of
-    stalling a refresh. Work per file is additionally capped at the first
-    OCR_PAGE_CAP pages so large scanned books stay bounded.
-    """
-    if os.environ.get(OCR_KILL_SWITCH_ENV) == "0":
-        return None
-    try:
-        import pdf_inspector  # noqa: F401,PLC0415 - availability probe only
-    except ImportError:
-        return None
-    env = dict(os.environ)
-    env.setdefault("PYTHONPATH", str(_REPO_ROOT))
-    try:
-        result = subprocess.run(
-            [sys.executable, "-c", _OCR_WORKER_SNIPPET, str(path)],
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=OCR_SUBPROCESS_TIMEOUT,
-            check=False,
-            cwd=str(_REPO_ROOT),
-            env=env,
-        )
-    except subprocess.TimeoutExpired:
-        return ExtractedText(
-            text="",
-            status=f"error: pdf ocr timed out after {OCR_SUBPROCESS_TIMEOUT}s",
-        )
-    except OSError as exc:
-        return ExtractedText(text="", status=f"error: pdf ocr subprocess: {exc}")
-    stdout = (result.stdout or "").strip()
-    if result.returncode != 0 or not stdout:
-        stderr = (result.stderr or "pdf ocr subprocess failed").strip()
-        message = stderr.splitlines()[-1] if stderr else "pdf ocr subprocess failed"
-        return ExtractedText(text="", status=f"error: {message}")
-    try:
-        payload = json.loads(stdout)
-        if not isinstance(payload, dict):
-            raise json.JSONDecodeError("not an object", stdout, 0)
-    except json.JSONDecodeError:
-        return ExtractedText(text="", status="error: pdf ocr worker returned junk")
-    if payload.get("status") == "unsupported":
-        return None
-    text = payload.get("text", "")
-    return ExtractedText(text=text, status="ok" if text else "empty")
 
 
 def _run_doc_extractor(command: list[str], label: str) -> ExtractedText:
