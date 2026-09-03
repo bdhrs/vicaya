@@ -826,12 +826,22 @@ def _should_skip(
 
 
 def _delete_missing_documents(
-    conn: sqlite3.Connection, seen_source_paths: set[str]
+    conn: sqlite3.Connection,
+    seen_source_paths: set[str],
+    roots: list[Path],
 ) -> int:
+    """Delete stale rows, scoped to the roots this refresh actually walked.
+
+    A narrowed-root refresh must never touch rows under other roots: deleting
+    index-wide based on a partial walk wiped the whole index (2026-09-02).
+    """
     deleted = 0
-    for doc_id, source_path in conn.execute(
-        "SELECT id, source_path FROM documents"
+    root_strs = {str(root) for root in roots}
+    for doc_id, source_root, source_path in conn.execute(
+        "SELECT id, source_root, source_path FROM documents"
     ).fetchall():
+        if source_root not in root_strs:
+            continue
         if source_path in seen_source_paths:
             continue
         conn.execute("DELETE FROM document_fts WHERE rowid = ?", (doc_id,))
@@ -941,7 +951,9 @@ def refresh(
             else:
                 metadata_only += 1
         if limit is None:
-            deleted = _delete_missing_documents(conn, seen_source_paths)
+            deleted = _delete_missing_documents(
+                conn, seen_source_paths, available_roots
+            )
         conn.execute(
             """
             INSERT INTO index_meta(key, value) VALUES ('last_refresh', ?)

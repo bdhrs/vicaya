@@ -370,6 +370,32 @@ def test_incremental_refresh_skips_unchanged_and_deletes_missing(tmp_path):
     assert remaining == ["keep.txt"]
 
 
+def test_narrowed_root_refresh_never_deletes_other_roots(tmp_path):
+    root_a = tmp_path / "a"
+    root_b = tmp_path / "b"
+    root_a.mkdir()
+    root_b.mkdir()
+    (root_a / "a1.txt").write_text("alpha text", encoding="utf-8")
+    (root_a / "a2.txt").write_text("alpha two text", encoding="utf-8")
+    (root_b / "b1.txt").write_text("beta text", encoding="utf-8")
+    index = tmp_path / "folder.sqlite"
+    full = LibraryFoldersConfig(roots=[root_a, root_b], index=index)
+    refresh(full)
+
+    (root_a / "a2.txt").unlink()
+    narrowed = LibraryFoldersConfig(roots=[root_a], index=index)
+    result = refresh(narrowed)
+
+    with sqlite3.connect(index) as conn:
+        remaining = sorted(
+            row[0] for row in conn.execute("SELECT rel_path FROM documents")
+        )
+
+    # only the missing file under the *walked* root is deleted; root_b survives
+    assert result["deleted"] == 1
+    assert remaining == ["a1.txt", "b1.txt"]
+
+
 def test_retry_failed_reextracts_unchanged_failed_documents(tmp_path, monkeypatch):
     root = tmp_path / "root"
     root.mkdir()
