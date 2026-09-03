@@ -1185,6 +1185,11 @@ def test_7z_extractor_handles_inner_text(tmp_path):
     assert "sevenzip target" in extracted.text
 
 
+# Always above the cap, so raising OCR_PAGE_CAP cannot silently turn a
+# truncation test into a full-extraction test.
+_OVER_CAP = library_folders.OCR_PAGE_CAP * 2 + 78
+
+
 def _drain_ocr_worker(path: str) -> dict[str, str]:
     """Run the real worker generator and reduce it the way production does.
 
@@ -1275,7 +1280,7 @@ def test_ocr_worker_caps_pages(tmp_path, monkeypatch):
         return SimpleNamespace(markdown="partial ocr text", pages=[])
 
     stub = SimpleNamespace(
-        detect_pdf=lambda _path: SimpleNamespace(page_count=1000),
+        detect_pdf=lambda _path: SimpleNamespace(page_count=_OVER_CAP),
         process_pdf_with_ocr=fake_with_ocr,
     )
     monkeypatch.setitem(sys.modules, "pdf_inspector", stub)
@@ -1298,7 +1303,7 @@ def test_ocr_worker_caps_pages(tmp_path, monkeypatch):
 
 def test_ocr_worker_records_truncation_in_status(tmp_path, monkeypatch):
     stub = SimpleNamespace(
-        detect_pdf=lambda _path: SimpleNamespace(page_count=600),
+        detect_pdf=lambda _path: SimpleNamespace(page_count=_OVER_CAP),
         process_pdf_with_ocr=lambda _path, page_numbers=None: SimpleNamespace(
             markdown="partial ocr text", pages=[]
         ),
@@ -1309,7 +1314,7 @@ def test_ocr_worker_records_truncation_in_status(tmp_path, monkeypatch):
     payload = _drain_ocr_worker(str(tmp_path / "scan.pdf"))
 
     assert payload["status"] == (
-        f"ok: ocr truncated at {library_folders.OCR_PAGE_CAP} of 600 pages"
+        f"ok: ocr truncated at {library_folders.OCR_PAGE_CAP} of {_OVER_CAP} pages"
     )
     assert payload["text"].startswith("partial ocr text")
 
@@ -1516,7 +1521,7 @@ def test_ocr_fallback_passes_truncated_status_through(tmp_path, monkeypatch):
     _fake_worker(
         monkeypatch,
         stdout_text=_ocr_stream(
-            _meta(600), _chunk(library_folders.OCR_PAGE_CAP, "partial")
+            _meta(_OVER_CAP), _chunk(library_folders.OCR_PAGE_CAP, "partial")
         ),
     )
     _empty_pdftotext(monkeypatch)
@@ -1524,7 +1529,7 @@ def test_ocr_fallback_passes_truncated_status_through(tmp_path, monkeypatch):
     extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
 
     assert extracted.status == (
-        f"ok: ocr truncated at {library_folders.OCR_PAGE_CAP} of 600 pages"
+        f"ok: ocr truncated at {library_folders.OCR_PAGE_CAP} of {_OVER_CAP} pages"
     )
     assert extracted.text == "partial"
 
@@ -1705,7 +1710,9 @@ def test_retry_failed_leaves_ocr_truncated_documents_alone(tmp_path, monkeypatch
     scan.write_bytes(b"%PDF scanned")
     index = tmp_path / "folder.sqlite"
     config = LibraryFoldersConfig(roots=[root], index=index)
-    truncated = f"ok: ocr truncated at {library_folders.OCR_PAGE_CAP} of 600 pages"
+    truncated = (
+        f"ok: ocr truncated at {library_folders.OCR_PAGE_CAP} of {_OVER_CAP} pages"
+    )
 
     monkeypatch.setattr(
         library_folders,

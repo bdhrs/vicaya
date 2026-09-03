@@ -43,11 +43,12 @@ SOURCES_ENV = "VICAYA_LIBRARY_FOLDERS"
 INDEX_ENV = "VICAYA_LIBRARY_FOLDERS_INDEX"
 EXCLUDE_ENV = "VICAYA_LIBRARY_FOLDERS_EXCLUDE"
 OCR_KILL_SWITCH_ENV = "VICAYA_LIBRARY_FOLDERS_OCR"
-# 500, not 150: measured on 12 random scanned books, a 150-page cap left
-# 8 of 12 truncated and only 51% of their pages indexed, while 500 reaches
-# 97% and still bounds a pathological multi-thousand-page scan. The extra
-# text costs about 0.7 GB of index across the library's ~2,000 scans.
-OCR_PAGE_CAP = 500
+# 1000, measured across all 1,739 PDFs in the library that have no text layer
+# (median 94 pages, mean 153, max 1,678). Coverage and serial cost by cap:
+# 150 -> 54% in 47 h, 500 -> 93% in 81 h, 1000 -> 99% in 86 h. The last step
+# buys 6 points of coverage for 5 hours, so the cap is set where it stops
+# binding on real books while still bounding a pathological scan.
+OCR_PAGE_CAP = 1000
 OCR_CHUNK_PAGES = 10
 OCR_CHUNK_TIMEOUT = 120
 # The first chunk also pays interpreter startup, the pdf_inspector import, ONNX
