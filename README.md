@@ -185,11 +185,11 @@ mtime are unchanged, so after installing a new extractor re-run with
 `--retry-failed` / `just lf-refresh-retry` once; later refreshes skip them again.
 
 Scanned PDFs (no usable text layer) are OCR'd as a fallback during refresh,
-over the first 150 pages of each book. That is slow — hours across a large
+over the first 500 pages of each book. That is slow — hours across a large
 library — so a full rebuild is best run as two passes: `just lf-refresh-text`
 first to get every readable file indexed fast, then `just lf-refresh-retry` to
-OCR only what the first pass could not read. When the 150-page cap cuts a book
-short, its status records it (`ok: ocr truncated at 150 of 600 pages`) so
+OCR only what the first pass could not read. When the 500-page cap cuts a book
+short, its status records it (`ok: ocr truncated at 500 of 600 pages`) so
 partially-indexed books are queryable rather than silently incomplete. Set
 `VICAYA_LIBRARY_FOLDERS_OCR=0` to turn the fallback off. A refresh commits as it
 goes, so an interrupted run keeps the files it had finished.

@@ -10,7 +10,7 @@
   sets current and prefers a stub when one exists.
 - **Canon search:** SQLite (`tipitaka-translation-data.db`) via stdlib `sqlite3`
 - **Vault I/O:** Obsidian CLI v1.12.7+ (subcommand-style; requires desktop app running)
-- **Library folders search:** one or more document trees (including Calibre libraries) indexed into a user-controlled local SQLite FTS5 database via `tools/library_folders.py`. When a folder contains `metadata.db` it is recognised as a Calibre library and author/tag metadata is prepended to each book's FTS text automatically. Refresh walks all configured roots and extracts stdlib-supported text (incl. `.mht`/`.mhtml` via the `email` module and `.pptx` via the zip reader) plus optional local tools (`pdftotext`, `textutil`, `antiword`, `catdoc`, and `ebook-convert` for the Kindle/Mobipocket family — `.mobi`/`.azw3`/`.azw`/`.prc`/`.lit`/`.pdb`/`.chm` — plus `.rtf`). PDFs are extracted with `pdftotext` in reading-order mode (no `-layout`, which interleaved two-column books line-by-line); when pdftotext yields no text (scans, broken text layers), a fallback runs [pdf-inspector](https://github.com/firecrawl/pdf-inspector) selective OCR in a timeout-bounded subprocess over the first 150 pages — see **PDF OCR fallback** below. `.zip`, `.bz2`, and `.7z` archives are indexed as one document each by routing every text-bearing member back through the same extractor dispatch and concatenating the result, bounded by per-archive caps of 5,000 members, 2 GB uncompressed, and 300 s wall-clock (noise/encrypted/nested-archive members are skipped). Normal search queries the local index only. Refresh skips files with unchanged size+mtime, so after adding extractor support the previously-failed rows must be retried with `library-folders-refresh --retry-failed` (re-extracts only docs whose status does not start with `ok`; steady-state refresh stays instant).
+- **Library folders search:** one or more document trees (including Calibre libraries) indexed into a user-controlled local SQLite FTS5 database via `tools/library_folders.py`. When a folder contains `metadata.db` it is recognised as a Calibre library and author/tag metadata is prepended to each book's FTS text automatically. Refresh walks all configured roots and extracts stdlib-supported text (incl. `.mht`/`.mhtml` via the `email` module and `.pptx` via the zip reader) plus optional local tools (`pdftotext`, `textutil`, `antiword`, `catdoc`, and `ebook-convert` for the Kindle/Mobipocket family — `.mobi`/`.azw3`/`.azw`/`.prc`/`.lit`/`.pdb`/`.chm` — plus `.rtf`). PDFs are extracted with `pdftotext` in reading-order mode (no `-layout`, which interleaved two-column books line-by-line); when pdftotext yields no text (scans, broken text layers), a fallback runs [pdf-inspector](https://github.com/firecrawl/pdf-inspector) selective OCR in a timeout-bounded subprocess over the first 500 pages — see **PDF OCR fallback** below. `.zip`, `.bz2`, and `.7z` archives are indexed as one document each by routing every text-bearing member back through the same extractor dispatch and concatenating the result, bounded by per-archive caps of 5,000 members, 2 GB uncompressed, and 300 s wall-clock (noise/encrypted/nested-archive members are skipped). Normal search queries the local index only. Refresh skips files with unchanged size+mtime, so after adding extractor support the previously-failed rows must be retried with `library-folders-refresh --retry-failed` (re-extracts only docs whose status does not start with `ok`; steady-state refresh stays instant).
 - **YouTube:** `yt-dlp` for search, `youtube-transcript-api` for transcript fetch
 - **Note validation:** `scripts/validate_note.py` uses `tools/note_checks.py` for final-note mechanical checks
 - **PDF generation:** `scripts/generate_note_pdf.py` renders optional final-note PDFs with `markdown` and `weasyprint`
@@ -31,12 +31,13 @@ so an engine hang cannot stall a refresh. The subprocess entry point is
 in `_collect_ocr_chunks`. Each chunk is bounded separately — see the per-chunk
 timeout below, which is the live bound; `OCR_SUBPROCESS_TIMEOUT` (1800 s) is
 only a whole-file backstop. Work per file is additionally capped at the first
-`OCR_PAGE_CAP` pages (150, ~1 s/page measured); set
+`OCR_PAGE_CAP` pages (500; 1.18 s/page median measured over ten real
+scanned books); set
 `VICAYA_LIBRARY_FOLDERS_OCR=0` to skip the fallback for fast text-only
 refreshes.
 
 When the page cap cuts a book short the row's status records it —
-`ok: ocr truncated at 150 of 600 pages` — so partially-indexed books stay
+`ok: ocr truncated at 500 of 600 pages` — so partially-indexed books stay
 queryable instead of being indistinguishable from fully-indexed ones. Such a
 row counts as a success, not a failure: `--retry-failed` deliberately leaves it
 alone (`_should_skip` treats any `ok…` status as done), because re-running would
@@ -68,6 +69,16 @@ none. Full numbers, including a tesseract comparison, are in the thread's
 The chunk reader is a thread feeding a queue, not a poll on the pipe: a wedged
 worker leaves the read blocked indefinitely, so only a separate thread lets the
 deadline fire.
+
+The cap was raised from 150 to 500 on 2026-09-03 after measuring what it cost:
+across 12 random scanned books, 8 exceeded 150 pages and only 51 % of their
+pages were being indexed, so half the content of the scanned corpus was
+invisible to search — and the books losing most were the reference works,
+journals and dictionaries. 500 reaches 97 % coverage. The cap still exists to
+bound legitimate work on a pathological multi-thousand-page scan; bounding a
+*hang* is now the per-chunk timeout's job, which is why the original 150 could
+be relaxed. Cost is roughly 0.7 GB of index over the library's ~2,000 scanned
+books, at a measured 1.41 bytes of SQLite per character of indexed text.
 
 Two things about OCR remain unverified against real data, both recorded here so
 nobody assumes otherwise. The stall-recovery path has never fired against a

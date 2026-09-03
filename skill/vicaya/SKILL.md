@@ -1501,7 +1501,7 @@ path is in the metadata returned by `search-library-folders` or from the library
 or a distinctive term from the book, and inspect the `title`/`relative_path` fields
 from the returned hits. E.g. `search-library-folders "Armstrong" --limit 5`.
 
-Snippets come back with each hit when FTS text is indexed — quote them with book + author attribution. Any status *starting* with `ok` means the snippet is usable, including `ok: ocr truncated at 150 of 600 pages` (a scanned book OCR'd up to the page cap). A `partial:` status also has usable text — just less of it. Only fall back to a manual `pdftotext` or `ebook-convert` extraction when the status is `empty`, `unsupported:` or `error:`, and never for a scanned PDF whose status mentions `ocr`: pdftotext is exactly what already returned nothing there, so it is a dead end.
+Snippets come back with each hit when FTS text is indexed — quote them with book + author attribution. Any status *starting* with `ok` means the snippet is usable, including `ok: ocr truncated at 500 of 600 pages` (a scanned book OCR'd up to the page cap). A `partial:` status also has usable text — just less of it. Only fall back to a manual `pdftotext` or `ebook-convert` extraction when the status is `empty`, `unsupported:` or `error:`, and never for a scanned PDF whose status mentions `ocr`: pdftotext is exactly what already returned nothing there, so it is a dead end.
 
 #### Library folders search guidelines
 
@@ -1516,7 +1516,7 @@ The library folders index is an FTS5 database. All Calibre books are included wi
 - **Multi-word English queries work as implicit AND.** `"four foundations of mindfulness"`, `meditation retreat laypeople`, `dependent origination` all return precise results. Combine Pāḷi and English when a concept has both: `nibbana liberation`.
 - **Extraction is a build-time concern, not a query-time concern.** All formats (PDF, EPUB, MOBI, DOC, etc.) are extracted into the FTS index during `library-folders-refresh`. Read `extraction_status` by prefix, not by equality:
     - `ok` — full text is indexed. Use the FTS snippet.
-    - `ok: …` — a success with a note, text is indexed and searchable. `ok: ocr truncated at 150 of 600 pages` means a scanned book was OCR'd to the page cap: the first 150 pages are searchable and quotable, the rest are not indexed. Treat the hit as real; mention the limit in Critical Gaps only if the answer depends on the unindexed part.
+    - `ok: …` — a success with a note, text is indexed and searchable. `ok: ocr truncated at 500 of 600 pages` means a scanned book was OCR'd to the page cap: the first 500 pages are searchable and quotable, the rest are not indexed. Treat the hit as real; mention the limit in Critical Gaps only if the answer depends on the unindexed part.
     - `partial: …` — some text is indexed and the book is queued for another attempt on the next `--retry-failed` refresh. Quote what is there; note it in Critical Gaps.
     - `empty`, `unsupported: …`, `error: …` — nothing is indexed. That is a refresh gap, not something to fix at query time; note it in Critical Gaps. Do not hand-run `pdftotext` on a scanned PDF whose status mentions `ocr` — pdftotext returning nothing is why OCR ran in the first place.
 
