@@ -46,6 +46,8 @@ Prune dead links periodically.
 ---
 
 ## trusted
+- Mind & Life Institute
+- Āgama Research Group
 - Abhayagiri | UCFAuQ5fmYYVv5_Dim0EQpVA
 - Buddhist Insights @ Empty Cloud
 - Bhikkhu Dhammānanda
