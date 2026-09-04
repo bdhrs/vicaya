@@ -11,11 +11,9 @@ import sqlite3
 import subprocess
 import sys
 import tarfile
-import threading
 import time
 import zipfile
 from pathlib import Path
-from types import SimpleNamespace
 from typing import cast
 
 import pytest
@@ -1185,37 +1183,6 @@ def test_7z_extractor_handles_inner_text(tmp_path):
     assert "sevenzip target" in extracted.text
 
 
-# Always above the cap, so raising OCR_PAGE_CAP cannot silently turn a
-# truncation test into a full-extraction test.
-_OVER_CAP = library_folders.OCR_PAGE_CAP * 2 + 78
-
-
-def _drain_ocr_worker(path: str) -> dict[str, str]:
-    """Run the real worker generator and reduce it the way production does.
-
-    Production drives _ocr_worker_chunks from the worker snippet and reduces
-    the replies in _collect_ocr_chunks / _ocr_status. This mirrors that
-    reduction so the worker tests exercise the shipped generator rather than a
-    parallel implementation of it.
-    """
-    page_count = 0
-    pages_done = 0
-    parts: list[str] = []
-    for reply in library_folders._ocr_worker_chunks(path):
-        if reply["kind"] == "unsupported":
-            return {"status": "unsupported", "text": ""}
-        if reply["kind"] == "meta":
-            page_count = int(reply["page_count"])
-        elif reply["kind"] == "chunk":
-            parts.append(str(reply["text"]))
-            pages_done = int(reply["through_page"])
-    text = "\n\n".join(part for part in parts if part).strip()
-    return {
-        "status": library_folders._ocr_status(text, page_count, pages_done),
-        "text": text,
-    }
-
-
 def _empty_pdftotext(monkeypatch):
     monkeypatch.setattr(
         library_folders,
@@ -1224,122 +1191,206 @@ def _empty_pdftotext(monkeypatch):
     )
 
 
-def test_ocr_worker_extracts_scanned_pdf(tmp_path, monkeypatch):
-    calls: dict[str, object] = {}
+def _stub_ocrmypdf(monkeypatch, tmp_path, body: str) -> dict[str, object]:
+    """Point the ocrmypdf seam at a real Python child running `body`.
 
-    def fake_with_ocr(path, page_numbers=None):
-        calls["path"] = path
-        calls["page_numbers"] = page_numbers
-        return SimpleNamespace(markdown="ocr target text", pages=[])
+    A real subprocess, not a fake: the original deadlock passed 452 tests
+    because a fake close() returned immediately. `body` receives the source
+    PDF, the output PDF and the sidecar as argv[1:4].
+    """
+    stub = tmp_path / "stub_ocrmypdf.py"
+    stub.write_text("import sys\n" + body, encoding="utf-8")
+    seen: dict[str, object] = {}
 
-    stub = SimpleNamespace(
-        detect_pdf=lambda _path: SimpleNamespace(page_count=3),
-        process_pdf_with_ocr=fake_with_ocr,
+    def command(source, out_pdf, sidecar):
+        seen["source"] = Path(source)
+        seen["sidecar"] = Path(sidecar)
+        return [sys.executable, str(stub), str(source), str(out_pdf), str(sidecar)]
+
+    # sys.executable is absolute, so the shutil.which availability probe finds
+    # it — the seam still goes through the real probe rather than skipping it.
+    monkeypatch.setattr(library_folders, "OCRMYPDF_BIN", sys.executable)
+    monkeypatch.setattr(library_folders, "_ocrmypdf_command", command)
+    return seen
+
+
+_WRITE_SIDECAR = (
+    "text = sys.argv[3]\nopen(text, 'w', encoding='utf-8').write(TEXT)\nsys.exit(RC)\n"
+)
+
+
+def _sidecar_stub(text: str, rc: int = 0, stderr: str = "") -> str:
+    return (
+        f"TEXT = {text!r}\nRC = {rc}\nsys.stderr.write({stderr!r})\n" + _WRITE_SIDECAR
     )
-    monkeypatch.setitem(sys.modules, "pdf_inspector", stub)
-    monkeypatch.setenv("ORT_DYLIB_PATH", "/tmp/fake/libonnxruntime.so")
-
-    payload = _drain_ocr_worker(str(tmp_path / "scan.pdf"))
-
-    assert payload["status"] == "ok"
-    assert payload["text"] == "ocr target text"
-    assert calls["path"] == str(tmp_path / "scan.pdf")
-    assert calls["page_numbers"] == [1, 2, 3]
 
 
-def test_ocr_worker_missing_ocr_api_returns_unsupported(tmp_path, monkeypatch):
-    stub = SimpleNamespace()  # no detect_pdf / process_pdf_with_ocr
-    monkeypatch.setitem(sys.modules, "pdf_inspector", stub)
-
-    payload = _drain_ocr_worker(str(tmp_path / "scan.pdf"))
-
-    assert payload["status"] == "unsupported"
-
-
-def test_ocr_worker_reports_empty_when_no_text_recognised(tmp_path, monkeypatch):
-    stub = SimpleNamespace(
-        detect_pdf=lambda _path: SimpleNamespace(page_count=2),
-        process_pdf_with_ocr=lambda _path, page_numbers=None: SimpleNamespace(
-            markdown="", pages=[]
-        ),
+def test_ocr_fallback_returns_the_sidecar_text_as_ok(tmp_path, monkeypatch):
+    seen = _stub_ocrmypdf(
+        monkeypatch, tmp_path, _sidecar_stub("a real page of scanned text " * 20)
     )
-    monkeypatch.setitem(sys.modules, "pdf_inspector", stub)
-    monkeypatch.setenv("ORT_DYLIB_PATH", "/tmp/fake/libonnxruntime.so")
+    monkeypatch.setattr(library_folders, "_pdf_page_count", lambda _path: 1)
+    _empty_pdftotext(monkeypatch)
+    scan = tmp_path / "scan.pdf"
+    scan.write_bytes(b"%PDF scanned")
 
-    payload = _drain_ocr_worker(str(tmp_path / "scan.pdf"))
+    extracted = library_folders._extract_pdf(scan)
 
-    assert payload["status"] == "empty"
-    assert payload["text"] == ""
+    assert extracted.status == "ok"
+    assert extracted.text.startswith("a real page of scanned text")
+    assert seen["source"] == scan
 
 
-def test_ocr_worker_caps_pages(tmp_path, monkeypatch):
-    calls: list[list[int]] = []
+def test_ocr_fallback_flags_implausibly_short_output(tmp_path, monkeypatch):
+    """rc=0 with almost no text is a measured tesseract failure mode.
 
-    def fake_with_ocr(path, page_numbers: list[int] | None = None):
-        calls.append(page_numbers or [])
-        return SimpleNamespace(markdown="partial ocr text", pages=[])
+    2026-09-03: an 85-page book returned 84 characters with a zero return
+    code, on a book the previous engine read at 211,181 characters. A return
+    code cannot catch it, so the character count per page is the only signal.
+    """
+    _stub_ocrmypdf(monkeypatch, tmp_path, _sidecar_stub("x" * 84))
+    monkeypatch.setattr(library_folders, "_pdf_page_count", lambda _path: 85)
+    _empty_pdftotext(monkeypatch)
 
-    stub = SimpleNamespace(
-        detect_pdf=lambda _path: SimpleNamespace(page_count=_OVER_CAP),
-        process_pdf_with_ocr=fake_with_ocr,
+    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+
+    assert (
+        extracted.status
+        == "error: pdf ocr output implausibly short (84 chars from 85 pages)"
     )
-    monkeypatch.setitem(sys.modules, "pdf_inspector", stub)
-    monkeypatch.setenv("ORT_DYLIB_PATH", "/tmp/fake/libonnxruntime.so")
+    assert library_folders.extraction_succeeded(extracted.status) is False
+    # Kept, so a human can see what came back, but never recorded as success.
+    assert extracted.text == "x" * 84
 
-    payload = _drain_ocr_worker(str(tmp_path / "scan.pdf"))
 
-    assert payload["status"].startswith("ok:")
-    # 1000-page pdf capped at OCR_PAGE_CAP, fetched in OCR_CHUNK_PAGES chunks
-    assert calls[0] == list(range(1, library_folders.OCR_CHUNK_PAGES + 1))
-    assert len(calls) == library_folders.OCR_PAGE_CAP // library_folders.OCR_CHUNK_PAGES
-    assert calls[-1] == list(
-        range(
-            library_folders.OCR_PAGE_CAP - library_folders.OCR_CHUNK_PAGES + 1,
-            library_folders.OCR_PAGE_CAP + 1,
-        )
+def test_ocr_fallback_accepts_a_plausible_page_of_text(tmp_path, monkeypatch):
+    """The short-output guard must not reject a genuinely thin but real book."""
+    _stub_ocrmypdf(monkeypatch, tmp_path, _sidecar_stub("y" * 1701))
+    monkeypatch.setattr(library_folders, "_pdf_page_count", lambda _path: 85)
+    _empty_pdftotext(monkeypatch)
+
+    assert library_folders._extract_pdf(tmp_path / "scan.pdf").status == "ok"
+
+
+def test_ocr_fallback_reports_a_nonzero_return_code(tmp_path, monkeypatch):
+    _stub_ocrmypdf(
+        monkeypatch,
+        tmp_path,
+        _sidecar_stub("", rc=8, stderr="EncryptedPdfError: refusing\n"),
     )
-    assert all(len(chunk) <= library_folders.OCR_CHUNK_PAGES for chunk in calls)
+    _empty_pdftotext(monkeypatch)
+
+    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+
+    assert extracted.status == "error: pdf ocr: EncryptedPdfError: refusing"
+    assert extracted.text == ""
 
 
-def test_ocr_worker_records_truncation_in_status(tmp_path, monkeypatch):
-    stub = SimpleNamespace(
-        detect_pdf=lambda _path: SimpleNamespace(page_count=_OVER_CAP),
-        process_pdf_with_ocr=lambda _path, page_numbers=None: SimpleNamespace(
-            markdown="partial ocr text", pages=[]
-        ),
-    )
-    monkeypatch.setitem(sys.modules, "pdf_inspector", stub)
-    monkeypatch.setenv("ORT_DYLIB_PATH", "/tmp/fake/libonnxruntime.so")
+def test_ocr_fallback_names_an_empty_ocr_result(tmp_path, monkeypatch):
+    """A scan that OCR'd to nothing must not read as a plain "empty" row.
 
-    payload = _drain_ocr_worker(str(tmp_path / "scan.pdf"))
+    skill/vicaya tells the research agent never to hand-run pdftotext on a
+    status mentioning "ocr". A bare "empty" loses that marker and sends the
+    agent to the exact dead end — pdftotext returning nothing is why OCR ran.
+    """
+    _stub_ocrmypdf(monkeypatch, tmp_path, _sidecar_stub("   \n  "))
+    _empty_pdftotext(monkeypatch)
 
-    assert payload["status"] == (
-        f"ok: ocr truncated at {library_folders.OCR_PAGE_CAP} of {_OVER_CAP} pages"
-    )
-    assert payload["text"].startswith("partial ocr text")
+    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
 
-
-def test_ocr_worker_does_not_flag_truncation_at_the_cap(tmp_path, monkeypatch):
-    stub = SimpleNamespace(
-        detect_pdf=lambda _path: SimpleNamespace(
-            page_count=library_folders.OCR_PAGE_CAP
-        ),
-        process_pdf_with_ocr=lambda _path, page_numbers=None: SimpleNamespace(
-            markdown="whole book", pages=[]
-        ),
-    )
-    monkeypatch.setitem(sys.modules, "pdf_inspector", stub)
-    monkeypatch.setenv("ORT_DYLIB_PATH", "/tmp/fake/libonnxruntime.so")
-
-    payload = _drain_ocr_worker(str(tmp_path / "scan.pdf"))
-
-    assert payload["status"] == "ok"
+    assert extracted.status == "empty: pdf ocr produced no text"
+    assert "ocr" in extracted.status
+    assert library_folders.extraction_succeeded(extracted.status) is False
+    assert extracted.text == ""
 
 
-def test_pdf_ocr_fallback_keeps_original_status_without_pdf_inspector(
+def test_ocr_fallback_survives_a_missing_sidecar(tmp_path, monkeypatch):
+    """ocrmypdf writing no sidecar at all must not raise."""
+    _stub_ocrmypdf(monkeypatch, tmp_path, "sys.exit(0)\n")
+    _empty_pdftotext(monkeypatch)
+
+    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+
+    assert extracted.status == "empty: pdf ocr produced no text"
+
+
+def test_real_hanging_ocrmypdf_is_killed_within_the_timeout(tmp_path, monkeypatch):
+    """Spawn a genuinely hung child, not a fake, and require prompt recovery.
+
+    Carried forward from the deleted worker's regression test. The bespoke
+    worker existed to contain an unkillable wait, so replacing it with an
+    unbounded subprocess call would reintroduce exactly that shape. ocrmypdf
+    writes its sidecar only at the end, so unlike the old worker there is no
+    partial text to keep — the assertion is a bounded kill and a retryable
+    status, not retained pages.
+    """
+    _stub_ocrmypdf(monkeypatch, tmp_path, "import time\ntime.sleep(600)\n")
+    monkeypatch.setattr(library_folders, "OCR_SUBPROCESS_TIMEOUT", 3)
+    _empty_pdftotext(monkeypatch)
+
+    started = time.monotonic()
+    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+    elapsed = time.monotonic() - started
+
+    assert extracted.status == "error: pdf ocr timed out after 3s"
+    assert extracted.text == ""
+    assert library_folders.extraction_succeeded(extracted.status) is False
+    # The whole point: bounded. Unbounded, this never returns at all.
+    assert elapsed < 30, f"took {elapsed:.1f}s — the timeout path is not bounded"
+
+
+def test_a_timeout_kills_the_whole_child_pool_not_just_the_parent(
     tmp_path, monkeypatch
 ):
-    monkeypatch.setitem(sys.modules, "pdf_inspector", None)  # import raises
+    """ocrmypdf drives a pool of tesseract workers.
+
+    Killing only the parent orphans that pool, which then burns CPU for the
+    rest of a multi-day refresh. The stub spawns a grandchild that would
+    outlive its parent, and the test requires it dead.
+    """
+    marker = tmp_path / "grandchild.pid"
+    _stub_ocrmypdf(
+        monkeypatch,
+        tmp_path,
+        "import os, subprocess, time\n"
+        "kid = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)'])\n"
+        f"open({str(marker)!r}, 'w').write(str(kid.pid))\n"
+        "time.sleep(600)\n",
+    )
+    monkeypatch.setattr(library_folders, "OCR_SUBPROCESS_TIMEOUT", 4)
+    _empty_pdftotext(monkeypatch)
+
+    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+
+    assert extracted.status == "error: pdf ocr timed out after 4s"
+    grandchild = int(marker.read_text(encoding="utf-8"))
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        try:
+            os.kill(grandchild, 0)
+        except OSError:
+            break  # gone, as required
+        time.sleep(0.1)
+    else:
+        os.kill(grandchild, 9)  # do not leak it out of the test run
+        pytest.fail(f"grandchild {grandchild} survived the timeout kill")
+
+
+def test_pdf_ocr_fallback_keeps_original_status_without_the_ocrmypdf_binary(
+    tmp_path, monkeypatch
+):
+    """A missing apt package must not write an OCR error over every scan.
+
+    ocrmypdf is a system package that `uv sync` will not install, so an absent
+    binary is the normal state on a fresh machine. Returning None is what makes
+    _extract_pdf keep pdftotext's own status.
+    """
+    monkeypatch.setattr(library_folders, "OCRMYPDF_BIN", "vicaya-no-such-binary")
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("OCR must not run without the binary")
+
+    monkeypatch.setattr(library_folders, "_ocrmypdf_command", boom)
     _empty_pdftotext(monkeypatch)
 
     extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
@@ -1349,11 +1400,10 @@ def test_pdf_ocr_fallback_keeps_original_status_without_pdf_inspector(
 
 
 def test_pdf_ocr_fallback_kill_switch(tmp_path, monkeypatch):
-    def boom(_path, **_kwargs):
+    def boom(*_args, **_kwargs):
         raise AssertionError("OCR fallback must not run when disabled")
 
-    stub = SimpleNamespace(detect_pdf=boom, process_pdf_with_ocr=boom)
-    monkeypatch.setitem(sys.modules, "pdf_inspector", stub)
+    monkeypatch.setattr(library_folders, "_ocrmypdf_command", boom)
     monkeypatch.setenv(library_folders.OCR_KILL_SWITCH_ENV, "0")
     _empty_pdftotext(monkeypatch)
 
@@ -1380,114 +1430,12 @@ def test_pdf_ocr_fallback_not_tried_when_pdftotext_succeeds(tmp_path, monkeypatc
     assert extracted.text == "real layer"
 
 
-class _FakeWorkerStdout:
-    """Replay canned worker lines, then optionally block like a wedged chunk."""
-
-    def __init__(self, text: str, stall: bool) -> None:
-        self._lines = text.splitlines(keepends=True)
-        self._at = 0
-        self._stall = stall
-        self._released = threading.Event()
-        self.closed = False
-
-    def readline(self) -> str:
-        if self._at < len(self._lines):
-            self._at += 1
-            return self._lines[self._at - 1]
-        if self._stall:
-            # Bounded so the reader thread cannot outlive the test run.
-            self._released.wait(5)
-        return ""
-
-    def release(self) -> None:
-        self._released.set()
-
-    def close(self) -> None:
-        self._released.set()
-        self.closed = True
-
-
-class _FakePopen:
-    """Stand-in for the OCR worker subprocess."""
-
-    def __init__(
-        self,
-        cmd: list[str],
-        stdout_text: str = "",
-        returncode: int = 0,
-        stall: bool = False,
-        stderr_text: str = "",
-        **kwargs: object,
-    ) -> None:
-        self.cmd = cmd
-        self.stdout = _FakeWorkerStdout(stdout_text, stall)
-        self._returncode = returncode
-        self._exited = not stall
-        self.killed = False
-        errfile = kwargs.get("stderr")
-        if stderr_text and hasattr(errfile, "write"):
-            errfile.write(stderr_text)  # type: ignore[union-attr]
-
-    @property
-    def returncode(self) -> int:
-        return self._returncode
-
-    def poll(self) -> int | None:
-        return self._returncode if self._exited else None
-
-    def kill(self) -> None:
-        self.killed = True
-        self._exited = True
-        self.stdout.release()
-
-    def wait(self, timeout: float | None = None) -> int:
-        self._exited = True
-        self.stdout.release()
-        return self._returncode
-
-
-def _fake_worker(monkeypatch, **popen_kwargs) -> dict[str, object]:
-    """Point the OCR fallback at a canned worker; returns a seen-args dict."""
-    seen: dict[str, object] = {}
-
-    def fake_popen(cmd, **kwargs):
-        seen["cmd"] = cmd
-        seen["env"] = kwargs.get("env")
-        proc = _FakePopen(cmd, **popen_kwargs, **kwargs)
-        seen["proc"] = proc
-        return proc
-
-    monkeypatch.setattr(library_folders.subprocess, "Popen", fake_popen)
-    return seen
-
-
-def _ocr_stream(*replies: dict[str, object], noise: str = "") -> str:
-    out = noise
-    for reply in replies:
-        out += library_folders._OCR_REPLY_MARKER + json.dumps(reply) + "\n"
-    return out
-
-
-def _meta(page_count: int) -> dict[str, object]:
-    return {
-        "kind": "meta",
-        "page_count": page_count,
-        "last_page": min(page_count, library_folders.OCR_PAGE_CAP),
-    }
-
-
-def _chunk(through_page: int, text: str) -> dict[str, object]:
-    return {"kind": "chunk", "through_page": through_page, "text": text}
-
-
 @pytest.mark.parametrize("original", ["empty", "error: pdftotext timed out"])
 def test_pdf_ocr_fallback_escalates_from_every_non_ok_status(
     tmp_path, monkeypatch, original
 ):
-    _fake_worker(
-        monkeypatch,
-        stdout_text=_ocr_stream(_meta(10), _chunk(10, "ocr text")),
-    )
+    _stub_ocrmypdf(monkeypatch, tmp_path, _sidecar_stub("ocr text " * 30))
+    monkeypatch.setattr(library_folders, "_pdf_page_count", lambda _path: 1)
     monkeypatch.setattr(
         library_folders,
         "_extract_pdf_pdftotext",
@@ -1497,229 +1445,114 @@ def test_pdf_ocr_fallback_escalates_from_every_non_ok_status(
     extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
 
     assert extracted.status == "ok"
-    assert extracted.text == "ocr text"
+    assert extracted.text.startswith("ocr text")
 
 
-def test_ocr_fallback_spawns_worker_and_returns_ok(tmp_path, monkeypatch):
-    seen = _fake_worker(
-        monkeypatch,
-        stdout_text=_ocr_stream(
-            _meta(20), _chunk(10, "page one"), _chunk(20, "page two")
-        ),
-    )
-    _empty_pdftotext(monkeypatch)
+def test_every_ocr_failure_status_mentions_ocr():
+    """skill/vicaya branches on the substring, so losing it misroutes the agent.
 
-    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
-
-    assert extracted.status == "ok"
-    assert extracted.text == "page one\n\npage two"
-    cmd = cast(list[str], seen["cmd"])
-    assert "-c" in cmd and str(tmp_path / "scan.pdf") in cmd
-
-
-def test_ocr_fallback_passes_truncated_status_through(tmp_path, monkeypatch):
-    _fake_worker(
-        monkeypatch,
-        stdout_text=_ocr_stream(
-            _meta(_OVER_CAP), _chunk(library_folders.OCR_PAGE_CAP, "partial")
-        ),
-    )
-    _empty_pdftotext(monkeypatch)
-
-    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
-
-    assert extracted.status == (
-        f"ok: ocr truncated at {library_folders.OCR_PAGE_CAP} of {_OVER_CAP} pages"
-    )
-    assert extracted.text == "partial"
-
-
-def test_ocr_fallback_keeps_the_chunks_a_stalled_book_finished(tmp_path, monkeypatch):
-    """A wedged chunk must not discard the pages that already succeeded.
-
-    Measured 2026-09-03: 2 of 12 real scanned books stalled mid-book, and the
-    whole-file timeout threw away up to 130 already-OCR'd pages each time.
+    An OCR status that does not say "ocr" sends the research agent down the
+    pdftotext dead end those SKILL.md passages exist to prevent.
     """
-    monkeypatch.setattr(library_folders, "OCR_CHUNK_TIMEOUT", 0.5)
-    seen = _fake_worker(
-        monkeypatch,
-        stdout_text=_ocr_stream(
-            _meta(150), _chunk(10, "first ten"), _chunk(20, "next ten")
-        ),
-        stall=True,
-    )
-    _empty_pdftotext(monkeypatch)
-
-    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
-
-    assert extracted.status == "partial: ocr stalled at page 20 of 150"
-    assert extracted.text == "first ten\n\nnext ten"
-    assert cast(_FakePopen, seen["proc"]).killed is True
+    for status in (
+        f"error: pdf ocr timed out after {library_folders.OCR_SUBPROCESS_TIMEOUT}s",
+        "error: pdf ocr subprocess: [Errno 2] No such file",
+        "error: pdf ocr: EncryptedPdfError",
+        "error: pdf ocr output implausibly short (84 chars from 85 pages)",
+        "empty: pdf ocr produced no text",
+    ):
+        assert "ocr" in status
+        assert library_folders.extraction_succeeded(status) is False
 
 
-def test_ocr_fallback_stall_before_any_page_is_an_error(tmp_path, monkeypatch):
-    # No chunk has landed, so the first-chunk deadline is the one in force.
-    monkeypatch.setattr(library_folders, "OCR_FIRST_CHUNK_TIMEOUT", 0.5)
-    monkeypatch.setattr(library_folders, "OCR_CHUNK_TIMEOUT", 0.5)
-    _fake_worker(monkeypatch, stdout_text=_ocr_stream(_meta(150)), stall=True)
-    _empty_pdftotext(monkeypatch)
+def _encrypted_pdf(path: Path) -> None:
+    import pikepdf
 
-    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
-
-    assert extracted.status.startswith("error: pdf ocr stalled before any pages")
-    assert extracted.text == ""
+    pdf = pikepdf.new()
+    pdf.add_blank_page(page_size=(200, 200))
+    pdf.save(path, encryption=pikepdf.Encryption(owner="owner", user=""))
 
 
-def test_ocr_fallback_whole_file_timeout_still_backstops(tmp_path, monkeypatch):
-    monkeypatch.setattr(library_folders, "OCR_CHUNK_TIMEOUT", 30.0)
-    monkeypatch.setattr(library_folders, "OCR_SUBPROCESS_TIMEOUT", 0.5)
-    _fake_worker(
-        monkeypatch,
-        stdout_text=_ocr_stream(_meta(150), _chunk(10, "first ten")),
-        stall=True,
-    )
-    _empty_pdftotext(monkeypatch)
+def test_decrypted_pdf_strips_owner_only_encryption(tmp_path):
+    """43 of 1,735 books carry an empty-user-password restriction.
 
-    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+    ocrmypdf refuses them outright with rc=8, so they are pre-decrypted. No
+    credentials are involved: the user password is empty.
+    """
+    import pikepdf
 
-    assert extracted.status == "partial: ocr stalled at page 10 of 150"
-    assert extracted.text == "first ten"
+    source = tmp_path / "locked.pdf"
+    _encrypted_pdf(source)
+    with pikepdf.open(source) as check_pdf:
+        assert check_pdf.is_encrypted is True
 
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    plain = library_folders._decrypted_pdf(source, workdir)
 
-def test_ocr_fallback_prepends_repo_root_to_an_existing_pythonpath(
-    tmp_path, monkeypatch
-):
-    seen = _fake_worker(
-        monkeypatch, stdout_text=_ocr_stream(_meta(10), _chunk(10, "ocr text"))
-    )
-    monkeypatch.setenv("PYTHONPATH", "/somewhere/else")
-    _empty_pdftotext(monkeypatch)
-
-    library_folders._extract_pdf(tmp_path / "scan.pdf")
-
-    env = cast(dict[str, str], seen["env"])
-    assert env["PYTHONPATH"].split(os.pathsep)[0] == str(library_folders._REPO_ROOT)
-    assert "/somewhere/else" in env["PYTHONPATH"].split(os.pathsep)
+    assert plain != source
+    with pikepdf.open(plain) as opened:
+        assert opened.is_encrypted is False
 
 
-def test_ocr_fallback_survives_library_noise_on_stdout(tmp_path, monkeypatch):
-    _fake_worker(
-        monkeypatch,
-        stdout_text=_ocr_stream(
-            _meta(10),
-            _chunk(10, "ocr text"),
-            noise="onnxruntime: using CPUExecutionProvider\n{}\n",
-        ),
-    )
-    _empty_pdftotext(monkeypatch)
+def test_decrypted_pdf_passes_an_unencrypted_file_straight_through(tmp_path):
+    import pikepdf
 
-    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+    source = tmp_path / "plain.pdf"
+    pdf = pikepdf.new()
+    pdf.add_blank_page(page_size=(200, 200))
+    pdf.save(source)
+    workdir = tmp_path / "work"
+    workdir.mkdir()
 
-    assert extracted.status == "ok"
-    assert extracted.text == "ocr text"
+    assert library_folders._decrypted_pdf(source, workdir) == source
 
 
-def test_ocr_fallback_worker_crash(tmp_path, monkeypatch):
-    _fake_worker(
-        monkeypatch,
-        returncode=1,
-        stderr_text="Traceback...\nValueError: failed to load PDFium\n",
-    )
-    _empty_pdftotext(monkeypatch)
+def test_decrypted_pdf_leaves_an_unreadable_file_to_ocrmypdf(tmp_path):
+    """A file pikepdf cannot parse is ocrmypdf's problem to report, not ours."""
+    source = tmp_path / "broken.pdf"
+    source.write_bytes(b"not a pdf at all")
+    workdir = tmp_path / "work"
+    workdir.mkdir()
 
-    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
-
-    assert extracted.status == "error: ValueError: failed to load PDFium"
-    assert extracted.text == ""
+    assert library_folders._decrypted_pdf(source, workdir) == source
 
 
-def test_ocr_fallback_unsupported_payload_keeps_original_status(tmp_path, monkeypatch):
-    _fake_worker(
-        monkeypatch,
-        stdout_text=_ocr_stream(
-            {"kind": "unsupported", "detail": "pdf-inspector lacks OCR API"}
-        ),
-    )
-    _empty_pdftotext(monkeypatch)
+def test_pdf_page_count_reads_pdfinfo(tmp_path):
+    import pikepdf
 
-    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
+    source = tmp_path / "three.pdf"
+    pdf = pikepdf.new()
+    for _ in range(3):
+        pdf.add_blank_page(page_size=(200, 200))
+    pdf.save(source)
 
-    assert extracted.status == "empty"
-    assert extracted.text == ""
-
-
-def test_ocr_fallback_unframed_reply_reports_the_offending_output(
-    tmp_path, monkeypatch
-):
-    _fake_worker(monkeypatch, stdout_text='{"kind": "chunk", "text": "unframed"}\n')
-    _empty_pdftotext(monkeypatch)
-
-    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
-
-    assert extracted.status.startswith("error: pdf ocr worker returned junk")
-    assert "unframed" in extracted.status
-    assert extracted.text == ""
+    if shutil.which("pdfinfo") is None:
+        pytest.skip("pdfinfo not installed")
+    assert library_folders._pdf_page_count(source) == 3
 
 
-def test_ocr_fallback_junk_payload_reports_the_offending_output(tmp_path, monkeypatch):
-    _fake_worker(
-        monkeypatch,
-        stdout_text="pdfium warning\n"
-        + library_folders._OCR_REPLY_MARKER
-        + "not json\n",
-    )
-    _empty_pdftotext(monkeypatch)
+def test_pdf_page_count_is_zero_when_it_cannot_be_determined(tmp_path):
+    """A zero page count disables the short-output guard rather than guessing."""
+    source = tmp_path / "broken.pdf"
+    source.write_bytes(b"not a pdf at all")
 
-    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
-
-    assert extracted.status.startswith("error: pdf ocr worker returned junk")
-    assert extracted.text == ""
+    assert library_folders._pdf_page_count(source) == 0
 
 
-def test_ocr_worker_snippet_streams_each_chunk(tmp_path, monkeypatch):
-    snippet = library_folders._OCR_WORKER_SNIPPET
-    assert "_OCR_REPLY_MARKER" in snippet
-    assert "_ocr_worker_chunks" in snippet
-    # One reply per chunk, flushed as it lands — that is what makes a
-    # per-chunk deadline possible at all.
-    assert "for reply in" in snippet
-    assert "flush()" in snippet
-
-
-def test_ort_dylib_path_found(tmp_path, monkeypatch):
-    capi = tmp_path / "capi"
-    capi.mkdir()
-    dylib = capi / "libonnxruntime.so.1.29.0"
-    dylib.write_bytes(b"")
-    fake = SimpleNamespace(__file__=str(tmp_path / "__init__.py"))
-    monkeypatch.setitem(sys.modules, "onnxruntime", fake)
-
-    assert library_folders._ort_dylib_path() == str(dylib)
-
-
-def test_ort_dylib_path_none_without_onnxruntime(monkeypatch):
-    monkeypatch.setitem(sys.modules, "onnxruntime", None)  # import raises
-
-    assert library_folders._ort_dylib_path() is None
-
-
-def test_retry_failed_leaves_ocr_truncated_documents_alone(tmp_path, monkeypatch):
+def test_retry_failed_leaves_ok_with_a_note_documents_alone(tmp_path, monkeypatch):
     root = tmp_path / "root"
     root.mkdir()
     scan = root / "scan.pdf"
     scan.write_bytes(b"%PDF scanned")
     index = tmp_path / "folder.sqlite"
     config = LibraryFoldersConfig(roots=[root], index=index)
-    truncated = (
-        f"ok: ocr truncated at {library_folders.OCR_PAGE_CAP} of {_OVER_CAP} pages"
-    )
+    noted = "ok: ocr with a note"
 
     monkeypatch.setattr(
         library_folders,
         "extract_text",
-        lambda _path: library_folders.ExtractedText(
-            text="first 150 pages", status=truncated
-        ),
+        lambda _path: library_folders.ExtractedText(text="the pages", status=noted),
     )
     refresh(config)
     with sqlite3.connect(index) as conn:
@@ -1727,11 +1560,11 @@ def test_retry_failed_leaves_ocr_truncated_documents_alone(tmp_path, monkeypatch
             conn.execute(
                 "SELECT extraction_status FROM documents WHERE rel_path = 'scan.pdf'"
             ).fetchone()[0]
-            == truncated
+            == noted
         )
 
     def must_not_reextract(_path):
-        raise AssertionError("a truncated-but-ok row must not be re-OCR'd on retry")
+        raise AssertionError("an ok-with-a-note row must not be re-OCR'd on retry")
 
     monkeypatch.setattr(library_folders, "extract_text", must_not_reextract)
 
@@ -1843,12 +1676,13 @@ def test_schema_version_change_drops_and_rebuilds_the_index(tmp_path, monkeypatc
         )
 
 
-def test_retry_failed_reextracts_an_ocr_stalled_document(tmp_path, monkeypatch):
-    """A stall is intermittent, so a stalled row must stay retryable.
+def test_retry_failed_reextracts_a_timed_out_ocr_document(tmp_path, monkeypatch):
+    """A timeout may be intermittent, so a timed-out row must stay retryable.
 
-    Contrast test_retry_failed_leaves_ocr_truncated_documents_alone: a
-    page-cap truncation is deterministic and re-running redoes identical
-    pages, but both books measured as stalling on 2026-09-03 completed on the
+    Contrast test_retry_failed_leaves_ok_with_a_note_documents_alone: an
+    "ok: ..." row is a success with a note and re-running it would redo
+    identical work, but a book that hit the whole-book bound is worth another
+    attempt — both books measured as stalling on 2026-09-03 completed on the
     next attempt.
     """
     root = tmp_path / "root"
@@ -1861,7 +1695,7 @@ def test_retry_failed_reextracts_an_ocr_stalled_document(tmp_path, monkeypatch):
         library_folders,
         "extract_text",
         lambda _path: library_folders.ExtractedText(
-            text="first 20 pages", status="partial: ocr stalled at page 20 of 150"
+            text="", status="error: pdf ocr timed out after 1800s"
         ),
     )
     refresh(config)
@@ -1889,97 +1723,16 @@ def test_retry_failed_reextracts_an_ocr_stalled_document(tmp_path, monkeypatch):
     ("status", "done"),
     [
         ("ok", True),
-        ("ok: ocr truncated at 150 of 600 pages", True),
-        ("partial: ocr stalled at page 20 of 150", False),
-        ("partial: ocr worker died at page 20 of 150", False),
+        ("ok: ocr with a note", True),
         ("empty", False),
         ("unsupported: pdftotext not found", False),
-        ("error: pdf ocr subprocess failed", False),
+        ("error: pdf ocr timed out after 1800s", False),
+        ("error: pdf ocr output implausibly short (84 chars from 85 pages)", False),
+        # Retired with the bespoke worker: ocrmypdf writes its sidecar once at
+        # the end, so a killed run leaves no text for "partial:" to describe.
+        # The 25 rows already carrying it are re-extracted like any non-ok row.
+        ("partial: ocr stalled at page 20 of 150", False),
     ],
 )
 def test_extraction_succeeded_contract(status, done):
     assert library_folders.extraction_succeeded(status) is done
-
-
-def test_ocr_status_will_not_claim_ok_without_a_page_count():
-    """A lost meta reply must not be reported as a complete extraction."""
-    assert library_folders._ocr_status("some text", 0, 20).startswith("partial:")
-
-
-def test_ocr_fallback_labels_a_crashed_worker_as_died_not_stalled(
-    tmp_path, monkeypatch
-):
-    _fake_worker(
-        monkeypatch,
-        stdout_text=_ocr_stream(_meta(150), _chunk(20, "first twenty")),
-        returncode=1,
-        stderr_text="ValueError: boom\n",
-    )
-    _empty_pdftotext(monkeypatch)
-
-    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
-
-    assert extracted.status == "partial: ocr worker died at page 20 of 150"
-    assert extracted.text == "first twenty"
-    assert library_folders.extraction_succeeded(extracted.status) is False
-
-
-def test_first_chunk_gets_a_longer_deadline_than_later_chunks(tmp_path, monkeypatch):
-    """Startup plus a one-time model download must not read as a stall."""
-    assert library_folders.OCR_FIRST_CHUNK_TIMEOUT > library_folders.OCR_CHUNK_TIMEOUT
-    monkeypatch.setattr(library_folders, "OCR_CHUNK_TIMEOUT", 0.01)
-    monkeypatch.setattr(library_folders, "OCR_FIRST_CHUNK_TIMEOUT", 30.0)
-    _fake_worker(
-        monkeypatch,
-        stdout_text=_ocr_stream(_meta(150), _chunk(10, "slow first chunk")),
-    )
-    _empty_pdftotext(monkeypatch)
-
-    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
-
-    assert extracted.text == "slow first chunk"
-
-
-def test_ocr_fallback_closes_the_worker_pipe(tmp_path, monkeypatch):
-    """~2,000 scanned books a pass: the pipe must not wait on the collector."""
-    seen = _fake_worker(
-        monkeypatch, stdout_text=_ocr_stream(_meta(10), _chunk(10, "ocr text"))
-    )
-    _empty_pdftotext(monkeypatch)
-
-    library_folders._extract_pdf(tmp_path / "scan.pdf")
-
-    assert cast(_FakePopen, seen["proc"]).stdout.closed is True
-
-
-def test_real_hanging_worker_is_killed_and_partial_text_kept(tmp_path, monkeypatch):
-    """Spawn a genuinely hung child, not a fake, and require prompt recovery.
-
-    Regression for 2026-09-03: the stall was detected on time, then the parent
-    deadlocked closing the pipe while the reader thread was blocked in
-    readline() holding the buffered-reader lock. A refresh sat for over two
-    hours with the stall already found. The fake-based tests could not catch
-    it because their close() returns immediately.
-    """
-    hang_snippet = (
-        "import json, sys, time\n"
-        "from tools.library_folders import _OCR_REPLY_MARKER\n"
-        "for reply in ({'kind': 'meta', 'page_count': 150, 'last_page': 150},\n"
-        "              {'kind': 'chunk', 'through_page': 10, 'text': 'first ten'}):\n"
-        "    sys.stdout.write('\\n' + _OCR_REPLY_MARKER + json.dumps(reply) + '\\n')\n"
-        "    sys.stdout.flush()\n"
-        "time.sleep(600)\n"
-    )
-    monkeypatch.setattr(library_folders, "_OCR_WORKER_SNIPPET", hang_snippet)
-    monkeypatch.setattr(library_folders, "OCR_CHUNK_TIMEOUT", 3.0)
-    monkeypatch.setattr(library_folders, "OCR_FIRST_CHUNK_TIMEOUT", 3.0)
-    _empty_pdftotext(monkeypatch)
-
-    started = time.monotonic()
-    extracted = library_folders._extract_pdf(tmp_path / "scan.pdf")
-    elapsed = time.monotonic() - started
-
-    assert extracted.status == "partial: ocr stalled at page 10 of 150"
-    assert extracted.text == "first ten"
-    # The whole point: bounded. Deadlocked, this never returns at all.
-    assert elapsed < 30, f"took {elapsed:.1f}s — the stall path is not bounded"

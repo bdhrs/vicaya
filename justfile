@@ -8,8 +8,11 @@
 # A full rebuild is `just lf-rebuild-from-scratch`, which runs these in order:
 #   1. `just lf-refresh-text`  — every file, OCR off. Fast. Scanned PDFs land as `empty`.
 #   2. `just lf-refresh-retry` — only the rows the text pass could not read, OCR on. Slow (hours).
-#   3. `just lf-refresh-retry` again — OCR stalls are intermittent, so a second pass recovers them.
+#   3. `just lf-refresh-retry` again — an OCR failure can be intermittent, so a second pass recovers them.
 # Running pass 2 first would work but would hold the whole library hostage to the scans.
+#
+# OCR needs the `ocrmypdf` binary (`sudo apt install ocrmypdf`). `uv sync` does
+# not install it, and without it passes 2 and 3 quietly do nothing.
 
 # List all recipes.
 default:
@@ -27,13 +30,15 @@ lf-refresh *args:
 lf-rebuild-from-scratch *args:
     #!/usr/bin/env bash
     set -euo pipefail
+    command -v ocrmypdf >/dev/null || echo "!! ocrmypdf not installed — passes 2 and 3 will not OCR anything. sudo apt install ocrmypdf"
     echo "==> pass 1/3 text-only, OCR off  $(date +%H:%M:%S)"
     VICAYA_LIBRARY_FOLDERS_OCR=0 uv run tools/research_sources.py library-folders-refresh {{args}}
     echo "==> pass 2/3 OCR what pass 1 could not read  $(date +%H:%M:%S)"
     uv run tools/research_sources.py library-folders-refresh --retry-failed {{args}}
-    # OCR stalls are intermittent: 2 of 12 sampled books stalled on one attempt
-    # and completed on the next, so one more pass recovers them. It also re-tries
-    # genuinely unextractable files, which is wasted but bounded.
+    # Kept deliberately. The new engine showed no stall across 22 books, but
+    # that is 0 of 20 attempts — a 16 % upper bound at 95 % confidence, which is
+    # not a basis for dropping a recovery pass. It also re-tries genuinely
+    # unextractable files, which is wasted but bounded.
     echo "==> pass 3/3 retry books that stalled  $(date +%H:%M:%S)"
     uv run tools/research_sources.py library-folders-refresh --retry-failed {{args}}
     echo "==> done  $(date +%H:%M:%S)"

@@ -10,7 +10,7 @@
   sets current and prefers a stub when one exists.
 - **Canon search:** SQLite (`tipitaka-translation-data.db`) via stdlib `sqlite3`
 - **Vault I/O:** Obsidian CLI v1.12.7+ (subcommand-style; requires desktop app running)
-- **Library folders search:** one or more document trees (including Calibre libraries) indexed into a user-controlled local SQLite FTS5 database via `tools/library_folders.py`. When a folder contains `metadata.db` it is recognised as a Calibre library and author/tag metadata is prepended to each book's FTS text automatically. Refresh walks all configured roots and extracts stdlib-supported text (incl. `.mht`/`.mhtml` via the `email` module and `.pptx` via the zip reader) plus optional local tools (`pdftotext`, `textutil`, `antiword`, `catdoc`, and `ebook-convert` for the Kindle/Mobipocket family — `.mobi`/`.azw3`/`.azw`/`.prc`/`.lit`/`.pdb`/`.chm` — plus `.rtf`). PDFs are extracted with `pdftotext` in reading-order mode (no `-layout`, which interleaved two-column books line-by-line); when pdftotext yields no text (scans, broken text layers), a fallback runs [pdf-inspector](https://github.com/firecrawl/pdf-inspector) selective OCR in a timeout-bounded subprocess over the first 1,000 pages — see **PDF OCR fallback** below. `.zip`, `.bz2`, and `.7z` archives are indexed as one document each by routing every text-bearing member back through the same extractor dispatch and concatenating the result, bounded by per-archive caps of 5,000 members, 2 GB uncompressed, and 300 s wall-clock (noise/encrypted/nested-archive members are skipped). Normal search queries the local index only. Refresh skips files with unchanged size+mtime, so after adding extractor support the previously-failed rows must be retried with `library-folders-refresh --retry-failed` (re-extracts only docs whose status does not start with `ok`; steady-state refresh stays instant).
+- **Library folders search:** one or more document trees (including Calibre libraries) indexed into a user-controlled local SQLite FTS5 database via `tools/library_folders.py`. When a folder contains `metadata.db` it is recognised as a Calibre library and author/tag metadata is prepended to each book's FTS text automatically. Refresh walks all configured roots and extracts stdlib-supported text (incl. `.mht`/`.mhtml` via the `email` module and `.pptx` via the zip reader) plus optional local tools (`pdftotext`, `textutil`, `antiword`, `catdoc`, and `ebook-convert` for the Kindle/Mobipocket family — `.mobi`/`.azw3`/`.azw`/`.prc`/`.lit`/`.pdb`/`.chm` — plus `.rtf`). PDFs are extracted with `pdftotext` in reading-order mode (no `-layout`, which interleaved two-column books line-by-line); when pdftotext yields no text (scans, broken text layers), a fallback shells out to the `ocrmypdf` binary over the whole book and reads its sidecar — see **PDF OCR fallback** below. `.zip`, `.bz2`, and `.7z` archives are indexed as one document each by routing every text-bearing member back through the same extractor dispatch and concatenating the result, bounded by per-archive caps of 5,000 members, 2 GB uncompressed, and 300 s wall-clock (noise/encrypted/nested-archive members are skipped). Normal search queries the local index only. Refresh skips files with unchanged size+mtime, so after adding extractor support the previously-failed rows must be retried with `library-folders-refresh --retry-failed` (re-extracts only docs whose status does not start with `ok`; steady-state refresh stays instant).
 - **YouTube:** `yt-dlp` for search, `youtube-transcript-api` for transcript fetch
 - **Note validation:** `scripts/validate_note.py` uses `tools/note_checks.py` for final-note mechanical checks
 - **PDF generation:** `scripts/generate_note_pdf.py` renders optional final-note PDFs with `markdown` and `weasyprint`
@@ -20,108 +20,75 @@
 - **Validation:** pytest, ruff, pyright, pyrefly
 
 ## PDF OCR fallback
-Scanned or broken-layer PDFs (pdftotext returns no text) fall back to
-[pdf-inspector](https://github.com/firecrawl/pdf-inspector) selective OCR at
-refresh time. `pdf-inspector` + `onnxruntime` are main dependencies (an
-optional extra was tried and removed: any bare `uv sync` silently strips
-extras, silently losing OCR). The OCR runs in a dedicated subprocess per file
-so an engine hang cannot stall a refresh. The subprocess entry point is
-`_OCR_WORKER_SNIPPET`, which drives
-`tools/library_folders.py::_ocr_worker_chunks`; the parent collects the replies
-in `_collect_ocr_chunks`. Each chunk is bounded separately — see the per-chunk
-timeout below, which is the live bound; `OCR_SUBPROCESS_TIMEOUT` (1800 s) is
-only a whole-file backstop. Work per file is additionally capped at the first
-`OCR_PAGE_CAP` pages (1,000; 1.18 s/page median measured over ten real
-scanned books); set
-`VICAYA_LIBRARY_FOLDERS_OCR=0` to skip the fallback for fast text-only
-refreshes.
+Scanned or broken-layer PDFs (pdftotext returns no text) are OCR'd at refresh time by shelling out to the [`ocrmypdf`](https://ocrmypdf.readthedocs.io/) binary, which wraps tesseract. `tools/library_folders.py::_extract_pdf_ocr_fallback` runs it once per book with `--force-ocr --jobs 12 --optimize 0 --output-type pdf --sidecar <tmp>` and the output PDF sent to `/dev/null` — only the sidecar text is wanted, and writing a searchable copy of every scanned book would cost tens of gigabytes for nothing. Set `VICAYA_LIBRARY_FOLDERS_OCR=0` to skip the fallback for fast text-only refreshes.
 
-When the page cap cuts a book short the row's status records it —
-`ok: ocr truncated at 1000 of 1678 pages` — so partially-indexed books stay
-queryable instead of being indistinguishable from fully-indexed ones. Such a
-row counts as a success, not a failure: `--retry-failed` deliberately leaves it
-alone (`_should_skip` treats any `ok…` status as done), because re-running would
-redo the same capped pages. Finishing a capped book means a deliberate re-run at
-a raised `OCR_PAGE_CAP`.
+`ocrmypdf` is an **apt package, not a uv dependency** — `uv sync` will not install it. An absent binary is therefore the normal state on a fresh machine, so `_extract_pdf_ocr_fallback` probes `shutil.which("ocrmypdf")` and returns `None` when it is missing, mirroring the `pdftotext` probe in the same file. Returning `None` is load-bearing: it makes the caller keep pdftotext's own status instead of writing an OCR error over every scanned PDF in the library. The kill switch above is a separate thing — an explicit user opt-out, not the availability probe.
 
-The worker streams one framed reply per 10-page chunk rather than one reply
-per file. Each reply is framed with `_OCR_REPLY_MARKER` because pdf-inspector,
-onnxruntime and PDFium all print to the child's stdout, and an unframed reply
-would be corrupted by a single warning line.
+### Why this engine
+Chosen by measurement on 2026-09-03 against the previous pipeline ([pdf-inspector](https://github.com/firecrawl/pdf-inspector) + `onnxruntime` + PDFium behind a bespoke chunk-streaming subprocess worker) and against calling tesseract directly. Full numbers in `kamma/archive/20260903_ocr_bakeoff/measurements.md`.
 
-Streaming per chunk is what allows a per-chunk deadline. `OCR_CHUNK_TIMEOUT`
-(120 s, against a slowest measured chunk of 20 s) bounds each chunk instead of
-bounding the whole file; `OCR_SUBPROCESS_TIMEOUT` remains a whole-file
-backstop. When a chunk stalls, the pages already OCR'd are kept and the status
-records `partial: ocr stalled at page N of M`. That status is deliberately
-*not* an `ok…` one: stalls are intermittent — both books measured as stalling
-on 2026-09-03 completed cleanly on the next attempt — so a stalled row keeps
-its partial text but stays retryable, and `--retry-failed` will usually finish
-it. A page-cap truncation is the opposite case: deterministic, so it stays
-`ok…` and is skipped. This matters: measured on 2026-09-03, 2 of 12 random
-scanned books stalled mid-book on that attempt, and the previous whole-file
-timeout charged 1800 s and then discarded everything — one book lost 130 of 150
-successfully OCR'd pages. Over the library's ~2,000 scanned books this is the
-difference between roughly 240 h with 338 books unindexed and roughly 87 h with
-none. Full numbers, including a tesseract comparison, are in the thread's
-`measurements.md`.
+| | projected for 263,524 pages | memory per unit | books stalled | word accuracy (folded) |
+|---|---:|---:|---:|---:|
+| **ocrmypdf** | **1.32 days** | 488 MB | 0 of 22 | 91.7 % |
+| pdf-inspector (previous) | 4.31 days (user observed 6) | 5.0 GB | 4 of 22 | 96.1 % |
+| tesseract direct | 10.8 days | ~900 MB | 1 of 22 | 92.0 % |
 
-The chunk reader is a thread feeding a queue, not a poll on the pipe: a wedged
-worker leaves the read blocked indefinitely, so only a separate thread lets the
-deadline fire.
+The 10× memory drop is what matters most in practice: the previous engine's 5.0 GB per book capped the refresh at 3-way parallelism, which is why it was slow. Treat **0.433 s/page as an unreplicated figure** — the one repeat run came in at 0.528 s/page, which would put the like-for-like margin at 2.68× rather than 3.27×. Measured again on 2026-09-04 through the shipped code path, with `--optimize 0` and the output PDF discarded: **0.627 s/page** on a 708-page book (1.6 M characters), 0.972 s/page on "Chanakya" (a known outlier for every candidate), 0.172 s/page on an 85-page book. Dropping `--optimize` and the output file roughly halved the rate on every one of the three — 2.371 → 0.972 on Chanakya — for identical extracted text (9,866 characters both ways). Neither had been measured in the bake-off.
 
-The cap was raised from 150 to 1,000 on 2026-09-03, priced against every one
-of the 1,739 library PDFs that have no text layer (median 94 pages, mean 153,
-max 1,678, 266,429 pages in total):
+The one real quality loss is **IAST diacritics**: tesseract preserves none of them, where the previous engine kept 74 %. This does not hurt search, because the FTS index uses `unicode61 remove_diacritics 2` and folds diacritics on both sides of a query — `Ākāśagarbha` and `Akasagarbha` are the same token either way. It does hurt anyone pasting a Pāḷi passage out of the index into a note. Restoring diacritics on the quote path (not in the index) was measured as recoverable at 99.7 % by a frontier model and is not yet implemented; see the `20260904_ocr_swap` thread.
 
-| cap | pages OCR'd | serial time | coverage | books truncated |
-|---|---|---|---|---|
-| 150 | 144,760 | 47 h | 54 % | 636 |
-| 500 | 248,213 | 81 h | 93 % | 86 |
-| 1,000 | 263,524 | 86 h | 99 % | 9 |
+### Parallelism — read this before changing `OCR_JOBS`
+The refresh loop processes books **sequentially**. ocrmypdf parallelises per *page*, so `OCR_JOBS` is what uses the machine, and it is the whole parallelism story.
 
-At 150 nearly half the scanned corpus was invisible to search, and the books
-losing most were the reference works, journals and dictionaries. The last step
-buys 6 points of coverage for 5 hours, so the cap now sits where it stops
-binding on real books while still bounding a pathological scan. Bounding a
-*hang* is the per-chunk timeout's job, not the cap's, which is what allowed the
-original 150 to be relaxed at all. Index cost is roughly 0.75 GB at a measured
-1.39 bytes of SQLite per character.
+This matters because the bake-off's headline **0.433 s/page → 1.32 days** was measured at **4 books × `--jobs 4`** — a concurrency `refresh()` does not have. The sequential row of that same table is 0.904 s/page. Raising `--jobs` recovers most of the difference inside one invocation, which is far cheaper than making the loop concurrent: the clock-based commit and the progress bar both assume one book at a time, and there is no throughput left to win.
 
-Two things about OCR remain unverified against real data, both recorded here so
-nobody assumes otherwise. The stall-recovery path has never fired against a
-real wedged worker — both books measured as stalling completed when re-run, so
-`partial: ocr stalled …` is covered by unit tests with a faked worker only, and
-a full library rebuild is its first live exercise. And every timing measured
-was warm-start, with the OCR models already cached; cold start, including the
-one-time model download, is why the first chunk gets
-`OCR_FIRST_CHUNK_TIMEOUT` rather than the ordinary bound.
+Measured live on a real refresh on a 22-core machine:
 
-A full rebuild is two passes, in order: `just lf-refresh-text` (every file, OCR
-off, fast) then `just lf-refresh-retry` (only the rows pass 1 could not read,
-OCR on, hours). The order is stated in the justfile header and in both recipe
-doc-comments.
+| `--jobs` | s/page | machine |
+|---:|---:|---|
+| 4 | 0.904 | ~4 cores |
+| 8 | 0.537 | ~8 cores, 53 % idle |
+| 12 | current setting | ~12 cores, 30 % idle, 7 % iowait |
 
-Because an OCR pass runs for hours, the index is opened in WAL mode and the
-refresh commits every `REFRESH_COMMIT_SECONDS` (30 s) instead of once at the
-end: an interrupted run keeps the files it finished, and a search can read the
-index while a refresh is writing it.
+Set for headroom, not for peak throughput — the machine is the user's workstation. Two traps when reading CPU during a run: ocrmypdf **nices** its workers, so the load appears in `top`'s `ni` column and a monitor showing user CPU only will read 2–3 % while eight cores are saturated; and killing the refresh **orphans** ocrmypdf (see below), so a stray run from a previous invocation can double the real worker count and make the current setting look far too high.
+
+### Bounds and statuses
+`OCR_SUBPROCESS_TIMEOUT` (1800 s) bounds the whole book. This bound is not optional: the machinery it replaced existed to contain an unkillable wait, and the zero-stall record above covers only 1.3 % of the library. The child is started in its own session and the timeout kills the whole **process group**, not just the parent — ocrmypdf drives a pool of tesseract workers, and orphaning that pool would leave it burning CPU for the rest of a multi-day refresh.
+
+**The same isolation has a cost, and it is not fixed:** because the child has its own session, a Ctrl-C or `kill` on the refresh does not reach it. ocrmypdf survives and keeps 8–12 cores busy until it finishes the book. Observed twice on 2026-09-04, once alongside a restarted run on the same book, which saturated the machine at 20 workers on 22 cores. The fix is a SIGINT/SIGTERM handler in `refresh()` that kills the group. Until then: after stopping a refresh, check for stray `ocrmypdf` processes and kill them by PID — `pkill` fails silently in some sandboxes, so verify by re-listing.
+
+ocrmypdf writes its sidecar **once, at the end**, so a killed or timed-out run leaves no text at all. That retires the previous `partial: …` vocabulary, which existed only because the old worker streamed text per 10-page chunk and a stall left real pages behind. The 25 rows in the live index that still carry a `partial:` status are re-extracted like any other non-`ok` row; nothing is stranded. The page cap (`OCR_PAGE_CAP`) is gone with it, along with `ok: ocr truncated at 1000 of 1678 pages` — measured against the live index before removal, **0 rows** carried that status, so there was no migration to do.
+
+The statuses the OCR path can now emit:
+
+| status | meaning | retried by `--retry-failed` |
+|---|---|---|
+| `ok` | sidecar text, plausible length for the page count | no |
+| `empty: pdf ocr produced no text` | ran cleanly, produced no text | yes |
+| `error: pdf ocr timed out after 1800s` | hit the whole-book bound | yes |
+| `error: pdf ocr: <last stderr line>` | non-zero exit | yes |
+| `error: pdf ocr subprocess: <exc>` | could not spawn the binary | yes |
+| `error: pdf ocr output implausibly short (N chars from M pages)` | see below | yes |
+
+Every status other than `ok` contains the substring `ocr` on purpose — `skill/vicaya/SKILL.md` branches on it, and a status without it sends the research agent down the pdftotext dead end those passages exist to prevent.
+
+### Two measured safety behaviours
+**Encrypted PDFs are pre-decrypted.** ocrmypdf refuses them outright (`EncryptedPdfError`, rc=8), and **43 of 1,735** scanned books carry owner-only encryption with an empty user password — a "no copy/print" restriction, not access control. `_decrypted_pdf` opens the file with `pikepdf` and re-saves it to a temp copy, which strips it. No credentials are involved. `pikepdf` is a main dependency for exactly this reason; the apt copy that ocrmypdf itself uses is invisible to the venv, which sets `include-system-site-packages = false`.
+
+**Implausibly short output is flagged, not called success.** Both tesseract-based candidates returned **84 characters for an entire 85-page book** while reporting rc=0 — a book the previous engine read at 211,181 characters. A return code cannot catch that, so `_extract_pdf_ocr_fallback` compares the character count against `OCR_MIN_CHARS_PER_PAGE` (20, far below any real scan) times the page count from `pdfinfo`, and records `error: pdf ocr output implausibly short (…)` instead of `ok`. Two things to know about this: the population rate is **unknown** (n=1 in a 22-book sample), and after this swap there is **no second engine** to recover such a book — all 7 tesseract page-segmentation modes at both 150 and 300 dpi were tried on it and every one returned zero characters. A flagged book stays unindexed and stays visible in the count; it is not silently recorded as read.
+
+### Rebuild
+A full rebuild is three passes, in order: `just lf-refresh-text` (every file, OCR off, fast), then `just lf-refresh-retry` (only the rows pass 1 could not read, OCR on, hours). The third retry pass is kept deliberately: "zero stalls" is 0 out of 20 attempts, whose 95 % upper bound is 16 %, which is not a basis for removing a recovery pass. The order is stated in the justfile header and in both recipe doc-comments.
+
+Because an OCR pass runs for hours, the index is opened in WAL mode and the refresh commits every `REFRESH_COMMIT_SECONDS` (30 s) instead of once at the end: an interrupted run keeps the files it finished, and a search can read the index while a refresh is writing it. There is no sub-book resume — an interrupted book is redone from page 1, which was true of the previous engine too.
 
 **Install:**
-1. `uv sync` — OCR deps are main dependencies; nothing extra needed.
-2. PDFium shared library (not managed by uv): download the
-   `pdfium-linux-x64.tgz` from [bblanchon/pdfium-binaries
-   releases](https://github.com/bblanchon/pdfium-binaries/releases), extract
-   `lib/libpdfium.so` to `~/.local/lib/pdfium/`, and set
-   `PDFIUM_LIB_PATH="$HOME/.local/lib/pdfium/libpdfium.so"` in `.env`.
-3. `ORT_DYLIB_PATH` is auto-located from the installed onnxruntime wheel; no
-   setup needed.
-4. The OCR model set is downloaded automatically on the first routed page
-   (needs network once, then cached).
+1. `uv sync` — installs the Python side (`pikepdf`).
+2. `sudo apt install ocrmypdf` — the OCR engine itself, **not** managed by uv. Verify with `ocrmypdf --version` (15.2.0 and tesseract 5.3.4 are the measured versions). Without it, scanned PDFs keep their pdftotext status and are never OCR'd.
+3. Nothing else. There is no PDFium download, no `PDFIUM_LIB_PATH`, no `ORT_DYLIB_PATH` and no model download — all four were needs of the previous engine. If `PDFIUM_LIB_PATH` is still set in your `.env`, it is now unused and can be deleted.
 
 **Verify it works:**
 ```bash
-set -a; . ./.env; set +a
 uv run python -c "
 from pathlib import Path
 from tools import library_folders as lf
@@ -130,17 +97,9 @@ print(r.status, len(r.text))  # expect: ok <nonzero>
 "
 ```
 
-**Update:** `uv lock --upgrade-package pdf-inspector --upgrade-package
-onnxruntime && uv sync` keeps the Python side current within the `<2` pin.
-PDFium is not managed by uv — re-download the latest release tarball to the
-same path occasionally. Bump the pin deliberately when a major version lands.
+**Update:** `sudo apt upgrade ocrmypdf` for the engine; `uv lock --upgrade-package pikepdf && uv sync` for the Python side.
 
-**Gotcha (fixed 2026-09-02, watch for recurrence):** `.venv/bin/*` console
-scripts once had shebangs pointing at another project's venv
-(`research-hub`), so `uv run pytest` silently ran under a foreign interpreter
-— deps like weasyprint/pdf-inspector "missing" in tests only. If tests fail
-to import venv packages, check `head -1 .venv/bin/pytest` and reinstall the
-package that owns the script.
+**Gotcha (fixed 2026-09-02, watch for recurrence):** `.venv/bin/*` console scripts once had shebangs pointing at another project's venv (`research-hub`), so `uv run pytest` silently ran under a foreign interpreter — deps like weasyprint/pikepdf "missing" in tests only. If tests fail to import venv packages, check `head -1 .venv/bin/pytest` and reinstall the package that owns the script.
 
 ## Validation Scope
 - For routine code or documentation changes, run only checks scoped to the

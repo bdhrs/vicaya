@@ -184,15 +184,25 @@ wall-clock. A normal refresh skips files whose size and
 mtime are unchanged, so after installing a new extractor re-run with
 `--retry-failed` / `just lf-refresh-retry` once; later refreshes skip them again.
 
-Scanned PDFs (no usable text layer) are OCR'd as a fallback during refresh,
-over the first 1,000 pages of each book. That is slow — hours across a large
-library — so a full rebuild is best run as two passes: `just lf-refresh-text`
+Scanned PDFs (no usable text layer) are OCR'd as a fallback during refresh, whole
+books at a time, by shelling out to `ocrmypdf`. **That is a system package, not a
+Python one — `uv sync` will not install it.** Run `sudo apt install ocrmypdf`
+once; without it, scanned PDFs simply stay unindexed rather than failing loudly.
+OCR is slow — around half a second per page, so hours across a large library —
+which is why a full rebuild is best run as three passes: `just lf-refresh-text`
 first to get every readable file indexed fast, then `just lf-refresh-retry` to
-OCR only what the first pass could not read. When the 1,000-page cap cuts a book
-short, its status records it (`ok: ocr truncated at 1000 of 1678 pages`) so
-partially-indexed books are queryable rather than silently incomplete. Set
+OCR only what the first pass could not read, then `just lf-refresh-retry` once
+more, because an OCR failure can be intermittent. `just
+lf-rebuild-from-scratch` runs all three in order. Set
 `VICAYA_LIBRARY_FOLDERS_OCR=0` to turn the fallback off. A refresh commits as it
 goes, so an interrupted run keeps the files it had finished.
+
+OCR'd text carries **no Pāḷi diacritics** — the engine drops them, so a scanned
+book indexes `Akasagarbha` where the page reads `Ākāśagarbha`. Search is
+unaffected, because the index folds diacritics on both sides of every query, but
+a passage quoted straight out of a scanned book is not a verbatim reading of the
+page. A handful of scans defeat the OCR engine entirely; those are recorded as
+`error: pdf ocr output implausibly short …` rather than being counted as read.
 
 Duplicate handling is conservative. Exact byte duplicates and identical
 normalized extracted text are collapsed by default; `--include-duplicates`
