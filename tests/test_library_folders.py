@@ -7,6 +7,7 @@ import io
 import json
 import os
 import shutil
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -1736,3 +1737,71 @@ def test_retry_failed_reextracts_a_timed_out_ocr_document(tmp_path, monkeypatch)
 )
 def test_extraction_succeeded_contract(status, done):
     assert library_folders.extraction_succeeded(status) is done
+
+
+def _spawn_ocr_child_then_signal(tmp_path: Path, sig: int) -> tuple[int, int]:
+    """Run a real OCR call in a child process, signal it, return (rc, grandchild).
+
+    A real process tree and a real signal. The OCR child is put in its own
+    session so a timeout can kill its whole tesseract pool, which also means
+    the terminal's signal never reaches it — so nothing but an actual signal
+    delivered to an actual refresh proves the cleanup runs.
+    """
+    marker = tmp_path / "ocr_pid"
+    stub = tmp_path / "slow_ocrmypdf.py"
+    stub.write_text(
+        "import os, sys, time\n"
+        f"open({str(marker)!r}, 'w').write(str(os.getpid()))\n"
+        "time.sleep(600)\n",
+        encoding="utf-8",
+    )
+    driver = tmp_path / "driver.py"
+    driver.write_text(
+        "import sys\n"
+        f"sys.path.insert(0, {str(REPO_ROOT)!r})\n"
+        "from pathlib import Path\n"
+        "from tools import library_folders as lf\n"
+        f"lf.OCRMYPDF_BIN = sys.executable\n"
+        f"lf._ocrmypdf_command = lambda src, out, sc: [sys.executable, {str(stub)!r}]\n"
+        "lf._extract_pdf_pdftotext = lambda p: lf.ExtractedText(text='', status='empty')\n"
+        f"lf._extract_pdf(Path({str(tmp_path / 'scan.pdf')!r}))\n",
+        encoding="utf-8",
+    )
+    proc = subprocess.Popen([sys.executable, str(driver)])
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline and not marker.exists():
+        time.sleep(0.1)
+    assert marker.exists(), "the OCR child never started"
+    grandchild = int(marker.read_text(encoding="utf-8"))
+    os.kill(proc.pid, sig)
+    proc.wait(timeout=30)
+    return proc.returncode, grandchild
+
+
+def _wait_until_dead(pid: int, seconds: float) -> bool:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            return True
+        time.sleep(0.1)
+    return False
+
+
+@pytest.mark.parametrize("sig", [signal.SIGINT, signal.SIGTERM])
+def test_stopping_a_refresh_kills_the_ocr_child(tmp_path, sig):
+    """Ctrl-C and `kill` must both take the OCR engine down with the refresh.
+
+    Regression for 2026-09-04: `start_new_session=True` is required so a
+    timeout can kill ocrmypdf's whole tesseract pool, but it also detaches the
+    child from the terminal's process group. Without explicit cleanup, stopping
+    an overnight refresh left ocrmypdf running at OCR_JOBS cores on a book
+    nobody was waiting for — observed twice, once alongside a restarted run on
+    the same book, which saturated the machine.
+    """
+    _, grandchild = _spawn_ocr_child_then_signal(tmp_path, sig)
+
+    if not _wait_until_dead(grandchild, 15):
+        os.kill(grandchild, signal.SIGKILL)  # do not leak it out of the test run
+        pytest.fail(f"ocr child {grandchild} survived {signal.Signals(sig).name}")

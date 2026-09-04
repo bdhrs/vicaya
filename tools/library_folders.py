@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import bz2
+import contextlib
 import hashlib
 import io
 import os
@@ -18,6 +19,7 @@ import threading
 import time
 import unicodedata
 import zipfile
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -497,6 +499,30 @@ def _kill_process_group(proc: subprocess.Popen[str]) -> None:
     proc.wait()
 
 
+@contextlib.contextmanager
+def _sigterm_as_interrupt() -> Iterator[None]:
+    """Make SIGTERM raise, so a `kill` unwinds instead of exiting silently.
+
+    Python's default SIGTERM handler exits the process without raising, so a
+    `kill` on a refresh would skip the cleanup that a Ctrl-C runs and leave the
+    OCR child orphaned. Only installable from the main thread; a caller on
+    another thread gets the default behaviour rather than an error.
+    """
+
+    def raise_interrupt(_signum: int, _frame: Any) -> None:
+        raise KeyboardInterrupt
+
+    try:
+        previous = signal.signal(signal.SIGTERM, raise_interrupt)
+    except ValueError:
+        yield
+        return
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+
 def _ocrmypdf_command(source: Path, out_pdf: Path, sidecar: Path) -> list[str]:
     """The ocrmypdf invocation, as a seam tests can point at a stub.
 
@@ -566,13 +592,22 @@ def _extract_pdf_ocr_fallback(path: Path) -> ExtractedText | None:
         except OSError as exc:
             return ExtractedText(text="", status=f"error: pdf ocr subprocess: {exc}")
         try:
-            _, stderr = proc.communicate(timeout=OCR_SUBPROCESS_TIMEOUT)
+            with _sigterm_as_interrupt():
+                _, stderr = proc.communicate(timeout=OCR_SUBPROCESS_TIMEOUT)
         except subprocess.TimeoutExpired:
             _kill_process_group(proc)
             return ExtractedText(
                 text="",
                 status=f"error: pdf ocr timed out after {OCR_SUBPROCESS_TIMEOUT}s",
             )
+        except BaseException:
+            # Ctrl-C is the normal way to stop an overnight refresh, and this
+            # is where it lands: blocked in communicate(). The child has its
+            # own session, so the terminal's SIGINT never reaches it — without
+            # this it survives the refresh and keeps OCR_JOBS cores busy on a
+            # book nobody is waiting for. Re-raise so the refresh still aborts.
+            _kill_process_group(proc)
+            raise
         text = (
             sidecar.read_text(encoding="utf-8", errors="replace").strip()
             if sidecar.exists()

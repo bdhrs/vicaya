@@ -72,4 +72,6 @@ Fixed by raising `--jobs` rather than making the loop concurrent, because ocrmyp
 
 ## Still open
 
-**Killing the refresh orphans `ocrmypdf`.** Session isolation is what lets a timeout kill the whole tesseract pool; it also means a Ctrl-C on the refresh never reaches the child, which keeps 8–12 cores busy. Hit twice in this session — the second time it was OCRing the same book as the restarted run, saturating the machine and reading as an over-high `--jobs` setting when it was not. Fix is a SIGINT/SIGTERM handler in `refresh()` killing the group. Not built; the user has not been asked to decide. Until then, check for strays after stopping a run.
+**Killing the refresh orphaned `ocrmypdf` — fixed, not left open.** Session isolation is what lets a timeout kill the whole tesseract pool; it also means a Ctrl-C never reaches the child. The group is now killed on any interruption of the wait, with a SIGTERM handler that raises so `kill` unwinds like Ctrl-C rather than exiting silently. Verified by delivering a real SIGINT and a real SIGTERM to a real refresh, and confirmed to fail for both when either half is removed.
+
+Worth naming as a review failure: this orphan was introduced by *this thread* (`start_new_session=True`) and was written up as a known gap to defer rather than a regression to fix. The user rejected that outright — a refresh must come cleanly out of Ctrl-C — and was correct. A self-inflicted regression is never a "known gap".
