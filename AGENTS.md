@@ -28,3 +28,11 @@ complement the global rules and the canonical `/vicaya` workflow in
   checker flags an error or warning in a file you have edited — even if the
   issue predates your change — fix it before closing the task. Leave touched
   files cleaner than you found them.
+
+## Verifying a Fix or Dependency
+- Verify in the interpreter the code actually runs under. This project's venv sets `include-system-site-packages = false`, so a `python3 -c "import x"` success proves nothing about `.venv/bin/python3`.
+
+## Measurement Discipline
+- A candidate must never score itself, and figures from different sample slices or administrations do not belong in the same table — least of all selecting a committed threshold.
+- When a zero (zero failures, zero stalls) justifies deleting a safeguard, state the confidence interval. 0/20 has a 95% upper bound of 16%.
+- Before writing a mitigation, check the thing it depends on still exists after the change it is meant to survive.
