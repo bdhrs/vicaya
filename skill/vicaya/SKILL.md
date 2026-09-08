@@ -21,7 +21,7 @@ Four structural commands carry the run. Everything else is reference.
 1. **Phase 0:** `scratch-init <slug> --question-original "…" --question-polished "…" --scope-assumptions "…" --ambiguity <clear|minor_uncertainty|unclear>` (add `--class thematic` for non-sutta-anchored questions). This records the active scratch for *this run*, fills the Phase 0 header fields, and — because all the Phase 0 evidence is then present — writes the Phase 0 exit gate automatically, so the run starts at Phase 1. Do not run the bare form unless the question is still unresolved; a bare init leaves gate 0 unwritten and every later gate will refuse until you run `scratch-gate 0`. **If the slug already has a dossier on disk, `scratch-init` reuses it (never overwrites) and the JSON response carries a `warning` field naming the last gate written and whether the vault note is already set.** If you are starting an independent run of a question another agent already handled, do not ignore that warning — pick a different slug; reusing an in-progress or finished dossier silently attaches your new work to it. Auto-logging is isolated automatically — the run's state is keyed to your agent process, so parallel runs never collide. There is nothing to pin or export **while you are the only agent working the run** (Phase 0/1, and Phases 5–7). The moment gather phases are delegated to sub-agents (below), that guarantee no longer holds — see the mandatory `VICAYA_PHASE` pin in **Sub-agent dispatch**.
 2. **Each phase boundary:** end the prior phase with `scratch-gate <prev-phase>`. The gate auto-advances the active phase, so the next phase's helper calls log correctly without any manual step. It refuses if earlier gates are missing and prints the exact evidence still needed. Thematic runs auto-skip **exactly two gates — Phase 2.5 (SC-parallels) and 3b (Sanskrit)**; every other gather gate is still gated explicitly, and calling an auto-skipped gate explicitly demands evidence (see the thematic gate map under Sub-agent dispatch).
 3. **Start of Phase 5:** `scratch-verify`. Exit 0 = proceed to synthesis. Exit 1 = backfill the named phase first; do not draft.
-4. **End of Phase 7:** `scratch-set-note <note-path> --pdf <pdf-path|skipped>` (records the saved paths in the scratch header — the [REJECTED] hard-gate target), then `check-citation-shape <note-path>` (hard — fix every finding), then `scratch-self-audit` (answer the failure checklist — the gate refuses without it), then `scratch-gate 7`, then publish the saved note with `uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"`; then add the note's own row/wikilink to `Vicaya/summary-vicaya.md` (matching table, date order, one-sentence description) and `Vicaya/catalog-by-topics.md` (matching or a new topic heading), and publish both the same way (`uv run scripts/sync_notes.py "Vicaya/summary-vicaya.md"` and `... "Vicaya/catalog-by-topics.md"`); after writing the reflection, publish the run report with `uv run scripts/sync_run_report.py`. The run is not complete until the gate passes and all sync commands have been attempted.
+4. **End of Phase 7:** `scratch-set-note <note-path> --pdf <pdf-path|skipped>` (records the saved paths in the scratch header — the [REJECTED] hard-gate target), then `check-citation-shape <note-path>` (hard — fix every finding), then `scratch-self-audit` (answer the failure checklist — the gate refuses without it), then `scratch-gate 7`, then publish the saved note with `uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"`; then add the note's own row/wikilink to `Vicaya/summary-vicaya.md` (matching table, date order, one-sentence description) and `Vicaya/catalog-by-topics.md` (matching or a new topic heading), then verify both with `uv run scripts/check_vault_indexes.py --note <note-path>` (hard — fix every finding first) and publish them the same way (`uv run scripts/sync_notes.py "Vicaya/summary-vicaya.md"` and `... "Vicaya/catalog-by-topics.md"`); after writing the reflection, publish the run report with `uv run scripts/sync_run_report.py`. The run is not complete until the gate passes and all sync commands have been attempted.
 
 If context compaction fires at any point, `scratch-resume <slug>` explicitly selects that run, reattaches the active scratch state, and prints the last gate and next phase — no findings are lost.
 
@@ -2418,7 +2418,52 @@ approved script path.
 
 A sync failure is never fatal — the note is already saved to the vault.
 
-→ **Phase 7 exit:** after validation/PDF generation, run `scratch-set-note` (records the saved note + PDF paths), then `check-citation-shape` (hard — fix every finding), then `scratch-check-coverage` (advisory — review any flagged library documents), then `scratch-self-audit` with answers (the gate refuses without it), then `scratch-gate 7`, then `uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"`; then update the two vault index notes — add a dated row with a one-sentence description to the matching table in `Vicaya/summary-vicaya.md`, and a wikilink under the matching (or a new) topic heading in `Vicaya/catalog-by-topics.md` — and publish both with `uv run scripts/sync_notes.py "Vicaya/summary-vicaya.md"` and `uv run scripts/sync_notes.py "Vicaya/catalog-by-topics.md"`; after writing the reflection, run `uv run scripts/sync_run_report.py`. The run is not complete until the gate passes and every sync command has been attempted — the gate confirms the vault path and PDF path are recorded in the dossier, note sync publishes the saved note, index sync keeps `summary-vicaya.md`/`catalog-by-topics.md` current, and run-report sync publishes the latest `runs/*.md` report. `scripts/sync_run_report.py` is a pre-approved run-report publishing script and may pull, commit, and push Vicaya run reports in this project repo. New or materially modified scripts are not automatically pre-approved for git, publishing, deployment, sync, delete, or overwrite operations.
+### Vault index check (hard — run it before publishing the indexes)
+
+The two index notes drift, and they drift silently. Run this after editing them
+and before syncing them:
+
+```bash
+uv run scripts/check_vault_indexes.py --note "Vicaya/${TODAY} - ${SLUG}.md"
+```
+
+Read-only; it never edits. Exit 0 clean, 1 findings, 2 error. It reports five
+defect classes across `catalog-by-topics.md` and `summary-vicaya.md`:
+
+- **uncatalogued** — a note on disk that an index does not list, including the
+  one you just wrote (that is what `--note` asserts). A whole subfolder can be
+  missing: `Digest/` had never been indexed at all until 2026-09-08.
+- **broken link** — an entry whose wikilink resolves to no file anywhere in the
+  vault. Obsidian resolves a bare `[[filename]]` by basename across the whole
+  vault, so a subfolder note linked *without* its folder prefix is correct and
+  is not reported — do not "fix" those. Real breakage looks like lost dash
+  spacing (`2026-07-23-pc59-…`) or a stale Obsidian duplicate suffix
+  (`…-elites 1`).
+- **duplicate entry** — the same note listed twice, usually once correctly and
+  once under a malformed link. Delete the malformed row; do not repair its link,
+  or you create a true duplicate. Check `git show HEAD:<index>` to see which
+  form is the original before removing either.
+- **stale count** — the catalog's `*<N> research notes …*` line disagreeing
+  with the number of bullets it actually has.
+- **stray horizontal rules** — any bare `---` in the catalog. The file has no
+  frontmatter, so every one is the signature of a botched
+  append-to-every-section edit. One such edit duplicated a single bullet into
+  all 33 topic sections.
+
+Fix every finding, re-run until it passes, and only then sync the indexes. If a
+finding is pre-existing and too large to fix inside this run, say so explicitly
+in the final report rather than publishing over it — a check that always reports
+the same stale findings is a check everyone learns to ignore.
+
+**Editing the indexes safely.** Anchor an insert on the target **section
+heading**, never on a body line: the bullet you match may occur many times, and
+matching one puts your entry in the wrong section. Match the heading's exact
+bytes — `## Pāli Bhāsā` uses `Pāli`, not `Pāḷi`, and a mismatched diacritic
+fails silently. In `summary-vicaya.md` the alias pipe inside a table row is
+escaped (`[[target\|Display]]`), so keep that form. After editing, confirm with
+a grep that your new line appears exactly once and under the intended heading.
+
+→ **Phase 7 exit:** after validation/PDF generation, run `scratch-set-note` (records the saved note + PDF paths), then `check-citation-shape` (hard — fix every finding), then `scratch-check-coverage` (advisory — review any flagged library documents), then `scratch-self-audit` with answers (the gate refuses without it), then `scratch-gate 7`, then `uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"`; then update the two vault index notes — add a dated row with a one-sentence description to the matching table in `Vicaya/summary-vicaya.md`, and a wikilink under the matching (or a new) topic heading in `Vicaya/catalog-by-topics.md` — then run `uv run scripts/check_vault_indexes.py --note "Vicaya/${TODAY} - ${SLUG}.md"` (hard — fix every finding before publishing; see **Vault index check**) and publish both with `uv run scripts/sync_notes.py "Vicaya/summary-vicaya.md"` and `uv run scripts/sync_notes.py "Vicaya/catalog-by-topics.md"`; after writing the reflection, run `uv run scripts/sync_run_report.py`. The run is not complete until the gate passes and every sync command has been attempted — the gate confirms the vault path and PDF path are recorded in the dossier, note sync publishes the saved note, index sync keeps `summary-vicaya.md`/`catalog-by-topics.md` current, and run-report sync publishes the latest `runs/*.md` report. `scripts/sync_run_report.py` is a pre-approved run-report publishing script and may pull, commit, and push Vicaya run reports in this project repo. New or materially modified scripts are not automatically pre-approved for git, publishing, deployment, sync, delete, or overwrite operations.
 
 After both sync commands have been attempted, clean only this run's disposable repo-local temp directory; never remove `data/scratch/` or scratch-local draft/review files:
 
