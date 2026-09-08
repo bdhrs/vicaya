@@ -92,5 +92,8 @@ Prune dead links periodically.
 - Patisota
 - Hillside Hermitage
 - Anukampa Bhikkhuni Project
+- Aggacara Intl College, Edu and Meditation Ctr
+- WBCS Pali Optional
+- Learn Pali
 
 ## excluded
