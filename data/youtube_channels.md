@@ -57,6 +57,7 @@ Prune dead links periodically.
 - Guru Viking
 - Yongey Mingyur Rinpoche
 - Ajahn Anan Dhamma
+- Ajahn Punnadhammo
 - Buddhist Society of Western Australia | UC6M_EhnSSdTG_SXUp6IAWmQ
 - Al Jazeera English
 - ThePrint
@@ -95,5 +96,10 @@ Prune dead links periodically.
 - Aggacara Intl College, Edu and Meditation Ctr
 - WBCS Pali Optional
 - Learn Pali
+- Dhamma USA
+- The Buddhist Society
+- Buddhism With Bhante Subhuti
+- The Stream Seeker
+- Sutta Workshops by Āyasmā Aggacitta
 
 ## excluded
