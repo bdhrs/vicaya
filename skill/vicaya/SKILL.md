@@ -47,6 +47,10 @@ These rules apply to every run, by every agent. They are part of the skill, not 
 10. **YAML frontmatter safety.** Always wrap YAML values in double quotes if they contain a colon followed by a space (e.g. `"Topic: Subtitle"`). Unquoted colons break Obsidian's property rendering.
 11. **No global temporary directories.** Every stage must keep working files inside this repo. Use `data/scratch/` for anything needed after an interruption, restart, context refresh, or handoff. Use repo-local `temp/` only for disposable extraction files, and create it with `mkdir -p temp` before use.
 12. **A 0-hit in a book you expected to contain the term is a book-code problem until proven otherwise.** Before concluding a term is absent from a given book or nipāta, confirm the code is right: run `lookup-book <your-code>` (or check the embedded book-code table) to verify you have the correct CST table for that text. The commonest mistake is AN nipāta off-by-one — `s0404m3_mul` is AN10 (Dasakanipāta), `s0404m4_mul` is AN11 (Ekādasakanipāta) — but the same pattern recurs across the Khuddaka collection. Only after confirming the code may you log 0-hits as evidence of absence.
+13. **Verify before asserting — absence is a claim, and a lead is not a finding.**
+    - **Absence needs its own search.** Before writing that a term, an idea, or a passage is absent, sweep the **concept family** — near-synonyms, grammatical variants, and the idiom the term belongs to — not just the citation-form compound. A doctrinal term can be absent while its concept is everywhere: two runs asserted *antarābhava* "never occurs in the suttas" without sweeping the `antarā-` family (antarāparinibbāyī, sambhavesin, opapātika, AN 9.12), which is frequent and re-spined the note once found. Check more than one source where one exists — canon DB, EBC vault, SuttaCentral archive, library — since absence in the source you happened to open is not absence: a run logged SA 470 as an unreachable gap while the Patton translation sat in the EBC vault and turned out to be its most valuable source. And confirm the book code first (Hard Rule 12). When the **user** says a concept is "frequently mentioned", read that as a claim about the family, not the compound.
+    - **Counting: every search helper truncates, at its own default.** The local helpers cap at `--limit 20`; `search-openalex` pages at whatever `--limit` you pass (default 25, API maximum 200). A result holding exactly the limit is a *capped* set, not a complete one, so never read a frequency or completeness claim off it. Either say "at least N", or count with a query written to count (`SELECT COUNT(*) …` against the canon DB; `term_total` on a `ScholarHit`) rather than re-running the search at a higher limit — dumping hundreds of hits into the dossier to count them defeats the Phase 0 target.
+    - **A lead is not a finding.** A match count, an exit status, a filename, a title, or a clipped `--quiet` snippet is a lead. Read the matched text before reporting any of it as fact — to the user, in a completion report, or in the note. `--quiet` keeps every hit but clips long passages (`… (+N chars; full text in scratch)`), so judging what a passage says from its snippet is reading the wrong thing; the full text is in the scratch. One run reported 8 scratch entries as misfiled from a `grep -c` alone — all 8 were correctly filed. State an inference as an inference; never dress it as an observation.
 
 ## Inputs
 
@@ -137,6 +141,7 @@ Subcommands (each prints JSON to stdout):
 | `search-ebc QUERY` | `--folder PATH` `--limit N` | Fixed-string grep across the EBC vault (markdown only). Returns `VaultHit`s. `--folder` accepts a subdir like `+Suttas/Overviews Suttas/MN` or `+Vinaya/Patimokkha/bmc1`. |
 | `sc-parallels CITATION` | `--no-text` | Look up parallels for a citation (e.g. `mn18`, `sn35.28`) in the offline SuttaCentral archive. Returns `SCParallel` objects: `ref`, `resemblance` (bool, `~` prefix), `paragraph_range`, `text_pali`, `text_lzh`, `text_san`, `text_pra`, `translation_en`, `text_gaps` (list — explicit when text isn't in the partial archive). Parallel *identification* is comprehensive; text retrieval is best-effort. |
 | `sc-search QUERY` | `--lang pli\|lzh\|san\|pra\|en` `--limit N` | Fixed-string grep across SuttaCentral offline root texts in one language. `lzh` = Literary Chinese Āgamas. Returns `VaultHit`s with the matched JSON segment. |
+| `search-openalex QUERY` | `--also TERM` (repeatable) `--limit N` | Search the OpenAlex scholarly index (journal articles, chapters, monographs) over every spelling variant of one term and merge. Queries title+abstract, never free text. The ASCII fold of your query is added automatically; pass the Sanskrit cognate, hyphenated form and English gloss with `--also` — those cannot be derived. Returns `ScholarHit`s with a reconstructed abstract, DOI, venue and OA flag. **Metadata and abstracts, not full text.** Raises a named error on any transport or parse failure — an empty list always means zero hits, never a broken query. |
 
 Parse the JSON with `jq` or read it as a file. Only fall back to `uv run python -c "..."` if you genuinely need to combine helpers in one step — and if so, write a short `.py` script under repo-local `temp/` and run that, rather than a heredoc.
 
@@ -898,6 +903,7 @@ writes the Phase 0 exit gate in one shot:
 - `scope_assumptions` (`--scope-assumptions`): inferred textual scope,
   interpretive scope, depth, practical angle, and seed sources.
   End the string with one falsifier line — `Falsifier: <the finding that would show the expected answer is wrong>`. Name a concrete finding, not a hedge: "a canonical passage using the term in the opposite sense" is a falsifier, "the sources might disagree" is not. Written before any searching, it is the one field that can stop a run from confirming its own framing.
+  Add one target line above the falsifier — `Target: <the evidence that would answer this question>`. **Name** the evidence set, don't count it: "the suttas where *anattā* is predicated of the aggregates, the Vism/Abhidhamma treatment, and two or three modern analyses" is a target; "10 canon loci, 5 secondary sources" is a number you invented before knowing the topic. The target is a **stop condition, not a quota** — when the question is answered, stop, even if the target is unspent; and when a phase's evidence genuinely demands more, exceed it deliberately and say so in the run report, rather than drifting past it. A full note does not mean every phase at maximum breadth: one real run spent 160 minutes and built a 5.5 MB dossier for a question that needed about ten suttas, one commentary chapter, and a few modern sources. Round discipline follows from the same line: **a search that returned nothing, or errored, is never re-run verbatim** — change the stem, the term, the book, or the source, or log the gap and move on. Rephrasing the same failed query is the commonest way a run spends an hour and learns nothing.
 - `ambiguity_status` (`--ambiguity`): `clear`, `minor_uncertainty`, or
   `unclear`.
 
@@ -927,6 +933,7 @@ Assumptions:
 - Depth: <full note / focused answer>
 - Practical angle: <included/excluded>
 - Seeds: <texts/scholars/notes inferred>
+- Target: <the evidence that would answer this question — named, not counted>
 - Falsifier: <the finding that would show the expected answer is wrong>
 
 Please confirm or correct this before I begin.
@@ -1010,8 +1017,8 @@ The only datum each prompt must carry is the **scratch slug** — `uv run tools/
 **Six rules keep each agent light, correctly filed, and inside its lane — state all six in every dispatch prompt:**
 
 1. **Pin `VICAYA_PHASE=<PHASE>` inline on EVERY helper call, no exceptions.** This is not advisory and it is not the same as exporting it once — `export` does not survive between Bash calls, and even if it did, the shared per-run active-phase pointer moves the instant any phase (yours or a sibling's) gates, so relying on it is a race (issue #55: it has scrambled which phase auto-logged content lands under, and once caused `scratch-gate` to refuse with "no logged evidence"). Prefix every single `search-*`/`sc-*`/`get-*`/`fetch-*` call: `VICAYA_PHASE=<PHASE> uv run tools/research_sources.py search-canon ... --quiet`. An unpinned call is visible after the fact as a `phase-source: run-pointer` line in the scratch — there should be none inside a phase sub-agent's own log entries.
-2. **Read only the briefing, never the dossier.** Read the Phase 0/1 briefing block at the TOP of the scratch (question, angle triage, perspective map, seeds) — never the accumulating evidence blocks below it. Auto-log already persists every hit; re-reading them is what fills the context.
-3. **Pass `--quiet` on every search helper call** (`search-canon`, `search-library-folders`, `search-ebc`, `search-sanskrit`, `sc-parallels`, `sc-search`, `get-agama`). The full result still goes to the scratch dossier; only the agent's stdout is compacted to a snippet — that compaction is what keeps the agent's context from filling. (The dossier and the synthesised note are unaffected: full text always lands in the scratch.) The lookup helpers (`resolve-citation`, `lookup-book`, `verify-citation`, `fetch-transcript`) accept `--quiet` too, so a uniform prefixed call template never errors on it.
+2. **Read only the briefing, never the dossier — and work to the briefing's `Target:` line.** Read the Phase 0/1 briefing block at the TOP of the scratch (question, angle triage, perspective map, seeds, target, falsifier) — never the accumulating evidence blocks below it. Auto-log already persists every hit; re-reading them is what fills the context. The `Target:` line names the evidence that would answer the question: it is this phase's stop condition too. Gather what the target names, cap whole-range pulls at the number you decided before starting (see the ceiling in Phase 2), and stop — a phase that returns more than the target asked for costs the orchestrator the context the target exists to protect.
+3. **Pass `--quiet` on every search helper call** (`search-canon`, `search-library-folders`, `search-ebc`, `search-sanskrit`, `search-openalex`, `sc-parallels`, `sc-search`, `get-agama`). The full result still goes to the scratch dossier; only the agent's stdout is compacted to a snippet — that compaction is what keeps the agent's context from filling. (The dossier and the synthesised note are unaffected: full text always lands in the scratch.) The lookup helpers (`resolve-citation`, `lookup-book`, `verify-citation`, `fetch-transcript`) accept `--quiet` too, so a uniform prefixed call template never errors on it.
 4. **Read only the SKILL sections for its one phase** (table below), plus the shared preamble.
 5. **Every citation in the agent's final mapping/summary must copy the human ref verbatim from a `resolve-citation` call in its own log — never from memory of which sutta a hit "was in".** An agent that summarises from its recollection of hit context will misattribute (issue #90: two DN refs labelled one sutta off in a single consolidated mapping — nivātavutti filed under DN33 when it is DN31, asantuṭṭhitā under DN34 when it is DN33). If a ref was never resolved, resolve it before writing it down, or write the raw `book_code:paranum` and say so.
 6. **Your assignment ends at your own output — finishing the run is never your job.** Do not read, modify, or delete any file another agent owns (sibling batch outputs, shared tooling); do not synthesize, run Phase 5/6/7 work, write to the vault, publish, or run `git` — regardless of how finished or unfinished the rest of the run looks. Sibling files appearing is the fan-out working, not work waiting for you (issue #93: a batch-worker fork inferred from sibling outputs that it should finish the run, executed synthesis through git publish unsupervised, and its cleanup deleted two siblings' unread work).
@@ -1070,6 +1077,11 @@ Steps:
 4. Execute Phase <PHASE> per those instructions. Prefix EVERY search helper call
    with VICAYA_PHASE=<PHASE> (see MANDATORY above) and pass --quiet (full results
    still go to the scratch; only your stdout shrinks).
+   TARGET: the briefing's `Target:` line is your stop condition. Gather the
+   evidence it names and stop; cap whole-range id-window pulls at the number you
+   decide before you start. Returning more than the target asked for costs the
+   orchestrator the context the target exists to protect. If the phase genuinely
+   needs more, say so in your report rather than pulling it silently.
    (Phase 4b only: collect video details; fetch a transcript ONLY if a video is
    clearly relevant — never bulk-fetch transcripts.)
    CITATIONS: any human ref (e.g. "DN 31", "MN 10") you write in a mapping or
@@ -1308,6 +1320,8 @@ uv run tools/research_sources.py lookup-book "<your code or book name>"
 
 If `lookup-book` returns a different `cst_table` than the one you searched, re-run with the correct table. Common mistake: AN nipāta codes are volume-numbered, not nipāta-numbered — `s0404m3_mul` = AN10 Dasakanipāta, `s0404m4_mul` = AN11 Ekādasakanipāta. Only after confirming the code matches the book may you log 0-hits as evidence of absence.
 
+**Then sweep the concept family before writing "absent" (Hard Rule 13).** The book code being right only means the search was aimed at the right text; it says nothing about whether you searched for the right word. Run the family before the claim: near-synonyms, grammatical variants, the stem without its case ending, and the *idiom* the term belongs to — a compound noun can be absent while the idiom that carries the idea is everywhere. Log what each family member returned, because that spread is the finding: "the compound *antarābhava* does not occur; the `antarā-` family (antarāparinibbāyī, sambhavesin, opapātika, AN 9.12) occurs throughout" is a real result, where a bare "absent" would have been wrong in substance. Check a second source too (EBC vault, SuttaCentral archive, library) — absence in the one source you opened is not absence. And read the counting clause of Hard Rule 13 before putting any number on how often the family occurs.
+
 **Example — search for "ñāṇa" in the Paṭisambhidāmagga only, get Pāḷi + English:**
 
 ```bash
@@ -1347,6 +1361,8 @@ test -s "$VICAYA_CANON_DB" || { echo "VICAYA_CANON_DB missing or empty: $VICAYA_
 sqlite3 -readonly "$VICAYA_CANON_DB" \
   "SELECT id, paranum, pali_text, english_translation FROM <table> WHERE id BETWEEN <start_id> AND <end_id>;"
 ```
+
+**Ceiling — this recipe is for the loci that carry the argument, not for every hit.** Decide how many whole-range pulls this phase gets *before* you start, from the Phase 0 `Target:` line, and pull only those. Always bound the `id` window to the sutta you resolved; never leave the upper bound open. A real run applied this recipe to 21 loci with no ceiling and produced a 10,321-line phase inside a 5.5 MB dossier larger than any context window, which then needed five throwaway scripts to reduce. It pairs with the ~20-paragraph cap under "Quote fully, not representatively" below: that bounds one pull, this bounds how many.
 
 **When a direct-SQL hit has empty `paranum`** — this is normal for subhead, gatha, and continuation rows within a paragraph (only the first row of each paragraph carries `paranum`). `search-canon` hits already arrive with the owning paranum filled in; this recipe is only needed when you query the db directly. To find the owning sutta, query by `id`:
 
@@ -1653,6 +1669,27 @@ scanned/OCR-less and DSAL CDIAL lacks some headwords, so discover the gap
 early rather than at synthesis (three runs re-derived all of this before it
 was written down — issue #107).
 
+**OpenAlex — the scholarly index (`search-openalex`).** Journal articles, chapters and monographs, with abstracts. Free, no auth.
+
+```bash
+uv run tools/research_sources.py search-openalex "<technical term>" --also "<Sanskrit cognate>" --also "<hyphenated form>" --also "<English gloss>" --limit 40
+```
+
+**Every hit carries `term_total`** — how many works the index holds for that spelling. A full page with `term_total` far higher means you are seeing a capped set: raise `--limit` before saying anything about how much exists (Hard Rule 13's counting clause).
+
+**Reach for it** when the question has a modern scholarly angle, when a foreign-language monograph might exist, or when you want the current literature around a term. **Skip it** for a purely canonical question — it indexes journals, not the Tipiṭaka, and a "what does this sutta say" question has no journal literature to retrieve. It supplements the library at the edges; it does not beat it on its own ground.
+
+Four things about querying it, all measured rather than assumed:
+
+- **Spellings return disjoint sets, in both directions.** `brahmavihāra` (32 hits), `brahmavihara` (64) and `brahma-vihara` (37) are not nested — one real fan-out returned 81 unique works from four spellings. The helper derives the plain form from your diacritics automatically; **the hyphenated form, the Sanskrit cognate and the English gloss it cannot derive — pass them with `--also`.**
+- **The natural Pāḷi spelling is the weakest key.** Live counts on 2026-09-20: `appamāṇa` → 2 hits, Sanskrit `apramāṇa` → 8, and Martini's own appamāṇa article answers to neither — it sits in the index as "Appamāas", the retroflex eaten on ingestion. A thin or empty result for a Pāḷi term here is a tokenisation artefact, not absence (Hard Rule 13). Always give it the Sanskrit cognate.
+- **Plain-English glosses are near-pure noise.** "four immeasurables" → ~105 hits, one relevant, ~20 psychometric scales; "divine abodes" → seven Hebrew Bible papers on God's dwelling-place. Narrow transliterated technical terms (`Tevijja`, `apramāṇa`) run 38–75% useful. Query technically; use the gloss only as one `--also` among several.
+- **It returns abstracts, not full text.** Open-access flags are unreliable for scripted fetching — publishers block it, and one key monograph sits behind an anti-bot gate. Treat every hit as **a source to fetch**, and never cite a work from its abstract alone: that is precisely "a lead is not a finding" (Hard Rule 13). If you cannot read it, list it under `## Sources Investigated, Not Used` or as a `## Critical Gaps` item, with the DOI so the user can fetch it.
+
+Set `VICAYA_OPENALEX_MAILTO` to an email address to use OpenAlex's faster "polite pool"; unset, the parameter is simply omitted and the API still answers. No address is hardcoded.
+
+A failed request raises a named error and exits 1 — it never returns an empty list. An empty result really is zero hits for that spelling; an `error:` line means the query never ran.
+
 → **Phase 4 exit:** `scratch-gate 4`. For each web fetch, run `scratch-log 4 web <url> --summary "<one line>"` since `WebFetch` isn't a helper subcommand and won't auto-log. **Gating Phase 4 does NOT gate 4a/4b/4c** — on every run, thematic included, 4b and 4c still need their own explicit `scratch-gate 4b` / `scratch-gate 4c`.
 
 ### Phase 4b — YouTube search
@@ -1937,10 +1974,7 @@ the shape from sibling notes.
 - Keep the standard tail: `## Sources Investigated, Not Used`,
   `## Critical Gaps`, `## Bibliography`, and `## Angles Not Pursued` when
   applicable.
-- **Negative claims ("the EBTs don't say X", "image X is a later trope") are
-  the highest-risk claims in a series note — verify each against the canon DB
-  before asserting it.** Run the absence search (stem + synonyms, all T1a
-  books, Hard Rule 12 book-code check) and treat the 0-hit as the evidence.
+- **Negative claims ("the EBTs don't say X", "image X is a later trope") are the highest-risk claims in a series note — verify each against the canon DB before asserting it.** Run the full absence procedure of Hard Rule 13 across all T1a books, verse texts included, and treat the result as the evidence.
   A real run nearly called the mirage simile a later Mahāyāna development
   when SN22.95 uses it for saññā — the miss came from searching prose stems
   only and skipping the aggregate-simile verse.
@@ -2685,6 +2719,7 @@ question_original: <verbatim user request, one line>
 question_polished: <clean research question used in the final note>
 note_path: <path of the saved research note>
 duration_min: <approximate>
+target_vs_actual: "<the Phase 0 Target: line, then what was actually gathered — e.g. 'targeted ~10 suttas + Vism IX + 2-3 modern; gathered 14 suttas, Vism IX + Abhidhamma, 5 modern'>"
 ---
 
 ## Retrospective

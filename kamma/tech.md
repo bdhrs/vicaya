@@ -19,6 +19,19 @@
 - **Sanskrit search:** `grep -rn -F --include="*.htm"` across a local GRETIL corpus (shallow clone of `wujastyk/GRETIL-mirror`). Unicode IAST `.htm` files; no new dependencies.
 - **Validation:** pytest, ruff, pyright, pyrefly
 
+## OpenAlex (scholarly index)
+
+`search_openalex()` in `tools/research_sources.py` is the **only helper that touches the network** — everything else is local files, SQLite or a subprocess. It queries `https://api.openalex.org/works` over plain `urllib`, no auth, no SDK, no new dependency. The HTTP opener is injectable so tests never make a real request.
+
+Four behaviours are load-bearing and were each established by measurement, not by the API docs — changing any of them silently degrades the channel to noise:
+
+- **`title_and_abstract.search` only, never free-text `search=`.** Free text is bag-of-words and collapses to whichever term is commonest: a probe searching an author's name returned fourteen works, none of them by that author.
+- **Fan out over spelling variants, then interleave before truncating.** Diacritic, plain and hyphenated spellings return near-disjoint sets — `brahmavihara` 64, `brahmavihāra` 32, `brahma-vihara` 37, not nested. The ASCII fold is derived in code; Sanskrit cognates and English glosses cannot be and come from `--also`. Concatenating variant-by-variant before slicing lets the first spelling fill the limit and discards the rest — that bug shipped twice during development and is guarded by two tests now.
+- **Page size follows `--limit`** (clamped to the API maximum of 200), and every hit carries `term_total` from `meta.count`. Without that, a full page is indistinguishable from the whole literature.
+- **Any transport or response-shape failure raises `OpenAlexError`.** Valid JSON of the wrong shape must not reach the caller as zero hits — a broken query wearing an empty result's face is the failure mode this guards.
+
+It returns metadata and reconstructed abstracts, **not full text**: publishers block scripted fetching even for works flagged open access, so a hit is a source for the user to fetch. Agent procedure lives in the Phase 4a section of `skill/vicaya/SKILL.md`.
+
 ## PDF OCR fallback
 Scanned or broken-layer PDFs (pdftotext returns no text) are OCR'd at refresh time by shelling out to the [`ocrmypdf`](https://ocrmypdf.readthedocs.io/) binary, which wraps tesseract. `tools/library_folders.py::_extract_pdf_ocr_fallback` runs it once per book with `--force-ocr --jobs 12 --optimize 0 --output-type pdf --sidecar <tmp>` and the output PDF sent to `/dev/null` — only the sidecar text is wanted, and writing a searchable copy of every scanned book would cost tens of gigabytes for nothing. Set `VICAYA_LIBRARY_FOLDERS_OCR=0` to skip the fallback for fast text-only refreshes.
 
@@ -139,6 +152,7 @@ print(r.status, len(r.text))  # expect: ok <nonzero>
 - Library folders: one or more source paths (pipe-separated) in `$VICAYA_LIBRARY_FOLDERS`; index: local SQLite path in `$VICAYA_LIBRARY_FOLDERS_INDEX`; optional comma-separated skip list in `$VICAYA_LIBRARY_FOLDERS_EXCLUDE`
 - YouTube cache: `data/youtube_cache/` (gitignored, grows over time)
 - Channel allowlist: `data/youtube_channels.md`
+- OpenAlex contact address: optional `$VICAYA_OPENALEX_MAILTO`. Set it to an email to use OpenAlex's faster "polite pool"; unset, the parameter is omitted and the API still answers. Deliberately has no default — a hardcoded address would make every installation send one person's email on every request. Not yet listed in `.env.example`.
 
 ## Documentation Ownership
 - `tools/research_sources.py`: actual helper behavior and CLI implementation (library-folders commands delegate to `tools/library_folders.py`).
@@ -155,7 +169,7 @@ print(r.status, len(r.text))  # expect: ok <nonzero>
 
 ## Output shape
 A single `.md` file per research session written into `<vault>/Vicaya/`.
-Source helpers return plain Python lists-of-dicts; no external I/O inside helpers.
+Source helpers return plain Python lists-of-dicts. All are local-only except `search_openalex`, the one helper that calls an external service (see OpenAlex below).
 `digest` writes into a separate `<vault>/Vicaya Digest/` folder — a different
 output shape (short plain-English essay, no citation fields) from the
 research notes above.

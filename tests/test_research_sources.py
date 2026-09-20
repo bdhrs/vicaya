@@ -2977,3 +2977,376 @@ class TestGetEbcOverview:
         result = get_ebc_overview("Sn 2.2", vault=vault)
         assert result is not None
         assert result.code == "SN2.2"
+
+
+# ---------- OpenAlex scholarly channel ----------
+
+import json as _json  # noqa: E402
+import urllib.error  # noqa: E402
+from contextlib import contextmanager  # noqa: E402
+
+from tools.research_sources import (  # noqa: E402
+    OpenAlexError,
+    ScholarHit,
+    openalex_terms,
+    search_openalex,
+)
+
+
+def _fake_work(work_id: str, title: str, inverted: dict | None = None) -> dict:
+    return {
+        "id": work_id,
+        "display_name": title,
+        "publication_year": 2025,
+        "authorships": [{"author": {"display_name": "E. Shulman"}}],
+        "primary_location": {
+            "source": {"display_name": "Mindfulness"},
+            "landing_page_url": f"https://example.org/{work_id}",
+        },
+        "doi": "https://doi.org/10.1007/s12671-025-02597-6",
+        "open_access": {"is_oa": True, "oa_url": "https://example.org/pdf"},
+        "cited_by_count": 3,
+        "abstract_inverted_index": inverted,
+    }
+
+
+class _FakeOpener:
+    """Callable opener yielding one canned payload per call, recording URLs.
+
+    A class rather than a function with an attribute so the recorded `calls`
+    are visible to the type checker.
+    """
+
+    def __init__(self, payloads: list[dict]):
+        self._payloads = payloads
+        self.calls: list[str] = []
+
+    @contextmanager
+    def _response(self, body: str, status: int = 200):
+        class _Resp:
+            def __init__(self):
+                self.status = status
+
+            def read(self):
+                return body.encode("utf-8")
+
+        yield _Resp()
+
+    def __call__(self, url, timeout=None):  # noqa: ARG002
+        self.calls.append(url)
+        payload = self._payloads[min(len(self.calls) - 1, len(self._payloads) - 1)]
+        return self._response(_json.dumps(payload))
+
+
+def _opener_for(payloads: list[dict]) -> _FakeOpener:
+    return _FakeOpener(payloads)
+
+
+def test_openalex_reconstructs_abstract_in_word_order():
+    """OpenAlex ships abstracts as {word: [positions]} — order must be restored."""
+    inverted = {"brahmavihara": [0], "meditation": [1], "and": [2], "insight": [3]}
+    opener = _opener_for(
+        [{"results": [_fake_work("W1", "An Ethical Samadhi", inverted)]}]
+    )
+    hits = search_openalex("brahmavihara", opener=opener)
+    assert len(hits) == 1
+    assert isinstance(hits[0], ScholarHit)
+    assert hits[0].abstract == "brahmavihara meditation and insight"
+    assert hits[0].venue == "Mindfulness"
+    assert hits[0].is_oa is True
+
+
+def test_openalex_missing_abstract_is_empty_not_error():
+    opener = _opener_for([{"results": [_fake_work("W1", "No abstract", None)]}])
+    hits = search_openalex("tevijja", opener=opener)
+    assert hits[0].abstract == ""
+
+
+def test_openalex_queries_title_and_abstract_never_free_text():
+    """Free-text search= is bag-of-words and returned ~0% on-topic in the probe."""
+    opener = _opener_for([{"results": []}])
+    search_openalex("tevijja", opener=opener)
+    assert all("title_and_abstract.search" in url for url in opener.calls)
+    assert all("&search=" not in url and "?search=" not in url for url in opener.calls)
+
+
+def test_openalex_omits_mailto_when_unset_rather_than_leaking_an_address(monkeypatch):
+    """A hardcoded default would send one person's email from every install."""
+    import tools.research_sources as rs
+
+    monkeypatch.setattr(rs, "OPENALEX_MAILTO", "")
+    opener = _opener_for([{"results": []}])
+    rs.search_openalex("tevijja", opener=opener)
+    assert "mailto" not in opener.calls[0]
+
+    monkeypatch.setattr(rs, "OPENALEX_MAILTO", "someone@example.org")
+    opener2 = _opener_for([{"results": []}])
+    rs.search_openalex("tevijja", opener=opener2)
+    assert "mailto=someone%40example.org" in opener2.calls[0]
+
+
+def test_openalex_folds_diacritics_into_a_second_query():
+    """Diacritic and plain spellings return disjoint sets — both must be queried."""
+    assert openalex_terms("brahmavihāra") == ["brahmavihāra", "brahmavihara"]
+    opener = _opener_for([{"results": []}])
+    search_openalex("brahmavihāra", opener=opener)
+    assert len(opener.calls) == 2
+
+
+def test_openalex_plain_query_does_not_duplicate_itself():
+    assert openalex_terms("tevijja") == ["tevijja"]
+
+
+def test_openalex_also_carries_underivable_variants():
+    """No transformation derives the Sanskrit cognate from the Pāḷi term."""
+    terms = openalex_terms("appamāṇa", also=["apramāṇa", "four immeasurables"])
+    assert terms == ["appamāṇa", "appamana", "apramāṇa", "four immeasurables"]
+
+
+def test_openalex_dedupes_same_work_across_variant_queries():
+    """The folded query re-returns the same work; it must appear once."""
+    work = _fake_work("W1", "Brahmavihara and Awakening", {"a": [0]})
+    opener = _opener_for([{"results": [work]}, {"results": [work]}])
+    hits = search_openalex("brahmavihāra", opener=opener)
+    assert len(opener.calls) == 2
+    assert len(hits) == 1
+
+
+def test_openalex_non_200_raises_named_error_not_empty_list():
+    """A broken query must never read like 'no scholarship found'."""
+
+    @contextmanager
+    def _cm():
+        class _Resp:
+            status = 503
+
+            def read(self):
+                return b""
+
+        yield _Resp()
+
+    def opener(url, timeout=None):  # noqa: ARG001
+        return _cm()
+
+    with pytest.raises(OpenAlexError) as exc:
+        search_openalex("tevijja", opener=opener)
+    assert "503" in str(exc.value)
+
+
+def test_openalex_http_error_raises_named_error():
+    def opener(url, timeout=None):  # noqa: ARG001
+        raise urllib.error.HTTPError(url, 429, "Too Many Requests", {}, None)  # type: ignore[arg-type]
+
+    with pytest.raises(OpenAlexError) as exc:
+        search_openalex("tevijja", opener=opener)
+    assert "429" in str(exc.value)
+
+
+def test_openalex_timeout_raises_named_error():
+    def opener(url, timeout=None):  # noqa: ARG001
+        raise TimeoutError("timed out")
+
+    with pytest.raises(OpenAlexError) as exc:
+        search_openalex("tevijja", opener=opener)
+    assert "timed out" in str(exc.value)
+
+
+def test_openalex_bad_json_raises_named_error():
+    @contextmanager
+    def _cm():
+        class _Resp:
+            status = 200
+
+            def read(self):
+                return b"<html>not json</html>"
+
+        yield _Resp()
+
+    def opener(url, timeout=None):  # noqa: ARG001
+        return _cm()
+
+    with pytest.raises(OpenAlexError) as exc:
+        search_openalex("tevijja", opener=opener)
+    assert "unparseable" in str(exc.value)
+
+
+def test_openalex_limit_never_starves_later_variants():
+    """The regression that survived the first fix: querying every variant is
+    not enough — if the first spelling's results fill `limit`, a plain
+    concatenate-then-slice discards every later spelling, so --also becomes a
+    no-op at the default limit. A later variant's work must reach the caller.
+    """
+    first = [_fake_work(f"W{i}", f"Work {i}", {"x": [0]}) for i in range(25)]
+    opener = _opener_for(
+        [{"results": first}, {"results": [_fake_work("LATE", "Late")]}]
+    )
+    hits = search_openalex("brahmavihāra", limit=2, opener=opener)
+    assert len(opener.calls) == 2, "both spellings must be queried"
+    assert len(hits) == 2
+    assert "LATE" in [h.openalex_id for h in hits], (
+        "the second spelling's work was discarded by truncation"
+    )
+
+
+def test_openalex_every_variant_is_represented_under_a_tight_limit():
+    """Three spellings, limit 3 — one from each, not three from the first."""
+    payloads = [
+        {"results": [_fake_work(f"A{i}", f"A{i}") for i in range(10)]},
+        {"results": [_fake_work(f"B{i}", f"B{i}") for i in range(10)]},
+        {"results": [_fake_work(f"C{i}", f"C{i}") for i in range(10)]},
+    ]
+    opener = _opener_for(payloads)
+    hits = search_openalex(
+        "brahmavihāra", also=["brahma-vihara"], limit=3, opener=opener
+    )
+    assert len(opener.calls) == 3
+    assert {h.openalex_id for h in hits} == {"A0", "B0", "C0"}
+
+
+def test_openalex_page_size_follows_limit_so_limit_can_raise_the_cap():
+    """A hard 25-per-spelling page size made --limit 100 return 25."""
+    opener = _opener_for([{"results": []}])
+    search_openalex("tevijja", limit=100, opener=opener)
+    assert "per-page=100" in opener.calls[0]
+
+
+def test_openalex_page_size_is_clamped_to_the_api_maximum():
+    opener = _opener_for([{"results": []}])
+    search_openalex("tevijja", limit=5000, opener=opener)
+    assert "per-page=200" in opener.calls[0]
+
+
+def test_openalex_records_term_total_so_a_full_page_is_not_mistaken_for_all():
+    """Without meta.count a full page reads like the whole literature."""
+    opener = _opener_for([{"results": [_fake_work("W1", "X")], "meta": {"count": 64}}])
+    hits = search_openalex("brahmavihara", opener=opener)
+    assert hits[0].term_total == 64
+
+
+def test_openalex_strips_filter_grammar_characters_from_terms():
+    """A comma in an --also term used to 400 and abort the whole fan-out."""
+    assert openalex_terms("Tevijja", also=["Buddhism, early"]) == [
+        "Tevijja",
+        "Buddhism early",
+    ]
+
+
+def test_openalex_one_failed_variant_does_not_discard_the_others():
+    calls: list[str] = []
+
+    @contextmanager
+    def _ok():
+        class _Resp:
+            status = 200
+
+            def read(self):
+                return _json.dumps({"results": [_fake_work("W1", "Good")]}).encode()
+
+        yield _Resp()
+
+    @contextmanager
+    def _bad():
+        class _Resp:
+            status = 400
+
+            def read(self):
+                return b""
+
+        yield _Resp()
+
+    def opener(url, timeout=None):  # noqa: ARG001
+        calls.append(url)
+        return _ok() if len(calls) == 1 else _bad()
+
+    hits = search_openalex("brahmavihāra", opener=opener)
+    assert len(hits) == 1, "the working spelling's results must survive"
+
+
+def test_openalex_raises_when_every_variant_fails():
+    @contextmanager
+    def _bad():
+        class _Resp:
+            status = 400
+
+            def read(self):
+                return b""
+
+        yield _Resp()
+
+    with pytest.raises(OpenAlexError) as exc:
+        search_openalex("brahmavihāra", opener=lambda url, timeout=None: _bad())
+    assert "every OpenAlex query failed" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    ("body", "fragment"),
+    [
+        ("[1, 2, 3]", "expected an object"),
+        ('{"meta": {}}', "no 'results' key"),
+        ('{"results": {"a": 1}}', "expected a list"),
+        ('{"results": "abc"}', "expected a list"),
+    ],
+)
+def test_openalex_valid_json_of_the_wrong_shape_raises_named_error(body, fragment):
+    """Valid JSON of the wrong shape previously returned 0 hits silently, or
+    raised a bare AttributeError — a broken query wearing an empty result's
+    face, which is the one thing the docstring promises cannot happen."""
+
+    @contextmanager
+    def _cm():
+        class _Resp:
+            status = 200
+
+            def read(self):
+                return body.encode()
+
+        yield _Resp()
+
+    with pytest.raises(OpenAlexError) as exc:
+        search_openalex("tevijja", opener=lambda url, timeout=None: _cm())
+    assert fragment in str(exc.value)
+
+
+def test_openalex_cli_reports_failure_on_both_streams_and_exits_1(monkeypatch, capsys):
+    """Callers parse stdout; a stderr-only diagnostic leaves them with nothing
+    (issue #87). And an exit-0 empty list here would read as 'no scholarship'.
+    """
+    import tools.research_sources as rs
+
+    def _boom(*args, **kwargs):
+        raise OpenAlexError("OpenAlex returned HTTP 503 for https://example")
+
+    monkeypatch.setattr(rs, "search_openalex", _boom)
+    monkeypatch.setattr(sys, "argv", ["research_sources", "search-openalex", "tevijja"])
+
+    assert rs._cli() == 1
+    captured = capsys.readouterr()
+    assert "503" in captured.err
+    assert "503" in _json.loads(captured.out)["error"]
+
+
+def test_openalex_cli_returns_hits_as_json_on_success(monkeypatch, capsys):
+    import tools.research_sources as rs
+
+    hit = ScholarHit(
+        openalex_id="W1",
+        title="An Ethical Samādhi",
+        year=2025,
+        authors=["E. Shulman"],
+        venue="Mindfulness",
+        doi="https://doi.org/10.1007/s12671-025-02597-6",
+        url="https://example.org/W1",
+        is_oa=True,
+        oa_url="https://example.org/pdf",
+        cited_by=3,
+        abstract="a b c",
+        matched_term="brahmavihāra",
+        term_total=32,
+    )
+    monkeypatch.setattr(rs, "search_openalex", lambda *a, **k: [hit])
+    monkeypatch.setattr(sys, "argv", ["research_sources", "search-openalex", "x"])
+
+    assert rs._cli() == 0
+    payload = _json.loads(capsys.readouterr().out)
+    assert payload[0]["doi"].endswith("s12671-025-02597-6")
+    assert payload[0]["term_total"] == 32

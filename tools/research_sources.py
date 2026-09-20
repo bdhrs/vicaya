@@ -76,6 +76,28 @@ _PITAKA_PREFIX_MAP: dict[str, str] = {
 
 
 @dataclass
+class ScholarHit:
+    """One OpenAlex work. `abstract` is reconstructed from the inverted index."""
+
+    openalex_id: str
+    title: str
+    year: int | None
+    authors: list[str]
+    venue: str
+    doi: str
+    url: str
+    is_oa: bool
+    oa_url: str
+    cited_by: int
+    abstract: str
+    matched_term: str
+    # How many works the index holds for `matched_term`, from OpenAlex's own
+    # `meta.count`. Without it a full page is indistinguishable from the whole
+    # literature — the capped-set trap Hard Rule 13 names.
+    term_total: int = 0
+
+
+@dataclass
 class VaultHit:
     path: str
     snippet: str
@@ -1602,6 +1624,230 @@ def sc_search(
     return hits
 
 
+# ---------- OpenAlex (scholarly index) ----------
+
+OPENALEX_API = "https://api.openalex.org/works"
+#: OpenAlex asks callers to identify themselves; doing so gets the faster
+#: "polite pool". Deliberately NOT defaulted to a real address — a hardcoded
+#: one would make every other installation send the maintainer's email on every
+#: request. Unset means the parameter is simply omitted; the API still works.
+OPENALEX_MAILTO = os.environ.get("VICAYA_OPENALEX_MAILTO", "").strip()
+
+
+class OpenAlexError(RuntimeError):
+    """A query to OpenAlex failed. Never conflate this with a zero-hit result.
+
+    A bare `except` here would print "no scholarship found" for a broken query,
+    which is indistinguishable from a genuine empty result and gets quoted back
+    as if it were evidence of absence.
+    """
+
+
+def _ascii_fold(text: str) -> str:
+    """Strip combining marks: 'brahmavihāra' -> 'brahmavihara'.
+
+    One-way by necessity — diacritics can be removed but not invented, which is
+    why callers must pass the other direction (and Sanskrit cognates, and
+    English glosses) explicitly via `also`.
+    """
+    import unicodedata
+
+    decomposed = unicodedata.normalize("NFD", text)
+    return unicodedata.normalize(
+        "NFC", "".join(c for c in decomposed if not unicodedata.combining(c))
+    )
+
+
+def _reconstruct_abstract(inverted: dict[str, list[int]] | None) -> str:
+    """OpenAlex ships abstracts as {word: [positions]}; put them back in order."""
+    if not inverted:
+        return ""
+    positions: list[tuple[int, str]] = []
+    for word, slots in inverted.items():
+        for slot in slots:
+            positions.append((slot, word))
+    positions.sort()
+    return " ".join(word for _, word in positions)
+
+
+def _openalex_fetch(url: str, opener: Any = None, timeout: int = 30) -> dict:
+    import urllib.error
+    import urllib.request
+
+    if opener is None:
+        opener = urllib.request.urlopen
+    try:
+        with opener(url, timeout=timeout) as response:
+            status = getattr(response, "status", 200)
+            if status != 200:
+                raise OpenAlexError(f"OpenAlex returned HTTP {status} for {url}")
+            raw = response.read()
+    except OpenAlexError:
+        raise
+    except urllib.error.HTTPError as exc:
+        raise OpenAlexError(f"OpenAlex returned HTTP {exc.code} for {url}") from exc
+    except Exception as exc:  # network down, DNS, timeout, malformed URL
+        raise OpenAlexError(f"OpenAlex request failed for {url}: {exc}") from exc
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8", errors="replace")
+    try:
+        payload = json.loads(raw)
+    except ValueError as exc:
+        raise OpenAlexError(f"OpenAlex returned unparseable JSON for {url}") from exc
+    # Shape, not just parseability. Valid JSON of the wrong shape would
+    # otherwise reach the caller as zero hits or an unnamed AttributeError —
+    # a broken query wearing the face of an empty result.
+    if not isinstance(payload, dict):
+        raise OpenAlexError(
+            f"OpenAlex returned {type(payload).__name__}, expected an object, for {url}"
+        )
+    if "results" not in payload:
+        raise OpenAlexError(f"OpenAlex response has no 'results' key for {url}")
+    if not isinstance(payload["results"], list):
+        raise OpenAlexError(
+            f"OpenAlex 'results' is {type(payload['results']).__name__}, "
+            f"expected a list, for {url}"
+        )
+    return payload
+
+
+#: Reserved in OpenAlex's filter grammar. Left in a term they produce HTTP 400
+#: *after* percent-decoding, so urlencode does not save you — one stray comma
+#: in an `--also` term used to abort the whole fan-out.
+_OPENALEX_RESERVED = str.maketrans({c: " " for c in ",|+!<>="})
+
+
+def _clean_term(term: str) -> str:
+    return " ".join(term.translate(_OPENALEX_RESERVED).split())
+
+
+def openalex_terms(query: str, also: list[str] | None = None) -> list[str]:
+    """The spelling variants actually queried, in order, deduplicated."""
+    terms = [_clean_term(query)]
+    folded = _clean_term(_ascii_fold(query))
+    if folded and folded.lower() != terms[0].lower():
+        terms.append(folded)
+    for extra in also or []:
+        extra = _clean_term(extra)
+        if extra:
+            terms.append(extra)
+    terms = [t for t in terms if t]
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for term in terms:
+        key = term.lower()
+        if key not in seen:
+            seen.add(key)
+            ordered.append(term)
+    return ordered
+
+
+def search_openalex(
+    query: str,
+    also: list[str] | None = None,
+    limit: int = 25,
+    per_term: int | None = None,
+    opener: Any = None,
+    timeout: int = 30,
+) -> list[ScholarHit]:
+    """Search the OpenAlex scholarly index over spelling variants of one term.
+
+    Queries `title_and_abstract.search` — never free-text `search=`, which is
+    bag-of-words and degrades to whichever term is commonest (a probe on
+    2026-09-20 got 111 hits with 0-2 on topic that way, and a search naming an
+    author returned not one work by them).
+
+    Diacritic and plain spellings return *disjoint* result sets in both
+    directions, so every variant is queried and the results merged. The ASCII
+    fold is derived here; Sanskrit cognates and English glosses cannot be, and
+    come from `also` — the Pāḷi `appamāṇa` returns 2 hits where the Sanskrit
+    `apramāṇa` returns 8 (live counts, 2026-09-20), and Martini's own appamāṇa
+    article is indexed under the mangled string "Appamāas" with the retroflex
+    eaten on ingestion, so it answers to neither.
+
+    Raises OpenAlexError on any transport or parse failure, so a broken query
+    can never be reported as "no results".
+    """
+    import urllib.parse
+
+    terms = openalex_terms(query, also)
+    page_size = max(1, min(per_term if per_term is not None else limit, 200))
+    per_term_hits: dict[str, list[ScholarHit]] = {t: [] for t in terms}
+    failures: list[str] = []
+    seen_ids: set[str] = set()
+    for term in terms:
+        params = urllib.parse.urlencode(
+            {
+                "filter": f"title_and_abstract.search:{term}",
+                "per-page": page_size,
+                **({"mailto": OPENALEX_MAILTO} if OPENALEX_MAILTO else {}),
+            }
+        )
+        try:
+            payload = _openalex_fetch(
+                f"{OPENALEX_API}?{params}", opener=opener, timeout=timeout
+            )
+        except OpenAlexError as exc:
+            # One bad variant must not discard the variants that worked.
+            failures.append(f"{term}: {exc}")
+            continue
+        hits = per_term_hits[term]
+        term_total = int((payload.get("meta") or {}).get("count") or 0)
+        for work in payload["results"]:
+            work_id = work.get("id") or ""
+            if work_id and work_id in seen_ids:
+                continue
+            if work_id:
+                seen_ids.add(work_id)
+            location = work.get("primary_location") or {}
+            source = location.get("source") or {}
+            oa = work.get("open_access") or {}
+            authors = [
+                (a.get("author") or {}).get("display_name", "")
+                for a in work.get("authorships") or []
+            ]
+            hits.append(
+                ScholarHit(
+                    openalex_id=work_id,
+                    title=work.get("display_name") or work.get("title") or "",
+                    year=work.get("publication_year"),
+                    authors=[a for a in authors if a],
+                    venue=source.get("display_name") or "",
+                    doi=work.get("doi") or "",
+                    url=location.get("landing_page_url") or work.get("id") or "",
+                    is_oa=bool(oa.get("is_oa")),
+                    oa_url=oa.get("oa_url") or "",
+                    cited_by=work.get("cited_by_count") or 0,
+                    abstract=_reconstruct_abstract(work.get("abstract_inverted_index")),
+                    matched_term=term,
+                    term_total=term_total,
+                )
+            )
+    if failures and not any(per_term_hits.values()):
+        raise OpenAlexError("every OpenAlex query failed — " + "; ".join(failures))
+    if failures:
+        print(
+            f"warning: some OpenAlex spellings failed: {'; '.join(failures)}",
+            file=sys.stderr,
+        )
+    # Interleave, then truncate. Concatenating variant-by-variant and slicing
+    # would let the first spelling fill `limit` and discard every later one —
+    # which silently makes `--also` do nothing, the very bug the fan-out
+    # exists to avoid. Round-robin guarantees each spelling is represented.
+    merged: list[ScholarHit] = []
+    for row in _zip_longest_lists([per_term_hits[t] for t in terms]):
+        merged.extend(row)
+    return merged[:limit]
+
+
+def _zip_longest_lists(lists: list[list[Any]]) -> list[list[Any]]:
+    """Round-robin the lists together: [[a1,a2],[b1]] -> [[a1,b1],[a2]]."""
+    if not lists:
+        return []
+    depth = max((len(item) for item in lists), default=0)
+    return [[item[i] for item in lists if i < len(item)] for i in range(depth)]
+
+
 # ---------- Cross-check (app/model chain) ----------
 
 
@@ -2561,6 +2807,21 @@ def _cli() -> int:
         _dump(result, quiet=getattr(args, "quiet", False))
         return _done(argv, result)
 
+    def _handle_search_openalex(args):
+        try:
+            result = search_openalex(args.query, also=args.also, limit=args.limit)
+        except OpenAlexError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            _dump({"error": str(exc), "query": args.query})
+            return _done(exit_code=1, autolog=False)
+        argv = (
+            [args.query]
+            + [flag for term in (args.also or []) for flag in ("--also", term)]
+            + ["--limit", str(args.limit)]
+        )
+        _dump(result, quiet=getattr(args, "quiet", False))
+        return _done(argv, result)
+
     def _handle_library_folders_check(args):
         library_folders = _load_library_folders_module()
         result = library_folders.check()
@@ -2967,6 +3228,32 @@ def _cli() -> int:
     pss.add_argument("--limit", type=int, default=20)
     pss.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
     pss.set_defaults(func=_handle_search_sanskrit)
+
+    poa = sub.add_parser(
+        "search-openalex",
+        help=(
+            "Search the OpenAlex scholarly index (journal articles, chapters, "
+            "monographs). Queries title+abstract over every spelling variant "
+            "and merges. Returns metadata and abstracts, not full text."
+        ),
+    )
+    poa.add_argument("query")
+    poa.add_argument(
+        "--also",
+        action="append",
+        default=None,
+        metavar="TERM",
+        help=(
+            "Extra spelling to query, repeatable. The ASCII fold of the query "
+            "is added automatically; pass the Sanskrit cognate, the hyphenated "
+            "form and the English gloss here — those cannot be derived. The "
+            "Pāḷi 'appamāṇa' returns 2 hits where the Sanskrit 'apramāṇa' "
+            "returns 8."
+        ),
+    )
+    poa.add_argument("--limit", type=int, default=25)
+    poa.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
+    poa.set_defaults(func=_handle_search_openalex)
 
     plfc = sub.add_parser(
         "library-folders-check",
