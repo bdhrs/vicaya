@@ -46,6 +46,7 @@ Prune dead links periodically.
 ---
 
 ## trusted
+- The International Focusing Institute | UCoGOMxiLAiiEtawyl_d1KIQ
 - Mind & Life Institute
 - Āgama Research Group
 - Abhayagiri | UCFAuQ5fmYYVv5_Dim0EQpVA
