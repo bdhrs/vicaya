@@ -69,6 +69,7 @@ question. Be adaptive, not exhaustive:
 - A sutta-anchored doctrinal question → canon (`s*_mul`), `sc-parallels` + EBC
   `get-ebc-overview`/`get-agama`, library folders, web.
 - A practice/applied question → library (modern teachers) + canon + web/YouTube.
+- A "what do other schools say about X" question → canon for the Theravāda baseline, then `search-84000`, `search-chinese` and `search-sanskrit` (search order, Chinese terms and citation formats: Phase 3b of `vicaya/SKILL.md`).
 
 Then open the dossier so everything auto-logs (one command, no gates follow):
 

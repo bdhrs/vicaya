@@ -13,7 +13,9 @@ Empty lists on no-results. Raises on tool-missing.
 from __future__ import annotations
 
 import fnmatch
+import html
 import json
+import multiprocessing
 import os
 import re as _re
 import sqlite3
@@ -53,6 +55,8 @@ DEFAULT_GRETIL_PATH = _env_path(
     "~/MyFiles/2_Resources/gretil",
 )
 DEFAULT_SC_DATA_PATH = _env_path("VICAYA_SC_DATA_PATH")
+DEFAULT_CBETA_PATH = _env_path("VICAYA_CBETA_PATH", "~/MyFiles/2_Resources/cbeta")
+DEFAULT_84000_PATH = _env_path("VICAYA_84000_PATH", "~/MyFiles/2_Resources/84000")
 
 # CST text-type suffix → label used in fallback citations.
 _TEXT_TYPE_LABELS: dict[str, str] = {
@@ -1369,6 +1373,400 @@ def search_sanskrit(
     return hits
 
 
+# ---------- CBETA (Chinese canon) search ----------
+#
+# Layout under VICAYA_CBETA_PATH (a clone of cbeta-org/xml-p5):
+#   <collection>/<collection><vol>/<collection><vol>n<id>.xml
+#   e.g. T/T02/T02n0099.xml (Saṃyuktāgama). T0220 spans three volumes.
+# `<lb n="0120a06" ed="T"/>` opens Taishō line 0120a06. Lines are joined before
+# matching, because a phrase routinely runs across a line break. X files also
+# carry <lb> for reprint editions (ed="R150" …); only the file's own edition
+# numbers its lines, or a citation would name an X volume with a reprint page.
+# Measured 2026-09-24: 13.9 s one-core vs 2.7 s at 12 workers for a Taishō-wide
+# search, same hit count — hence the pool instead of a text cache.
+
+_CBETA_WORKERS = min(12, os.cpu_count() or 1)
+# Shared with search_84000. Listing every matching text made one 涅槃 search
+# 116 KB (1,234 texts), and every call is copied into the research dossier.
+_BY_TEXT_MAX = 50
+_CBETA_SNIPPET_SIDE = 60
+_CBETA_COMMENT_RE = _re.compile(r"<!--.*?-->", _re.S)
+_CBETA_DROP_RE = _re.compile(
+    r"<(note|rdg|back|mulu|cb:mulu|cb:docNumber|figure)\b.*?</\1>", _re.S
+)
+# Dhāraṇīs give each syllable twice, Siddham (Unicode-less glyphs) beside
+# Chinese; left in, the glyphs split every Chinese transliteration phrase.
+_CBETA_SKT_RE = _re.compile(r'<cb:t xml:lang="sa[^"]*"[^>]*>.*?</cb:t>', _re.S)
+# Siddham (SD-) and Rañjanā (RJ-) glyphs have no Unicode form; 72 esoteric
+# texts also hold whole paragraphs of them, which only add noise to snippets.
+_CBETA_SIDD_G_RE = _re.compile(r'<g ref="#(?:SD|RJ)-[^"]*"[^>]*?(?:/>|>.*?</g>)', _re.S)
+_CBETA_LB_RE = _re.compile(r"<lb\b([^>]*)/>")
+_CBETA_N_RE = _re.compile(r'\bn="([0-9a-z]+)"')
+_CBETA_ED_RE = _re.compile(r'\bed="([^"]*)"')
+_CBETA_CHAR_RE = _re.compile(r'<char xml:id="(CB\d+)">(.*?)</char>', _re.S)
+# Real files write <g ref="#CB…">glyph</g>; the glyph is often a private-use
+# code point, so the declared mapping replaces the whole element.
+_CBETA_G_RE = _re.compile(r'<g ref="#(CB\d+)"[^>]*?(?:/>|>(.*?)</g>)', _re.S)
+_CBETA_TITLE_RE = _re.compile(r'<title level="m"[^>]*>(.*?)</title>', _re.S)
+_CBETA_STEM_RE = _re.compile(r"^([A-Z]+)\d+n(.+)$")
+_TAG_RE = _re.compile(r"<[^>]+>")
+_WS_RE = _re.compile(r"\s+")
+
+
+def _cbeta_text_id(stem: str) -> str:
+    """'T02n0099' → 'T0099'; suffix letters survive ('T02n0128a' → 'T0128a')."""
+    m = _CBETA_STEM_RE.match(stem)
+    return m.group(1) + m.group(2) if m else stem
+
+
+def _cbeta_gaiji(raw: str) -> dict[str, str]:
+    # Each <char> block is parsed on its own: one regex spanning blocks ran
+    # into the neighbouring declaration and left real characters unresolved.
+    out: dict[str, str] = {}
+    for cid, block in _CBETA_CHAR_RE.findall(raw):
+        uni = _re.search(r'<mapping type="unicode">U\+([0-9A-Fa-f]+)</mapping>', block)
+        norm = _re.search(r"normalized form</localName>\s*<value>(.*?)</value>", block)
+        comp = _re.search(r"composition</localName>\s*<value>(.*?)</value>", block)
+        if uni:
+            out[cid] = chr(int(uni.group(1), 16))
+        elif norm:
+            out[cid] = norm.group(1)
+        elif comp:
+            out[cid] = comp.group(1)
+    return out
+
+
+def _cbeta_flatten(path: Path) -> tuple[str, list[int], list[str], str]:
+    """Return (joined text, line-start offsets, line numbers, title) for one file."""
+    raw = path.read_text(encoding="utf-8")
+    title_m = _CBETA_TITLE_RE.search(raw)
+    title = title_m.group(1).strip() if title_m else ""
+    gaiji = _cbeta_gaiji(raw)
+    stem_m = _CBETA_STEM_RE.match(path.stem)
+    edition = stem_m.group(1) if stem_m else ""
+    _, found, rest = raw.partition("<body")
+    body = rest.split(">", 1)[-1] if found else raw
+    body = _CBETA_COMMENT_RE.sub("", body)
+    body = _CBETA_DROP_RE.sub("", body)
+    body = _CBETA_SKT_RE.sub("", body)
+    body = _CBETA_SIDD_G_RE.sub("", body)
+    body = _CBETA_G_RE.sub(lambda m: gaiji.get(m.group(1)) or (m.group(2) or ""), body)
+    parts: list[str] = []
+    starts: list[int] = []
+    lines: list[str] = []
+    pos = 0
+    last = 0
+    for m in _CBETA_LB_RE.finditer(body):
+        n = _CBETA_N_RE.search(m.group(1))
+        ed = _CBETA_ED_RE.search(m.group(1))
+        if n is None or (ed is not None and ed.group(1) != edition):
+            continue
+        # Unescape per line so offsets count characters, not entity spellings.
+        chunk = html.unescape(_WS_RE.sub("", _TAG_RE.sub("", body[last : m.start()])))
+        parts.append(chunk)
+        pos += len(chunk)
+        starts.append(pos)
+        lines.append(n.group(1))
+        last = m.end()
+    parts.append(html.unescape(_WS_RE.sub("", _TAG_RE.sub("", body[last:]))))
+    return "".join(parts), starts, lines, title
+
+
+def _cbeta_scan(args: tuple[str, str, int]) -> tuple[str, str, int, list[dict]]:
+    """Worker: count matches in one file and keep up to `limit` snippets."""
+    import bisect
+
+    path_s, query, limit = args
+    path = Path(path_s)
+    text, starts, lines, title = _cbeta_flatten(path)
+    tid = _cbeta_text_id(path.stem)
+    count = text.count(query)
+    hits: list[dict] = []
+    start = 0
+    while len(hits) < limit:
+        i = text.find(query, start)
+        if i < 0:
+            break
+        idx = bisect.bisect_right(starts, i) - 1
+        lo = max(0, i - _CBETA_SNIPPET_SIDE)
+        hi = i + len(query) + _CBETA_SNIPPET_SIDE
+        hits.append(
+            {
+                "id": tid,
+                "title": title,
+                "vol": path.stem.split("n", 1)[0],
+                "line": lines[idx] if idx >= 0 else "",
+                "snippet": text[lo:hi],
+            }
+        )
+        start = i + len(query)
+    return tid, title, count, hits
+
+
+def _cbeta_map(
+    jobs: list[tuple[str, str, int]],
+) -> list[tuple[str, str, int, list[dict]]]:
+    from concurrent.futures import ProcessPoolExecutor
+    from concurrent.futures.process import BrokenProcessPool
+
+    # forkserver, not the fork default: forking a process that already runs
+    # threads (pytest, any embedding host) can deadlock the child. Windows
+    # has only spawn.
+    methods = multiprocessing.get_all_start_methods()
+    ctx = multiprocessing.get_context(
+        "forkserver" if "forkserver" in methods else "spawn"
+    )
+    try:
+        with ProcessPoolExecutor(max_workers=_CBETA_WORKERS, mp_context=ctx) as ex:
+            return list(ex.map(_cbeta_scan, jobs, chunksize=16))
+    except BrokenProcessPool:
+        # A calling script without an `if __name__ == "__main__"` guard is
+        # re-run inside each worker and kills it; search on one core instead.
+        return [_cbeta_scan(job) for job in jobs]
+
+
+def _cbeta_collections(root: Path) -> list[str]:
+    return sorted(
+        d.name
+        for d in root.iterdir()
+        if d.is_dir() and d.name != "schema" and not d.name.startswith(".")
+    )
+
+
+def search_chinese(
+    query: str,
+    collection: str = "T",
+    text: str | None = None,
+    path: Path | None = None,
+    limit: int = 20,
+) -> dict:
+    """Fixed-string search across the local CBETA canon (TEI XML).
+
+    `collection` is a top-level CBETA folder (T, X, J, …) or 'all'. `text`
+    limits the search to one text id ('T0099', 't99' and 'T99' all work); its
+    collection is taken from the id. Whitespace in the query is ignored, as
+    the flattened text has none. Returns {query, total_hits, total_texts,
+    by_text, hits}: `by_text` lists the `_BY_TEXT_MAX` texts with most matches,
+    `total_texts` counts all of them, and `hits` holds up to `limit` snippets
+    with the volume and line each match starts on. Returns the empty shape when
+    no CBETA clone is configured; raises ValueError for an empty query, an
+    unknown collection or a text id that matches no file — never a
+    zero-hit result that looks like a genuine absence.
+    """
+    query = _WS_RE.sub("", query or "")
+    empty: dict = {
+        "query": query,
+        "total_hits": 0,
+        "total_texts": 0,
+        "by_text": [],
+        "hits": [],
+    }
+    root = path or DEFAULT_CBETA_PATH
+    if root is None or not root.exists():
+        return empty
+    if not query:
+        raise ValueError("empty query")
+    known = _cbeta_collections(root)
+    if text:
+        text = text.strip()
+        prefix = next(
+            (
+                c
+                for c in sorted(known, key=len, reverse=True)
+                if text.upper().startswith(c)
+            ),
+            None,
+        )
+        if prefix is None:
+            raise ValueError(
+                f"text id {text!r} names no CBETA collection ({', '.join(known)})"
+            )
+        rest = text[len(prefix) :]
+        text = prefix + (rest.zfill(4) if rest.isdigit() else rest)
+        collection = prefix
+    if collection.lower() == "all":
+        dirs = [root / c for c in known]
+    elif collection.upper() in known:
+        dirs = [root / collection.upper()]
+    else:
+        raise ValueError(
+            f"unknown CBETA collection {collection!r} ({', '.join(known)}, all)"
+        )
+    files = [f for d in dirs for f in sorted(d.rglob("*.xml"))]
+    if text:
+        files = [f for f in files if _cbeta_text_id(f.stem).lower() == text.lower()]
+        if not files:
+            raise ValueError(f"no CBETA text {text!r}")
+    counts: dict[str, list] = {}
+    hits: list[dict] = []
+    total = 0
+    for tid, title, count, file_hits in _cbeta_map(
+        [(str(f), query, limit) for f in files]
+    ):
+        if not count:
+            continue
+        total += count
+        entry = counts.setdefault(tid, [title, 0])
+        if entry[0] != title:
+            # T0220 spans three files titled '…(第1卷-第200卷)' etc., B0088
+            # two titled '…（上）'/'…（下）'; the merged entry keeps the shared name.
+            entry[0] = _re.split(r"[(（]", entry[0], maxsplit=1)[0]
+        entry[1] += count
+        if len(hits) < limit:
+            hits.extend(file_hits[: limit - len(hits)])
+    for hit in hits:
+        hit["title"] = counts[hit["id"]][0]
+    by_text = [
+        {"id": tid, "title": title, "count": n}
+        for tid, (title, n) in sorted(counts.items(), key=lambda kv: -kv[1][1])
+    ]
+    return {
+        "query": query,
+        "total_hits": total,
+        "total_texts": len(by_text),
+        "by_text": by_text[:_BY_TEXT_MAX],
+        "hits": hits,
+    }
+
+
+# ---------- 84000 (Tibetan canon in English) search ----------
+#
+# Layout under VICAYA_84000_PATH (a clone of 84000/data-tei): published
+# translations live in translations/kangyur/translations/ and
+# translations/tengyur/publications/; the placeholders/ folders are stubs.
+# Toh numbers come from the filename ('071-011_toh297-…', '…_toh540,1078-…'):
+# every file carries them there, while the in-file <bibl key> is missing in 3.
+
+_84000_DIRS = ("translations/kangyur/translations", "translations/tengyur/publications")
+_84000_TOH_RE = _re.compile(r"toh(\d+[a-z]?(?:-\d+)?(?:,\d+[a-z]?(?:-\d+)?)*)")
+_84000_TITLE_RE = _re.compile(
+    r'<title type="mainTitle" xml:lang="en">(.*?)</title>', _re.S
+)
+_84000_TEXT_RE = _re.compile(r"<text\b[^>]*>")
+_84000_FRONT_RE = _re.compile(r"<front\b.*?</front>", _re.S)
+_84000_BACK_RE = _re.compile(r"<back\b.*?</back>", _re.S)
+_84000_P_RE = _re.compile(r"<p\b[^>]*>(.*?)</p>", _re.S)
+# Endnote anchors are self-closing (<note … />): a plain <note>.*?</note>
+# starting at one swallowed real translation text up to the next </note>.
+# Refusing to cross another <note stops that, and strips nested notes too.
+_84000_NOTE_RE = _re.compile(r"<note\b[^>]*>(?:(?!<note\b).)*?</note>", _re.S)
+_84000_SNIPPET_MAX = 400
+
+
+def _84000_strip_notes(xml: str) -> str:
+    while True:
+        # Innermost first, so a nested note cannot leave its parent's tail behind.
+        stripped = _84000_NOTE_RE.sub("", xml)
+        if stripped == xml:
+            return xml
+        xml = stripped
+
+
+def _84000_translator(raw: str) -> str:
+    for role in ("translatorEng", "translatorMain"):
+        m = _re.search(rf'<author role="{role}"[^>]*>(.*?)</author>', raw, _re.S)
+        if m:
+            return _WS_RE.sub(" ", _TAG_RE.sub("", m.group(1))).strip()
+    return ""
+
+
+def search_84000(
+    query: str,
+    toh: str | None = None,
+    path: Path | None = None,
+    limit: int = 20,
+) -> dict:
+    """Case-insensitive paragraph search across the local 84000 translations.
+
+    `toh` limits the search to files carrying that Toh number ('297', 'Toh
+    297', '44-31', or '1' for every chapter file 'toh1-1', 'toh1-2', …).
+    Returns {query, total_hits, total_texts, by_text, hits}: `by_text` lists
+    the `_BY_TEXT_MAX` texts with most matching paragraphs (grouped by Toh),
+    `total_texts` counts all of them, and `hits` holds up to `limit`
+    paragraphs with toh, title, translator, `section` ('front' = the
+    translator's summary/introduction, 'body' = the translation, 'back' = the
+    translator's glossary and bibliography), a snippet
+    around the match and the 84000 reader URL. Returns the empty shape when no
+    84000 clone is configured; raises ValueError for an empty query.
+    """
+    query = _WS_RE.sub(" ", query or "").strip()
+    empty: dict = {
+        "query": query,
+        "total_hits": 0,
+        "total_texts": 0,
+        "by_text": [],
+        "hits": [],
+    }
+    root = path or DEFAULT_84000_PATH
+    if root is None or not root.exists():
+        return empty
+    if not query:
+        raise ValueError("empty query")
+    if toh:
+        toh = _re.sub(r"(?i)^\s*toh\s*", "", toh).strip()
+    needle = query.lower()
+    counts: dict[str, dict] = {}
+    hits: list[dict] = []
+    total = 0
+    for d in _84000_DIRS:
+        for f in sorted((root / d).glob("*.xml")):
+            m = _84000_TOH_RE.search(f.name)
+            if not m:
+                continue
+            tohs = m.group(1).split(",")
+            if toh and not any(t == toh or t.startswith(f"{toh}-") for t in tohs):
+                continue
+            raw = f.read_text(encoding="utf-8")
+            text_m = _84000_TEXT_RE.search(raw)
+            text_xml = _84000_strip_notes(raw[text_m.end() :] if text_m else raw)
+            front_m = _84000_FRONT_RE.search(text_xml)
+            back_m = _84000_BACK_RE.search(text_xml)
+            front = front_m.group(0) if front_m else ""
+            back = back_m.group(0) if back_m else ""
+            body = text_xml
+            for part in (front, back):
+                if part:
+                    body = body.replace(part, "", 1)
+            matched: list[tuple[str, str]] = []
+            for section, xml in (("front", front), ("body", body), ("back", back)):
+                for p in _84000_P_RE.findall(xml):
+                    para = html.unescape(_WS_RE.sub(" ", _TAG_RE.sub("", p))).strip()
+                    if needle in para.lower():
+                        matched.append((section, para))
+            if not matched:
+                continue
+            title_m = _84000_TITLE_RE.search(raw)
+            title = _WS_RE.sub(" ", title_m.group(1)).strip() if title_m else ""
+            translator = _84000_translator(raw)
+            url = f"https://84000.co/translation/toh{tohs[0]}"
+            total += len(matched)
+            # Two files can carry one Toh (toh44-45 exists under two titles).
+            key = ",".join(tohs)
+            entry = counts.setdefault(key, {"toh": key, "title": title, "count": 0})
+            entry["count"] += len(matched)
+            for section, para in matched[: max(0, limit - len(hits))]:
+                at = para.lower().find(needle)
+                lo = max(0, at - (_84000_SNIPPET_MAX - len(needle)) // 2)
+                hits.append(
+                    {
+                        "toh": key,
+                        "title": title,
+                        "translator": translator,
+                        "section": section,
+                        "snippet": para[lo : lo + _84000_SNIPPET_MAX],
+                        "url": url,
+                    }
+                )
+    by_text = sorted(counts.values(), key=lambda t: -t["count"])
+    return {
+        "query": query,
+        "total_hits": total,
+        "total_texts": len(by_text),
+        "by_text": by_text[:_BY_TEXT_MAX],
+        "hits": hits,
+    }
+
+
 # ---------- SuttaCentral offline archive ----------
 #
 # Layout under VICAYA_SC_DATA_PATH:
@@ -1378,10 +1776,11 @@ def search_sanskrit(
 #   sc_bilara_data/root/<lang>/...       — root texts keyed "<uid>:<seg>" → text.
 #       langs: pli (Pāḷi), lzh (Literary Chinese / Āgamas), san, pra, en, misc.
 #   sc_bilara_data/translation/en/<author>/... — English translations, same keys.
+#   html_text/lzh/**/<uid>.html          — legacy Chinese texts with Taishō anchors.
 #
-# Coverage is partial: MA holds ~15 suttas, EA almost nothing, SA mostly present.
-# `sc_parallels` always reports what parallels.json says; text retrieval is
-# best-effort and explicitly flags missing texts in `text_gaps`.
+# Bilara holds only 66 Chinese files (55 of the 1,911 Āgama uids parallels.json
+# names); html_text/lzh holds 4,620 and covers the rest, so sc_parallels falls
+# back to it for Chinese. Other gaps are still flagged in `text_gaps`.
 
 _SC_REF_RE = _re.compile(r"^([a-z-]+)(\d+(?:\.\d+)?)?")
 
@@ -1483,6 +1882,45 @@ def _sc_read_segments(path: Path | None) -> str:
     return "\n".join(str(v).strip() for v in data.values() if str(v).strip())
 
 
+_SC_T_LINE_RE = _re.compile(
+    r"<a class='ref t' id='t(\d{4}[a-c]\d{2})'[^>]*>.*?</a>", _re.S
+)
+# Other 'ref t' anchors ('t-juan20' fascicle marks) are not lines; drop them.
+_SC_T_OTHER_RE = _re.compile(r"<a class='ref t'[^>]*>.*?</a>", _re.S)
+_SC_FOOTER_RE = _re.compile(r"<footer\b.*?</footer>", _re.S)
+_SC_PARA_RE = _re.compile(r"<p[^>]*>(.*?)</p>", _re.S)
+# Only the Āgamas (sa, ma, ea, da and their -2/-3/-ot series): other uids such
+# as t32 or whole Vinaya chapters (lzh-dg-kd1, 85 KB) would bloat every result.
+_SC_AGAMA_UID_RE = _re.compile(r"^(?:sa|ma|ea|da)(?:-(?:\d+|ot))?[\d.]")
+
+
+def _sc_read_lzh_html(uid: str, sc_root: Path) -> str:
+    """Chinese text for an Āgama uid from the legacy html_text/lzh tree, or ''.
+
+    Taishō anchors become inline '[0120a01]' markers (each opens that line), so
+    any quote can be cited to its line. A range uid with no file of its own
+    ('ma107-108') is read from its member files, joined in order.
+    """
+    base = sc_root / "html_text" / "lzh"
+    if not base.exists() or not _SC_AGAMA_UID_RE.match(uid):
+        return ""
+    texts: list[str] = []
+    for member in [uid] + _sc_expand_range_uid(uid):
+        path = next(base.rglob(f"{member}.html"), None)
+        if path is None:
+            continue
+        body = path.read_text(encoding="utf-8").split("</header>", 1)[-1]
+        body = _SC_FOOTER_RE.sub("", body)
+        body = _SC_T_OTHER_RE.sub("", _SC_T_LINE_RE.sub(r"[\1]", body))
+        paras = (
+            html.unescape(_TAG_RE.sub("", p)).strip() for p in _SC_PARA_RE.findall(body)
+        )
+        texts.append("\n".join(p for p in paras if p))
+        if member == uid:
+            break
+    return "\n\n".join(texts)
+
+
 def _sc_load_parallels_index(sc_root: Path) -> dict[str, list[list[str]]]:
     """Read parallels.json and index by bare uid for cheap lookup.
 
@@ -1517,9 +1955,10 @@ def sc_parallels(
     """Look up parallels for a SuttaCentral-style citation (e.g. 'mn18').
 
     Returns one SCParallel per parallel ref *other than* the query itself.
-    parallels.json coverage is comprehensive; text retrieval is best-effort —
-    the archive holds only a partial sample of Chinese Āgamas, so unread
-    languages are recorded in `text_gaps` rather than silently omitted.
+    parallels.json coverage is comprehensive; text retrieval is best-effort.
+    Chinese comes from bilara, else from html_text/lzh with inline Taishō
+    '[0120a01]' line markers. Unread texts are recorded in `text_gaps` rather
+    than silently omitted.
 
     `citation` is normalised (lowercased, whitespace stripped). On unknown
     archive path or empty match, returns [].
@@ -1561,6 +2000,8 @@ def sc_parallels(
                         continue
                     p = _sc_find_root_file(uid, lang, sc_root)
                     if p is None:
+                        if lang == "lzh":
+                            parallel.text_lzh = _sc_read_lzh_html(uid, sc_root)
                         continue
                     setattr(parallel, attr, _sc_read_segments(p))
                 t = _sc_find_translation_file(uid, sc_root, "en")
@@ -2807,6 +3248,42 @@ def _cli() -> int:
         _dump(result, quiet=getattr(args, "quiet", False))
         return _done(argv, result)
 
+    def _handle_search_chinese(args):
+        try:
+            result = search_chinese(
+                args.query, collection=args.collection, text=args.text, limit=args.limit
+            )
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            _dump({"error": str(exc), "query": args.query})
+            return _done(exit_code=1, autolog=False)
+        argv = (
+            [args.query]
+            + (
+                ["--text", args.text]
+                if args.text
+                else ["--collection", args.collection]
+            )
+            + ["--limit", str(args.limit)]
+        )
+        _dump(result, quiet=getattr(args, "quiet", False))
+        return _done(argv, result)
+
+    def _handle_search_84000(args):
+        try:
+            result = search_84000(args.query, toh=args.toh, limit=args.limit)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            _dump({"error": str(exc), "query": args.query})
+            return _done(exit_code=1, autolog=False)
+        argv = (
+            [args.query]
+            + (["--toh", args.toh] if args.toh else [])
+            + ["--limit", str(args.limit)]
+        )
+        _dump(result, quiet=getattr(args, "quiet", False))
+        return _done(argv, result)
+
     def _handle_search_openalex(args):
         try:
             result = search_openalex(args.query, also=args.also, limit=args.limit)
@@ -3228,6 +3705,40 @@ def _cli() -> int:
     pss.add_argument("--limit", type=int, default=20)
     pss.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
     pss.set_defaults(func=_handle_search_sanskrit)
+
+    pcb = sub.add_parser(
+        "search-chinese",
+        help="Fixed-string search across the local CBETA Chinese canon (TEI XML).",
+    )
+    pcb.add_argument("query")
+    pcb.add_argument(
+        "--collection",
+        default="T",
+        help="CBETA collection folder (T = Taishō, X, J, …) or 'all'. Default: T.",
+    )
+    pcb.add_argument(
+        "--text",
+        default=None,
+        help="Limit to one text id, e.g. 'T0099'. Overrides --collection.",
+    )
+    pcb.add_argument("--limit", type=int, default=20)
+    pcb.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
+    pcb.set_defaults(func=_handle_search_chinese)
+
+    p84 = sub.add_parser(
+        "search-84000",
+        help="Case-insensitive paragraph search across the local 84000 translations "
+        "of the Tibetan canon (English).",
+    )
+    p84.add_argument("query")
+    p84.add_argument(
+        "--toh",
+        default=None,
+        help="Limit to one Tohoku number, e.g. '297' ('1' also matches toh1-1, toh1-2, …).",
+    )
+    p84.add_argument("--limit", type=int, default=20)
+    p84.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
+    p84.set_defaults(func=_handle_search_84000)
 
     poa = sub.add_parser(
         "search-openalex",

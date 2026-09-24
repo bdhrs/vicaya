@@ -22,6 +22,8 @@ Each source is optional — if the tool or path isn't configured it is silently 
 | **Pāḷi canon** | Local SQLite DB — CST text, translations, commentaries |
 | **Library folders** | One or more document trees (including Calibre libraries) indexed into a local SQLite FTS database; Calibre metadata (author, tags) is auto-detected and included |
 | **Sanskrit (GRETIL)** | Local clone of the GRETIL corpus — Vedic, Epic, Upaniṣadic, and philosophical Sanskrit texts in IAST plain text |
+| **Chinese canon (CBETA)** | Local clone of the CBETA TEI XML — the Taishō (Āgamas, Mahāyāna sūtras, Abhidharma, commentaries) and other collections, searched with Taishō line references |
+| **Tibetan canon (84000)** | Local clone of the 84000 English translations of the Kangyur and Tengyur — what Tibetan-canon texts say on a topic, with translator and reader link |
 | **YouTube** | Dhamma talks and sutta studies via a curated channel allowlist |
 | **Web** | General search and page fetch |
 | **Cross-check** | Second model (via `VICAYA_CROSS_CHECK_CHAIN`) reviews the draft before the note is written |
@@ -85,6 +87,7 @@ Each source is optional — if the tool or path isn't configured it is silently 
 5. (Optional) Download the databases and clone the GRETIL corpus — see
    [Getting the databases](#getting-the-databases) and
    [Getting the GRETIL corpus](#getting-the-gretil-corpus) below.
+   For other schools' canons, also see [Getting the CBETA canon](#getting-the-cbeta-canon) and [Getting the 84000 translations](#getting-the-84000-translations).
 
 6. Run `/vicaya <a question>` in Claude Code, OpenCode, or `agy`.
 
@@ -131,6 +134,26 @@ is a plain-text mirror maintained by Dominik Wujastyk at
 [github.com/wujastyk/GRETIL-mirror](https://github.com/wujastyk/GRETIL-mirror);
 the canonical upstream is the Göttingen Register of Electronic Texts in Indian Languages
 (gretil.sub.uni-goettingen.de).
+
+### Getting the CBETA canon
+
+The CBETA Chinese canon is a shallow `git clone` of about 2.6 GB (about 16 minutes); skip it if you do not need Chinese canon search:
+
+```bash
+git clone --depth 1 https://github.com/cbeta-org/xml-p5.git ~/MyFiles/2_Resources/cbeta
+```
+
+Set `VICAYA_CBETA_PATH` in `.env` to match the clone destination. `search-chinese` reads the TEI XML directly on several cores, so there is no build step; `git pull` in the clone picks up new CBETA releases. The texts are published by the Chinese Buddhist Electronic Text Association ([cbeta.org](https://www.cbeta.org)) under CC BY-NC; quote with attribution.
+
+### Getting the 84000 translations
+
+The 84000 English translations of the Tibetan canon are a shallow `git clone` of about 250 MB:
+
+```bash
+git clone --depth 1 https://github.com/84000/data-tei.git ~/MyFiles/2_Resources/84000
+```
+
+Set `VICAYA_84000_PATH` in `.env` to match the clone destination. `search-84000` reads the published translations (`translations/kangyur/translations/` and `translations/tengyur/publications/`) and skips the placeholder stubs. The translations are published by 84000: Translating the Words of the Buddha ([84000.co](https://84000.co)) under CC BY-NC-ND 3.0; quote with attribution.
 
 ### Library folders search
 
@@ -326,6 +349,12 @@ find ~ -maxdepth 8 -name "dpd.db" 2>/dev/null | head -3
 # GRETIL corpus — check if already cloned
 find ~ -maxdepth 6 -name "gretil.html" 2>/dev/null | head -3
 
+# CBETA Chinese canon — check if already cloned (prints the Saṃyuktāgama file)
+find ~ -maxdepth 8 -name "T02n0099.xml" 2>/dev/null | head -3
+
+# 84000 translations — check if already cloned
+find ~ -maxdepth 8 -path "*/translations/kangyur/translations" -type d 2>/dev/null | head -3
+
 # EBC vault — Early Buddhist Connections (read-only reference vault)
 find ~ -maxdepth 6 -name "early-buddhist-connections" -type d 2>/dev/null | head -3
 
@@ -376,6 +405,16 @@ find ~ -maxdepth 8 -path "*/dpd-db/resources/sc-data" -type d 2>/dev/null | head
   ```
   Set `VICAYA_GRETIL_PATH=<repo>/resources/gretil`.
 
+**CBETA canon and 84000 translations — choose one each (2.6 GB and 250 MB; skip if other schools' canons are not needed):**
+
+- **Found on disk** → `VICAYA_CBETA_PATH` is the folder three levels above `T02n0099.xml` (the one holding `T/`); `VICAYA_84000_PATH` is the folder three levels above `translations/kangyur/translations`.
+- **Not found** → clone into `~/MyFiles/2_Resources/` if it exists, else into `resources/` (gitignored):
+  ```bash
+  git clone --depth 1 https://github.com/cbeta-org/xml-p5.git ~/MyFiles/2_Resources/cbeta
+  git clone --depth 1 https://github.com/84000/data-tei.git ~/MyFiles/2_Resources/84000
+  ```
+  Set `VICAYA_CBETA_PATH` and `VICAYA_84000_PATH` to the clone folders.
+
 **EBC vault — choose one:**
 
 - **Found on disk** → use the directory returned by `find` as `VICAYA_EBC_VAULT_PATH`.
@@ -422,6 +461,10 @@ VICAYA_CANON_DB=
 VICAYA_DPD_DB=
 # Use path found in step 2, or ~/MyFiles/2_Resources/gretil or <repo>/resources/gretil
 VICAYA_GRETIL_PATH=
+# Use path found in step 2, or ~/MyFiles/2_Resources/cbeta or <repo>/resources/cbeta
+VICAYA_CBETA_PATH=
+# Use path found in step 2, or ~/MyFiles/2_Resources/84000 or <repo>/resources/84000
+VICAYA_84000_PATH=
 # Use path found in step 2, or <repo>/resources/early-buddhist-connections if cloned there
 VICAYA_EBC_VAULT_PATH=
 # Use path found in step 2 (inside dpd-db), or <repo>/resources/sc-data if cloned there

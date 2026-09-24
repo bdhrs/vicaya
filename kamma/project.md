@@ -6,7 +6,8 @@ invoked as `/vicaya <question>` inside Claude Code (or any agent that reads
 a Markdown skill file). It queries the user's Obsidian vault, a local CST
 canon SQLite database, the Early
 Buddhist Connections (EBC) reference vault, their library folders, a local
-GRETIL Sanskrit corpus, YouTube Dhamma talks, and the open web — in that order
+GRETIL Sanskrit corpus, local clones of the CBETA Chinese canon and the 84000
+English translations of the Tibetan canon, YouTube Dhamma talks, and the open web — in that order
 — cross-checks the synthesis with a second model, and writes a single
 structured Markdown note into the vault. The goal is to make deep Pāḷi research
 fast, citation-complete, and cumulative.

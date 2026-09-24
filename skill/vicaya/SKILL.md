@@ -139,11 +139,13 @@ Subcommands (each prints JSON to stdout):
 | `get-ebc-overview SUTTA_CODE` | — | Parsed EBC overview card: PTS ref, titles, themes, training, formula, **named Āgama parallels**, partial parallels. Accepts `MN10`, `mn 10`, `mn-10`, `DN22`, `MA98`, etc. Returns `EBCOverview` JSON or exits 1 if missing. |
 | `get-agama SUTTA_CODE` | `--max N` | **Always call this immediately after `get-ebc-overview`.** Resolves every code in `parallels_agama`, reads the Patton (preferred) or BDK translation file, and returns the full text in `parallels_found`. Codes with no file on disk appear in `parallels_missing` — never silently dropped. Default max 5. |
 | `search-ebc QUERY` | `--folder PATH` `--limit N` | Fixed-string grep across the EBC vault (markdown only). Returns `VaultHit`s. `--folder` accepts a subdir like `+Suttas/Overviews Suttas/MN` or `+Vinaya/Patimokkha/bmc1`. |
-| `sc-parallels CITATION` | `--no-text` | Look up parallels for a citation (e.g. `mn18`, `sn35.28`) in the offline SuttaCentral archive. Returns `SCParallel` objects: `ref`, `resemblance` (bool, `~` prefix), `paragraph_range`, `text_pali`, `text_lzh`, `text_san`, `text_pra`, `translation_en`, `text_gaps` (list — explicit when text isn't in the partial archive). Parallel *identification* is comprehensive; text retrieval is best-effort. |
-| `sc-search QUERY` | `--lang pli\|lzh\|san\|pra\|en` `--limit N` | Fixed-string grep across SuttaCentral offline root texts in one language. `lzh` = Literary Chinese Āgamas. Returns `VaultHit`s with the matched JSON segment. |
+| `sc-parallels CITATION` | `--no-text` | Look up parallels for a citation (e.g. `mn18`, `sn35.28`) in the offline SuttaCentral archive. Returns `SCParallel` objects: `ref`, `resemblance` (bool, `~` prefix), `paragraph_range`, `text_pali`, `text_lzh`, `text_san`, `text_pra`, `translation_en`, `text_gaps` (list — explicit when text isn't in the archive). Chinese Āgama text (`text_lzh`) is found for nearly every Āgama parallel and carries inline Taishō line markers like `[0120a01]` (each opens that line) — cite a quote to the marker before it. Parallel *identification* is comprehensive; text retrieval is best-effort. |
+| `sc-search QUERY` | `--lang pli\|lzh\|san\|pra\|en` `--limit N` | Fixed-string grep across SuttaCentral offline root texts in one language. `lzh` covers only 66 bilara-format Chinese files — **to search Chinese, use `search-chinese`**. Returns `VaultHit`s with the matched JSON segment. |
+| `search-chinese QUERY` | `--collection T\|X\|J\|…\|all` `--text T0099` `--limit N` | Fixed-string search across the local CBETA Chinese canon (default: the Taishō). Phrases match across Taishō line breaks. Returns `{query, total_hits, total_texts, by_text, hits}` — read `by_text` (the 50 texts with most matches, most first; `total_texts` counts them all) before the snippets, then re-run with `--text` on the texts that matter. `--text` accepts loose ids (`T99`, `t0099`). Whitespace in the query is ignored. An unknown collection, a text id that matches nothing, or an empty query exits 1 with an `error` — never a fake zero. Empty result when `VICAYA_CBETA_PATH` is blank or the clone is missing. About 3 s for the Taishō, 7 s for `--collection all`. |
+| `search-84000 QUERY` | `--toh N` `--limit N` | Case-insensitive paragraph search across the local 84000 English translations of the Tibetan canon (Kangyur + published Tengyur). Same `{query, total_hits, total_texts, by_text, hits}` shape. `--toh` takes the id as 84000 writes it, chapter ids included (`--toh 44-31`); `--toh 1` also matches every chapter file `toh1-1`, `toh1-2`, …. Each hit has a `section`: `body` is the translation; `front` (summary, introduction) and `back` (bibliography) are the translator's own words — never quote those as canon. Empty result when `VICAYA_84000_PATH` is blank or the clone is missing. About 3 s. |
 | `search-openalex QUERY` | `--also TERM` (repeatable) `--limit N` | Search the OpenAlex scholarly index (journal articles, chapters, monographs) over every spelling variant of one term and merge. Queries title+abstract, never free text. The ASCII fold of your query is added automatically; pass the Sanskrit cognate, hyphenated form and English gloss with `--also` — those cannot be derived. Returns `ScholarHit`s with a reconstructed abstract, DOI, venue and OA flag. **Metadata and abstracts, not full text.** Raises a named error on any transport or parse failure — an empty list always means zero hits, never a broken query. |
 
-Parse the JSON with `jq` or read it as a file. Only fall back to `uv run python -c "..."` if you genuinely need to combine helpers in one step — and if so, write a short `.py` script under repo-local `temp/` and run that, rather than a heredoc.
+Parse the JSON with `jq` or read it as a file. Only fall back to `uv run python -c "..."` if you genuinely need to combine helpers in one step — and if so, write a short `.py` script under repo-local `temp/` and run that, rather than a heredoc. Such a script must put its calls under `if __name__ == "__main__":` — `search_chinese` starts worker processes that re-run an unguarded script (it then falls back to one core and prints worker errors).
 
 ## Helper return shapes (read before calling)
 
@@ -155,6 +157,8 @@ Every helper returns dataclasses serialised to JSON by the CLI. Field names are 
 - **Library folders hit**: plain dict with `document_id`, `title`, `relative_path`, `source_path`, `extension`, `snippet`, `extraction_status`, `duplicate_count`, `duplicate_paths`, `possible_duplicate_of`, and `source_available` (`true` = the file is on disk; `false` = it is genuinely missing; `null` = its volume could not be reached, so presence is unknown — the index still has the extracted text, and the fix is to mount the drive, not to treat the book as lost).
 - **YouTubeHit**: `video_id` (str), `title` (str), `channel` (str), `channel_id` (str), `duration` (float | null, seconds), `url` (str), `tier` (str — `trusted` | `probationary`; `excluded` never appears here, those are filtered out).
 - **YouTubeTranscript**: `video_id` (str), `lang` (str, e.g. `"en"`), `is_auto` (bool — **true means Pāḷi terms are unreliable; paraphrase, don't quote**), `segments` (list of `{start, duration, text}`), `fetched` (ISO date).
+- **search-chinese result** (plain dict): `query`, `total_hits` (int, all matches), `total_texts` (int, all matching texts), `by_text` (list of `{id, title, count}`, at most 50, most matches first — `id` like `T0099`, suffix letters kept as in `T0128a`), `hits` (list of `{id, title, vol, line, snippet}` — `vol` is the volume, e.g. `T02`; `line` is the Taishō page-line the match starts on, e.g. `0120a05`).
+- **search-84000 result** (plain dict): `query`, `total_hits` (int, matching paragraphs), `total_texts` (int), `by_text` (list of `{toh, title, count}`, at most 50 — `toh` may list several numbers, `"540,1078"`), `hits` (list of `{toh, title, translator, section, snippet, url}` — `section` is `body`, `front` or `back`; `snippet` is a window around the match; `url` is the 84000 reader page).
 - **EBCOverview**: `code` (str), `path` (str — absolute path to the overview file), `pts` (str, e.g. `"M i 55"`), `titles` (list — Pāḷi + English), `nikaya` (list), `chapter` (list), `themes` (list), `topics` (list), `training` (list), `formula` (list), `audience` (list), `teacher` (list), `parallels_agama` (list of bare codes, e.g. `["MA98", "EA12.1"]`), `parallels_partial` (list).
 
 ## Book-identifier lookups (`lookup-book`)
@@ -676,10 +680,14 @@ Nikāya material has at least partial parallels).
 *Where to search:*
 - **`sc-parallels <uid>`** (offline SuttaCentral archive) — first call for any
   Pāḷi sutta. Returns the full parallel list from `parallels.json` (comprehensive)
-  plus text and English translation where the partial archive has them. `text_gaps`
+  plus text and English translation where the archive has them. `text_gaps`
   explicitly flags missing texts rather than silently returning empty — log these
-  as known gaps in Critical Gaps. The partial archive covers SA well, MA partially
-  (~15 suttas), EA minimally — `text_gaps` will tell you.
+  as known gaps in Critical Gaps. Chinese text covers nearly every SA, MA, EA and DA
+  parallel, with inline Taishō line markers (`[0120a01]`); English translations of
+  the Āgamas are rare, so expect an "no en translation" gap there.
+- **`search-chinese <term> --text T<N>`** / **`search-84000 <term> --toh <N>`** — for a
+  Taishō (`t<N>`) or Derge (`d<N>`) parallel that `sc-parallels` lists without text,
+  search inside that one text.
 - **EBC vault** (`get-ebc-overview <code>` then `get-agama <code>`) — always call
   both. `get-agama` returns the full Patton or BDK translation text for each named
   Āgama parallel; `parallels_missing` lists codes with no file available.
@@ -874,9 +882,10 @@ Buddhist Studies*.
 *Applies to:* questions explicitly about school divergence, EBT critical history,
 doctrinal development, or transmission — cases where the Pāḷi alone gives a
 one-school picture and parallel recensions materially change the analysis.
+Also applies to any question asking **what other schools or traditions say** about a topic.
 *Where to search:*
 - `sc-parallels <uid>` for any anchoring Pāḷi sutta — see angle 2 for detail.
-- `sc-search <term> --lang lzh` to grep the offline Chinese Āgama root texts directly.
+- **Phase 3b other-canon searches:** `search-84000` (Tibetan canon, English), `search-chinese` (whole Chinese canon, Āgamas included), `search-sanskrit` (GRETIL). See Phase 3b for order and citation formats.
 - `sc-search <term> --lang san` / `--lang pra` for Sanskrit/Prakrit fragments.
 - EBC vault `Agamas Dhamma pearls/` (Patton translations) and `Agamas BDK/` (BDK translations).
 - Library folders — search "Analayo", "Bingenheimer" (SA), "Choong" (EA), tags `Comparative Studies`, `Chinese Canon (Tripitaka)`.
@@ -1018,7 +1027,7 @@ The only datum each prompt must carry is the **scratch slug** — `uv run tools/
 
 1. **Pin `VICAYA_PHASE=<PHASE>` inline on EVERY helper call, no exceptions.** This is not advisory and it is not the same as exporting it once — `export` does not survive between Bash calls, and even if it did, the shared per-run active-phase pointer moves the instant any phase (yours or a sibling's) gates, so relying on it is a race (issue #55: it has scrambled which phase auto-logged content lands under, and once caused `scratch-gate` to refuse with "no logged evidence"). Prefix every single `search-*`/`sc-*`/`get-*`/`fetch-*` call: `VICAYA_PHASE=<PHASE> uv run tools/research_sources.py search-canon ... --quiet`. An unpinned call is visible after the fact as a `phase-source: run-pointer` line in the scratch — there should be none inside a phase sub-agent's own log entries.
 2. **Read only the briefing, never the dossier — and work to the briefing's `Target:` line.** Read the Phase 0/1 briefing block at the TOP of the scratch (question, angle triage, perspective map, seeds, target, falsifier) — never the accumulating evidence blocks below it. Auto-log already persists every hit; re-reading them is what fills the context. The `Target:` line names the evidence that would answer the question: it is this phase's stop condition too. Gather what the target names, cap whole-range pulls at the number you decided before starting (see the ceiling in Phase 2), and stop — a phase that returns more than the target asked for costs the orchestrator the context the target exists to protect.
-3. **Pass `--quiet` on every search helper call** (`search-canon`, `search-library-folders`, `search-ebc`, `search-sanskrit`, `search-openalex`, `sc-parallels`, `sc-search`, `get-agama`). The full result still goes to the scratch dossier; only the agent's stdout is compacted to a snippet — that compaction is what keeps the agent's context from filling. (The dossier and the synthesised note are unaffected: full text always lands in the scratch.) The lookup helpers (`resolve-citation`, `lookup-book`, `verify-citation`, `fetch-transcript`) accept `--quiet` too, so a uniform prefixed call template never errors on it.
+3. **Pass `--quiet` on every search helper call** (`search-canon`, `search-library-folders`, `search-ebc`, `search-sanskrit`, `search-chinese`, `search-84000`, `search-openalex`, `sc-parallels`, `sc-search`, `get-agama`). The full result still goes to the scratch dossier; only the agent's stdout is compacted to a snippet — that compaction is what keeps the agent's context from filling. (The dossier and the synthesised note are unaffected: full text always lands in the scratch.) The lookup helpers (`resolve-citation`, `lookup-book`, `verify-citation`, `fetch-transcript`) accept `--quiet` too, so a uniform prefixed call template never errors on it.
 4. **Read only the SKILL sections for its one phase** (table below), plus the shared preamble.
 5. **Every citation in the agent's final mapping/summary must copy the human ref verbatim from a `resolve-citation` call in its own log — never from memory of which sutta a hit "was in".** An agent that summarises from its recollection of hit context will misattribute (issue #90: two DN refs labelled one sutta off in a single consolidated mapping — nivātavutti filed under DN33 when it is DN31, asantuṭṭhitā under DN34 when it is DN33). If a ref was never resolved, resolve it before writing it down, or write the raw `book_code:paranum` and say so.
 6. **Your assignment ends at your own output — finishing the run is never your job.** Do not read, modify, or delete any file another agent owns (sibling batch outputs, shared tooling); do not synthesize, run Phase 5/6/7 work, write to the vault, publish, or run `git` — regardless of how finished or unfinished the rest of the run looks. Sibling files appearing is the fan-out working, not work waiting for you (issue #93: a batch-worker fork inferred from sibling outputs that it should finish the run, executed synthesis through git publish unsupervised, and its cleanup deleted two siblings' unread work).
@@ -1034,7 +1043,7 @@ The only datum each prompt must carry is the **scratch slug** — `uv run tools/
 | 2 | `### Phase 2 — Canon search` (incl. the EBC parallel-evidence pull subsection), `## Book-identifier lookups`, the book-code map |
 | 2.5 | `### Phase 2.5 — SuttaCentral offline parallel search` |
 | 3 | `### Phase 3 — Library search` |
-| 3b | `### Phase 3b — Sanskrit source search` |
+| 3b | `### Phase 3b — Other canons (Sanskrit, Chinese, Tibetan)` |
 | 4a | `### Phase 4a — Web search`, `## EBC vault` |
 | 4b | `### Phase 4b — YouTube search` |
 | 4c | `### Phase 4c — WisdomLib` |
@@ -1460,7 +1469,7 @@ Suttas that `parallels.json` stores under a range uid (e.g. `sn12.1-2`) resolve 
 For comparative/Āgama-focused questions, search the Chinese Āgama root texts directly:
 
 ```bash
-uv run tools/research_sources.py sc-search "<term>" --lang lzh --limit 20
+uv run tools/research_sources.py search-chinese "<chinese-term>" --limit 20
 uv run tools/research_sources.py sc-search "<term>" --lang san --limit 20
 ```
 
@@ -1594,21 +1603,42 @@ but the original source tree is unavailable.
 
 → **Phase 3 exit:** `scratch-gate 3`.
 
-### Phase 3b — Sanskrit source search
+### Phase 3b — Other canons (Sanskrit, Chinese, Tibetan)
 
-**Skip this phase** unless angle 7 was marked applicable in Phase 1, or unless `VICAYA_GRETIL_PATH` is configured (check with `grep '^VICAYA_GRETIL_PATH=' .env` — the variable is not set in your shell).
+**Run this phase** when angle 7 or angle 16 was marked applicable in Phase 1, or when the question asks what other schools or traditions say about the topic. Each corpus is optional: check which are configured with `grep -E '^VICAYA_(GRETIL|CBETA|84000)_PATH=' .env` (the variables are not set in your shell). An unconfigured corpus returns an empty result — note it as a gap and move on.
 
-**On a thematic run, the gate auto-skips but the work does not.** `scratch-gate 3b` is written automatically for thematic runs — this only means the gate won't block Phase 4; it does not mean the Sanskrit search can be omitted. If angle 7 is applicable, run `search-sanskrit` and log the hits before moving on. The auto-skip is written when a *later* phase gates — don't call `scratch-gate 3b` (or `2.5`) explicitly on a thematic run; an explicit call demands logged evidence like any content gate.
+**On a thematic run, the gate auto-skips but the work does not.** `scratch-gate 3b` is written automatically for thematic runs — this only means the gate won't block Phase 4; it does not mean these searches can be omitted. If angle 7 or 16 is applicable, run the searches below and log the hits before moving on. The auto-skip is written when a *later* phase gates — don't call `scratch-gate 3b` (or `2.5`) explicitly on a thematic run; an explicit call demands logged evidence like any content gate.
 
-**Sutta-anchored runs do not auto-skip this gate.** When angle 7 was triaged not-applicable on a sutta-anchored run, the gate still requires a logged entry — record the N/A explicitly, then gate (same recipe for Phase 2.5):
+**Sutta-anchored runs do not auto-skip this gate.** When angles 7 and 16 were both triaged not-applicable on a sutta-anchored run, the gate still requires a logged entry — record the N/A explicitly, then gate (same recipe for Phase 2.5):
 
 ```bash
-uv run tools/research_sources.py scratch-log 3b note angle-7-not-applicable \
+uv run tools/research_sources.py scratch-log 3b note other-canons-not-applicable \
   --summary "Not applicable: <one-line reason from the Phase 1 triage>"
 uv run tools/research_sources.py scratch-gate 3b
 ```
 
-Search the local GRETIL corpus for IAST terms or transliterated Sanskrit relevant to the question:
+**Search order:** 84000 first (English, so the question's own terms work), then CBETA (needs Chinese terms), then GRETIL (Sanskrit). For each, **read `by_text` before the snippets**: common terms return thousands of hits, and the per-text counts show which texts treat the topic at length. Re-run with `--toh` / `--text` on the few texts that matter and quote from those.
+
+**Tibetan canon (84000, English translations):**
+
+```bash
+uv run tools/research_sources.py search-84000 "four immeasurables" --limit 20
+uv run tools/research_sources.py search-84000 "immeasurable" --toh 10 --limit 20
+```
+
+The search is an exact, case-insensitive substring, so **search the stem, not the plural**: on 2026-09-24 "four immeasurables" found 88 paragraphs but "four immeasurable" found 333 — the two largest Perfection of Wisdom sūtras (Toh 8 and 9) say "four immeasurable attitudes" in 204 paragraphs. Punctuation counts too: "love, compassion, joy, and equanimity" found 29, the same list without the serial comma 0. 84000 translators do not share one glossary (Braarvig renders *maitrī* as "friendliness" in Toh 175, so "love" misses it). Before searching inside a text with `--toh`, read one of its hits and reuse that translator's own wording. 84000 is itself a published translation, so its `body` hits may be quoted; `front` and `back` hits are the translator's introduction or apparatus — cite them as the translator's view (T3), not as canon. **Citation format:** `Toh <toh>, *<title>*, trans. <translator>, 84000`, with `<toh>` exactly as the hit gives it (e.g. `Toh 44-31` for a chapter), and the reader link — e.g. *Toh 297, Multitude of Constituents, trans. Zsuzsa Majer, 84000* (https://84000.co/translation/toh297). Evidence tier: **T1a** only for a Kangyur text that is an EBT parallel (e.g. Toh 297 for MN 115); **T1b** for other Kangyur sūtras and tantras (canonical, later strata — name the tradition); **T2** for Tengyur treatises.
+
+**Chinese canon (CBETA):**
+
+```bash
+uv run tools/research_sources.py search-chinese "四無量" --limit 20
+uv run tools/research_sources.py search-chinese "四無量" --text T0001 --limit 20
+uv run tools/research_sources.py search-chinese "四無量" --collection all --limit 20
+```
+
+The default scope is the Taishō; `--collection all` adds the other CBETA collections (slower, about 7 s). **Chinese terms:** DPD holds no Chinese. Take the term from the Āgama parallel's own text (`sc-parallels` returns it — e.g. SA 470 shows 受 for *vedanā*), from WisdomLib or the web, or from your own knowledge, and log which source you used. Search the shortest distinctive form and a common variant (e.g. `涅槃` and `泥洹`). **Citation format:** `T <N> (<title>), <vol> p. <line>, CBETA`, with `vol` and `line` from the hit — e.g. *T 99 (雜阿含經), T02 p. 0120a05, CBETA*. Quoting Chinese follows the angle 16 hard rule: quote only a published translation, otherwise paraphrase and label "(no published translation; summary from Chinese source)". Evidence tier: **T1a** for the Āgamas (T 1–151); **T1b** for other sūtras and Vinaya (canonical, later strata — name the tradition); **T2** for treatises and commentaries (e.g. T 1851 大乘義章).
+
+**Sanskrit (GRETIL):** search the local GRETIL corpus for IAST terms or transliterated Sanskrit relevant to the question:
 
 ```bash
 uv run tools/research_sources.py search-sanskrit "<iast-term>" --limit 20

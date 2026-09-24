@@ -36,3 +36,6 @@ complement the global rules and the canonical `/vicaya` workflow in
 - A candidate must never score itself, and figures from different sample slices or administrations do not belong in the same table — least of all selecting a committed threshold.
 - When a zero (zero failures, zero stalls) justifies deleting a safeguard, state the confidence interval. 0/20 has a 95% upper bound of 16%.
 - Before writing a mitigation, check the thing it depends on still exists after the change it is meant to survive.
+
+## Research Dossiers
+- Helper calls auto-log into whichever research run is active, found through a shared state file. While any /vicaya run is live, even one run by another agent, prefix side calls to `tools/research_sources.py` and any pytest run with `VICAYA_SCRATCH=/dev/null/none`, or they land in that run's dossier.

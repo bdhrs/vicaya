@@ -602,6 +602,354 @@ class TestSearchSanskrit:
             assert h.snippet
 
 
+# ---------- search_chinese (CBETA) ----------
+
+
+def _cbeta_file(root: Path, rel: str, title: str, body: str, chars: str = "") -> None:
+    """Write a minimal CBETA TEI file shaped like the real xml-p5 layout."""
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader><fileDesc><titleStmt>'
+        f'<title level="m" xml:lang="zh-Hant">{title}</title>'
+        "</titleStmt></fileDesc>"
+        f"<encodingDesc><charDecl>{chars}</charDecl></encodingDesc></teiHeader>"
+        f"<text><body>{body}</body></text></TEI>",
+        encoding="utf-8",
+    )
+
+
+@pytest.fixture
+def cbeta_root(tmp_path):
+    root = tmp_path / "cbeta"
+    _cbeta_file(
+        root,
+        "T/T02/T02n0099.xml",
+        "雜阿含經",
+        '<lb n="0120a05" ed="T"/><p>愚癡無聞凡夫身觸\n'
+        '<lb n="0120a06" ed="T"/>生諸受，苦痛逼迫。</p>'
+        '<lb n="0120a07" ed="T"/><p>比丘<note place="inline">校勘記涅槃</note>'
+        "<app><lem>正</lem><rdg>異讀涅槃</rdg></app>觀"
+        '<g ref="#CB00145">\U000f0091</g>字<g ref="#CB00166">傭</g>。</p>'
+        '<!-- <anchor xml:id="x1"/>校注涅槃 -->',
+        chars=(
+            '<char xml:id="CB00145"><charProp><localName>composition</localName>'
+            '<value>[少/兔]</value></charProp><mapping type="unicode">U+3779</mapping></char>'
+            '<char xml:id="CB00166"><charProp><localName>normalized form</localName>'
+            "<value>傭</value></charProp></char>"
+        ),
+    )
+    for vol, part in (("T05", "第1卷-第200卷"), ("T06", "第201卷-第400卷")):
+        _cbeta_file(
+            root,
+            f"T/{vol}/{vol}n0220.xml",
+            f"大般若波羅蜜多經({part})",
+            '<lb n="0001a01" ed="T"/><p>涅槃涅槃</p>',
+        )
+    return root
+
+
+class TestSearchChinese:
+    def test_returns_empty_when_unconfigured(self, tmp_path):
+        from tools.research_sources import search_chinese
+
+        result = search_chinese("涅槃", path=tmp_path / "nonexistent")
+        assert result == {
+            "query": "涅槃",
+            "total_hits": 0,
+            "total_texts": 0,
+            "by_text": [],
+            "hits": [],
+        }
+
+    def test_phrase_across_line_break_reports_start_line(self, cbeta_root):
+        from tools.research_sources import search_chinese
+
+        result = search_chinese("凡夫身觸生諸受", path=cbeta_root)
+        assert result["total_hits"] == 1
+        assert result["hits"][0]["id"] == "T0099"
+        assert result["hits"][0]["vol"] == "T02"
+        assert result["hits"][0]["line"] == "0120a05"
+
+    def test_notes_and_variant_readings_are_not_matched(self, cbeta_root):
+        from tools.research_sources import search_chinese
+
+        result = search_chinese("涅槃", text="T0099", path=cbeta_root)
+        assert result["total_hits"] == 0
+
+    def test_gaiji_resolves_through_chardecl(self, cbeta_root):
+        from tools.research_sources import search_chinese
+
+        # Real files write <g ref="#CB…">glyph</g>; the whole element must
+        # become one character, not mapping + glyph.
+        assert search_chinese("㝹字傭。", path=cbeta_root)["total_hits"] == 1
+        assert search_chinese("傭傭", path=cbeta_root)["total_hits"] == 0
+
+    def test_siddham_syllables_do_not_split_chinese_dharani(self, tmp_path):
+        from tools.research_sources import search_chinese
+
+        # A romanised Sanskrit line splits the Chinese as surely as Siddham.
+        syllable = (
+            '<cb:tt><cb:t xml:lang="san-tr">ta</cb:t>'
+            '<cb:t xml:lang="zh-Hant">{}</cb:t></cb:tt>'
+        )
+        _cbeta_file(
+            tmp_path,
+            "T/T07/T07n0220.xml",
+            "大般若波羅蜜多經",
+            '<lb n="1110a26" ed="T"/><p>'
+            + "".join(syllable.format(c) for c in "怛儞也他")
+            + "</p>"
+            '<p xml:lang="sa-Sidd"><g ref="#SD-A557">\U00104557</g><g ref="#SD-DA4A">'
+            "\U00107a4a</g></p><p>唵娑婆訶</p>",
+        )
+        assert search_chinese("怛儞也他", path=tmp_path)["total_hits"] == 1
+        # Whole Siddham paragraphs leave no glyphs in the snippet.
+        snippet = search_chinese("唵娑婆訶", path=tmp_path)["hits"][0]["snippet"]
+        assert "\U00104557" not in snippet
+
+    def test_xml_comments_are_not_searched(self, cbeta_root):
+        from tools.research_sources import search_chinese
+
+        assert search_chinese("校注", path=cbeta_root)["total_hits"] == 0
+
+    def test_foreign_edition_line_breaks_do_not_number_lines(self, tmp_path):
+        from tools.research_sources import search_chinese
+
+        _cbeta_file(
+            tmp_path,
+            "X/X01/X01n0005.xml",
+            "某經",
+            '<lb n="0001a01" ed="X"/><p>前文</p><lb n="0710b09" ed="R150"/><p>涅槃在此</p>'
+            '<lb n="0001a02" ed="X"/><p>後文</p>',
+        )
+        hit = search_chinese("涅槃", collection="X", path=tmp_path)["hits"][0]
+        assert (hit["vol"], hit["line"]) == ("X01", "0001a01")
+
+    def test_loose_ids_and_whitespace_are_normalised(self, cbeta_root):
+        from tools.research_sources import search_chinese
+
+        for tid in ("T99", "t99", "t0099"):
+            assert (
+                search_chinese("凡夫身觸", text=tid, path=cbeta_root)["total_hits"] == 1
+            )
+        assert search_chinese("凡夫 身觸", path=cbeta_root)["total_hits"] == 1
+        assert (
+            search_chinese("涅槃", collection="t", path=cbeta_root)["total_hits"] == 4
+        )
+
+    def test_bad_input_raises_instead_of_zero_hits(self, cbeta_root):
+        from tools.research_sources import search_chinese
+
+        with pytest.raises(ValueError):
+            search_chinese("涅槃", collection="Q", path=cbeta_root)
+        with pytest.raises(ValueError):
+            search_chinese("涅槃", collection="/", path=cbeta_root)
+        with pytest.raises(ValueError):
+            search_chinese("涅槃", text="T9999", path=cbeta_root)
+        with pytest.raises(ValueError):
+            search_chinese("  ", path=cbeta_root)
+
+    def test_text_limits_scope_and_merges_split_text(self, cbeta_root):
+        from tools.research_sources import search_chinese
+
+        result = search_chinese("涅槃", text="T0220", path=cbeta_root)
+        assert result["by_text"] == [
+            {"id": "T0220", "title": "大般若波羅蜜多經", "count": 4}
+        ]
+        assert {h["id"] for h in result["hits"]} == {"T0220"}
+        # Hits use the merged title too, not the per-volume one.
+        assert {h["title"] for h in result["hits"]} == {"大般若波羅蜜多經"}
+
+    def test_by_text_is_capped_but_total_texts_counts_all(
+        self, cbeta_root, monkeypatch
+    ):
+        import tools.research_sources as rs
+
+        _cbeta_file(
+            cbeta_root,
+            "T/T01/T01n0001.xml",
+            "長阿含經",
+            '<lb n="0001a01" ed="T"/><p>涅槃</p>',
+        )
+        monkeypatch.setattr(rs, "_BY_TEXT_MAX", 1)
+        result = rs.search_chinese("涅槃", path=cbeta_root)
+        assert result["total_texts"] == 2
+        assert [t["id"] for t in result["by_text"]] == ["T0220"]
+
+    def test_by_text_sorted_by_count(self, cbeta_root):
+        from tools.research_sources import search_chinese
+
+        _cbeta_file(
+            cbeta_root,
+            "T/T01/T01n0001.xml",
+            "長阿含經",
+            '<lb n="0001a01" ed="T"/><p>涅槃</p>',
+        )
+        result = search_chinese("涅槃", path=cbeta_root)
+        assert [t["id"] for t in result["by_text"]] == ["T0220", "T0001"]
+        assert result["total_hits"] == 5
+
+
+# ---------- search_84000 ----------
+
+
+def _84000_file(root: Path, rel: str, title: str, body: str, key: str = "") -> None:
+    """Write a minimal 84000 TEI file shaped like the real data-tei layout."""
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    bibl = f'<bibl key="{key}"/>' if key else "<bibl/>"
+    path.write_text(
+        "<TEI><teiHeader><fileDesc><titleStmt>"
+        f'<title type="mainTitle" xml:lang="en">{title}</title>'
+        '<author role="translatorEng">Jane\n   Doe</author>'
+        f"</titleStmt><sourceDesc>{bibl}</sourceDesc></fileDesc></teiHeader>"
+        f"<text><body>{body}</body></text></TEI>",
+        encoding="utf-8",
+    )
+
+
+@pytest.fixture
+def e84000_root(tmp_path):
+    root = tmp_path / "84000"
+    kg = "translations/kangyur/translations"
+    _84000_file(
+        root,
+        f"{kg}/088-035_toh540,1078-the_dharani_surupa.xml",
+        "The Dhāraṇī\n   Surūpa",
+        "<p>The Four Immeasurables are taught.</p>",
+        key="toh540",
+    )
+    _84000_file(
+        root,
+        f"{kg}/043-009_toh72-sutra_of_viradattas_questions.xml",
+        "Vīradatta",
+        "<p>Love and compassion<note>four immeasurables</note>.</p>"
+        "<p>four immeasurables again</p><p>and the four immeasurables once more</p>",
+    )
+    _84000_file(
+        root,
+        "translations/tengyur/publications/093-001_toh3808-long_explanation.xml",
+        "Long Explanation",
+        "<p>the four immeasurables</p>",
+        key="toh3808",
+    )
+    _84000_file(
+        root,
+        "translations/kangyur/placeholders/001-001_toh9999-stub.xml",
+        "Stub",
+        "<p>four immeasurables</p>",
+    )
+    return root
+
+
+class TestSearch84000:
+    def test_self_closing_and_nested_notes_keep_translation_text(self, tmp_path):
+        from tools.research_sources import search_84000
+
+        _84000_file(
+            tmp_path,
+            "translations/kangyur/translations/001-001_toh555-sutra.xml",
+            "Golden Light",
+            '<p>Kings<note index="1" xml:id="n1"/> rule.</p>'
+            "<p>The ministers will be in harmony.</p>"
+            "<p>End<note>outer <note>inner</note> tail replace-me</note>.</p>",
+        )
+        assert (
+            search_84000("ministers will be in harmony", path=tmp_path)["total_hits"]
+            == 1
+        )
+        assert search_84000("replace-me", path=tmp_path)["total_hits"] == 0
+        assert search_84000("tail", path=tmp_path)["total_hits"] == 0
+
+    def test_front_matter_is_labelled_and_snippet_holds_the_match(self, tmp_path):
+        from tools.research_sources import search_84000
+
+        long_para = "x " * 400 + "the four immeasurables here"
+        _84000_file(
+            tmp_path,
+            "translations/kangyur/translations/001-001_toh8-pp.xml",
+            "Hundred Thousand",
+            f"</body><front><p>Summary: four immeasurables.</p></front><body><p>{long_para}</p>"
+            "</body><back><gloss><p>Glossary: the four immeasurables.</p></gloss></back><body>",
+        )
+        hits = search_84000("four immeasurables", toh="Toh 8", path=tmp_path)["hits"]
+        assert [h["section"] for h in hits] == ["front", "body", "back"]
+        assert "four immeasurables" in hits[1]["snippet"]
+
+    def test_empty_query_raises(self, e84000_root):
+        from tools.research_sources import search_84000
+
+        with pytest.raises(ValueError):
+            search_84000("   ", path=e84000_root)
+
+    def test_returns_empty_when_unconfigured(self, tmp_path):
+        from tools.research_sources import search_84000
+
+        result = search_84000("x", path=tmp_path / "nonexistent")
+        assert result == {
+            "query": "x",
+            "total_hits": 0,
+            "total_texts": 0,
+            "by_text": [],
+            "hits": [],
+        }
+
+    def test_counts_paragraphs_skips_notes_and_placeholders(self, e84000_root):
+        from tools.research_sources import search_84000
+
+        result = search_84000("four immeasurables", path=e84000_root)
+        assert result["total_hits"] == 4
+        assert [t["toh"] for t in result["by_text"]] == ["72", "540,1078", "3808"]
+        assert result["by_text"][0]["count"] == 2
+
+    def test_toh_from_filename_and_hit_fields(self, e84000_root):
+        from tools.research_sources import search_84000
+
+        result = search_84000("four immeasurables", toh="1078", path=e84000_root)
+        assert result["total_hits"] == 1
+        hit = result["hits"][0]
+        assert hit["toh"] == "540,1078"
+        assert hit["title"] == "The Dhāraṇī Surūpa"
+        assert hit["translator"] == "Jane Doe"
+        assert hit["url"] == "https://84000.co/translation/toh540"
+
+    def test_file_without_bibl_key_is_found_by_toh(self, e84000_root):
+        from tools.research_sources import search_84000
+
+        result = search_84000("again", toh="72", path=e84000_root)
+        assert result["total_hits"] == 1
+        assert result["hits"][0]["url"] == "https://84000.co/translation/toh72"
+
+    def test_toh_prefix_matches_chapter_files(self, tmp_path):
+        from tools.research_sources import search_84000
+
+        _84000_file(
+            tmp_path,
+            "translations/kangyur/translations/001-001_toh1-1_chapter.xml",
+            "Going Forth",
+            "<p>going forth</p>",
+        )
+        assert search_84000("going", toh="1", path=tmp_path)["total_hits"] == 1
+        assert search_84000("going", toh="11", path=tmp_path)["total_hits"] == 0
+
+    def test_two_files_with_one_toh_share_a_row(self, tmp_path):
+        from tools.research_sources import search_84000
+
+        kg = "translations/kangyur/translations"
+        for name in (
+            "037-007_toh44-45-chapter_45_the_gandhavyuha_sutra",
+            "037-007_toh44-45-chapter_45_the_stem_array",
+        ):
+            _84000_file(tmp_path, f"{kg}/{name}.xml", "The Stem Array", "<p>jewel</p>")
+        result = search_84000("jewel", path=tmp_path)
+        assert result["by_text"] == [
+            {"toh": "44-45", "title": "The Stem Array", "count": 2}
+        ]
+        assert result["total_texts"] == 1
+
+
 @cst_translator_available
 class TestLookupBook:
     EXPECTED_KEYS = {
@@ -1114,6 +1462,81 @@ class TestSCParallels:
         ps_range = sc_parallels("sn12.1-2", sc_root=tmp_path, include_text=False)
         assert {p.ref for p in ps_range} == {"sa298", "ea49.5"}
 
+    @pytest.fixture
+    def lzh_archive(self, tmp_path):
+        import json
+
+        (tmp_path / "relationship").mkdir()
+        (tmp_path / "relationship" / "parallels.json").write_text(
+            json.dumps(
+                [
+                    {"parallels": ["sn36.6", "sa470", "t102"]},
+                    {"parallels": ["mn17", "ma107-108", "sa9"]},
+                ]
+            ),
+            encoding="utf-8",
+        )
+        html_dir = tmp_path / "html_text" / "lzh" / "sutta"
+
+        def page(rel: str, uid: str, body: str) -> None:
+            path = html_dir / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                f"<html><body><article id='{uid}'><header><p>Header</p></header>"
+                f"{body}</article></body></html>",
+                encoding="utf-8",
+            )
+
+        page(
+            "sa/sa401-500/sa470.html",
+            "sa470",
+            "<p>如是我聞：</p><p>一時，佛住王舍城迦蘭陀"
+            "<a class='ref t' id='t0119c29' href='#t0119c29'>T 0119c29</a>竹園。"
+            "<a class='ref t' id='t-juan20' href='#t-juan20'>T -juan20</a></p>"
+            "<footer><p>Taishō Tripiṭaka, CBETA credits</p></footer>",
+        )
+        # Not an Āgama uid: a Taishō text filed under sa-ot.
+        page("sa-ot/t102.html", "t102", "<p>五陰譬喻經</p>")
+        page("ma/ma107.html", "ma107", "<p>一百七</p>")
+        page("ma/ma108.html", "ma108", "<p>一百八</p>")
+        page("sa/sa1-100/sa9.html", "sa9", "<p>html version</p>")
+        bilara = tmp_path / "sc_bilara_data" / "root" / "lzh" / "sct" / "sutta" / "sa"
+        bilara.mkdir(parents=True)
+        (bilara / "sa9_root-lzh-sct.json").write_text(
+            json.dumps({"sa9:1": "bilara version"}), encoding="utf-8"
+        )
+        return tmp_path
+
+    def test_html_only_uid_returns_inline_line_markers(self, lzh_archive):
+        from tools.research_sources import sc_parallels
+
+        by_ref = {p.ref: p for p in sc_parallels("sn36.6", sc_root=lzh_archive)}
+        sa470 = by_ref["sa470"]
+        # The fascicle anchor and the English footer are not Chinese text.
+        assert sa470.text_lzh == "如是我聞：\n一時，佛住王舍城迦蘭陀[0119c29]竹園。"
+        assert "no root text in offline archive" not in sa470.text_gaps
+        # Only Āgama uids fall back to html_text; t102 stays a gap.
+        assert by_ref["t102"].text_lzh == ""
+
+    def test_bilara_wins_and_range_uid_joins_members(self, lzh_archive):
+        from tools.research_sources import sc_parallels
+
+        by_ref = {p.ref: p for p in sc_parallels("mn17", sc_root=lzh_archive)}
+        assert by_ref["sa9"].text_lzh == "bilara version"
+        assert by_ref["ma107-108"].text_lzh == "一百七\n\n一百八"
+
+    def test_uid_with_no_text_keeps_gap(self, lzh_archive):
+        import json
+
+        from tools.research_sources import sc_parallels
+
+        (lzh_archive / "relationship" / "parallels.json").write_text(
+            json.dumps([{"parallels": ["sn1.1", "sa999"]}]), encoding="utf-8"
+        )
+        sa999 = sc_parallels("sn1.1", sc_root=lzh_archive)[0]
+        assert sa999.text_lzh == ""
+        assert "no root text in offline archive" in sa999.text_gaps
+
     @sc_available
     def test_sn12_2_returns_parallels_from_real_archive(self):
         from tools.research_sources import sc_parallels
@@ -1128,15 +1551,21 @@ class TestSCParallels:
     def test_text_gaps_flagged_when_missing(self):
         from tools.research_sources import sc_parallels
 
-        ps = sc_parallels("mn18", include_text=True)
-        ma115 = next((p for p in ps if p.ref == "ma115"), None)
-        # MA115 isn't in the partial offline archive — gap must be reported,
-        # not silently rendered as empty text.
-        if ma115 is not None:
-            assert not any(
-                [ma115.text_pali, ma115.text_lzh, ma115.text_san, ma115.text_pra]
-            )
-            assert ma115.text_gaps  # non-empty
+        ps = sc_parallels("mn17", include_text=True)
+        sht = next(p for p in ps if p.ref == "sht-sutta73")
+        # No root text for this Sanskrit fragment exists offline — the gap
+        # must be reported, not silently rendered as empty text.
+        assert not any([sht.text_pali, sht.text_lzh, sht.text_san, sht.text_pra])
+        assert "no root text in offline archive" in sht.text_gaps
+
+    @sc_available
+    def test_agama_text_read_from_html_when_bilara_lacks_it(self):
+        from tools.research_sources import sc_parallels
+
+        # MA115 has no bilara file; its text lives in html_text/lzh.
+        ma115 = next(p for p in sc_parallels("mn18") if p.ref == "ma115")
+        assert "[" in ma115.text_lzh
+        assert "no root text in offline archive" not in ma115.text_gaps
 
 
 class TestSCSearch:

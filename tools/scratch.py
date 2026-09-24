@@ -161,9 +161,9 @@ _SCRATCH_PHASES: list[tuple[str, str, list[str]]] = [
     ),
     (
         "3b",
-        "Phase 3b — Sanskrit",
+        "Phase 3b — Other canons",
         [
-            "GRETIL searched where comparative-religion angle applies (or 'not applicable')",
+            "Other canons (GRETIL / CBETA / 84000) searched where applicable (or 'not applicable')",
         ],
     ),
     (
