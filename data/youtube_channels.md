@@ -70,6 +70,10 @@ Prune dead links periodically.
 - Tushita Meditation Centre
 
 ## probationary
+- Pure Land Buddhism
+- Plum Village App
+- PBC YouTube
+- Pema Chodron Foundation
 - Clear Mountain Monastery Project
 - Candana Bhikkhu
 - Jansen Stovicek
