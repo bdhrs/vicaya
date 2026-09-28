@@ -110,5 +110,21 @@ Prune dead links periodically.
 - Saddharmawahini
 - Won Buddhism Now
 - SEEKER TO SEEKER
+# added 2026-09-28 (jhana-meditation-subjects run) — seen but not content-assessed
+- Beth Upton
+- Buddhist Geeks
+- Mingalar MaungMe
+- Sayalay Dipankara
+- Meditation and Neuroscience
+- Everyday Meditations
+- Friends Of Sasana
+- Dhamma Gyan With Kavita
+- MagickFreq Spiritual
+- The truth of Life
+- Kolam Teratai
+- London Buddhist Videos
+- Dhammanet
+- Integrating Presence
+- Wikipedia Fan
 
 ## excluded
