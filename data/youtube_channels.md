@@ -127,4 +127,27 @@ Prune dead links periodically.
 - Integrating Presence
 - Wikipedia Fan
 
+- Non-Duality with Syed & Kyle
+- wonkmonk
+- Einzelgänger
+- James Flynn
+- Kallipolis Radio
+- Pursuit of Wonder
+- Unfiltered Philosophy
+- Sage Studies
+- AudioBuddha
+- RKINABuddhism
+- Tony Talks Back: Philosophy
+- Buddhism Simplified
+- Dhamma Warrior
+- siakkeelow
+- Wise Studies
+- 1983dukkha
+- Samaneri Jayasāra
+- Dhamma Essence
+- Lotus Whisper
+- Bhikkhu Samahita
+- Maggasekha
+- Unlocking Buddhism
+
 ## excluded
