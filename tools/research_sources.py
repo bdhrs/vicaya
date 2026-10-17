@@ -3515,7 +3515,8 @@ def _cli() -> int:
         return _done(exit_code=0 if result.get("ok") else 1, autolog=False)
 
     def _handle_scratch_check_coverage(args):
-        result = scratch_check_coverage(scratch=_slug_scratch(args))
+        note = resolve_vault_path(args.note) if args.note else None
+        result = scratch_check_coverage(scratch=_slug_scratch(args), note=note)
         _dump(result)
         return _done(exit_code=0 if result.get("ok") else 1, autolog=False)
 
@@ -4007,6 +4008,12 @@ def _cli() -> int:
         "Advisory — run before the Phase 7 gate, not a hard blocker.",
     )
     pscc.add_argument("--slug", default=None, help=_SLUG_HELP)
+    pscc.add_argument(
+        "--note",
+        default=None,
+        help="Check this file (e.g. the Phase 5 draft) instead of the "
+        "recorded vault note.",
+    )
     pscc.set_defaults(func=_handle_scratch_check_coverage)
 
     psr = sub.add_parser(

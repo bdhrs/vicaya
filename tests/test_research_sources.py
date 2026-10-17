@@ -2754,6 +2754,8 @@ class TestScratchCheckCoverage:
                 "title": "Meditation Centers Directory.pdf",
                 "relative_path": "Library/Meditation Centers Directory.pdf",
                 "snippet": "... clearly on-topic passage ...",
+                "queries": 1,
+                "best_rank": 1,
             }
         ]
 
@@ -2918,6 +2920,146 @@ class TestScratchCheckCoverage:
 
         assert result["ok"] is True
         assert result["cited_not_gathered"] == [1272]
+
+    def _log_search(self, tmp_path, query, document_ids, limit="15", duplicate_of=None):
+        import json as _json
+
+        from tools.research_sources import scratch_log
+
+        results_file = tmp_path / f"search-{query}-{limit}.json"
+        results_file.write_text(
+            _json.dumps(
+                [
+                    {
+                        "document_id": d,
+                        "title": f"Book {d}.pdf",
+                        "relative_path": f"Library/Book {d}.pdf",
+                        "snippet": "a passage",
+                        "possible_duplicate_of": (duplicate_of or {}).get(d, []),
+                    }
+                    for d in document_ids
+                ]
+            ),
+            encoding="utf-8",
+        )
+        scratch_log(
+            "3",
+            "search-library-folders",
+            args=[query, "--limit", limit],
+            results_file=results_file,
+            hits=len(document_ids),
+        )
+
+    def test_orders_unaccounted_by_queries_then_rank(self, tmp_path, monkeypatch):
+        # Issue #89: a book several searches return comes before one-off hits,
+        # and among one-off hits the higher-ranked comes first.
+        from tools.research_sources import (
+            scratch_check_coverage,
+            scratch_init,
+            scratch_set_note,
+        )
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("coverage-order")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        self._log_search(tmp_path, "parami", [101, 202, 303])
+        self._log_search(tmp_path, "bodhisatta", [404, 303])
+        note = tmp_path / "note.md"
+        note.write_text("# Note\n\nNothing cited.\n", encoding="utf-8")
+        assert scratch_set_note(str(note))["ok"]
+
+        result = scratch_check_coverage()
+
+        assert [d["document_id"] for d in result["unaccounted"]] == [303, 101, 404, 202]
+        assert result["unaccounted"][0]["queries"] == 2
+        assert result["unaccounted_count"] == 4
+
+    def test_tail_beyond_the_first_ten_is_compact(self, tmp_path, monkeypatch):
+        from tools.research_sources import (
+            scratch_check_coverage,
+            scratch_init,
+            scratch_set_note,
+        )
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("coverage-tail")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        self._log_search(tmp_path, "sweep", list(range(1000, 1012)))
+        note = tmp_path / "note.md"
+        note.write_text("# Note\n", encoding="utf-8")
+        assert scratch_set_note(str(note))["ok"]
+
+        unaccounted = scratch_check_coverage()["unaccounted"]
+
+        assert "snippet" in unaccounted[9]
+        assert unaccounted[10] == {"document_id": 1010, "title": "Book 1010.pdf"}
+
+    def test_hit_with_a_nested_duplicate_record_is_counted(self, tmp_path, monkeypatch):
+        # Review finding: a flat-object regex skipped every hit whose
+        # possible_duplicate_of holds objects (22% of documents in real
+        # dossiers), and later hits then got a better rank than they earned.
+        # Real nested shape from data/scratch/2026-07-04-karuna-vs-christian-compassion.md.
+        from tools.research_sources import (
+            scratch_check_coverage,
+            scratch_init,
+            scratch_set_note,
+        )
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("coverage-nested")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        nested = [
+            {
+                "source_path": "/home/bodhirasa/MyFiles/2_Resources/Libraries/"
+                "Bodhirasa eBook Library/Mahasi Sayadaw/Brahmavihara Dhamma (638)/"
+                "Brahmavihara Dhamma - Mahasi Sayadaw.mobi",
+                "signals": ["normalized_filename"],
+            }
+        ]
+        self._log_search(tmp_path, "metta", [501, 502], duplicate_of={501: nested})
+        note = tmp_path / "note.md"
+        note.write_text("# Note\n", encoding="utf-8")
+        assert scratch_set_note(str(note))["ok"]
+
+        result = scratch_check_coverage()
+
+        assert result["library_hits_gathered"] == 2
+        assert [(d["document_id"], d["best_rank"]) for d in result["unaccounted"]] == [
+            (501, 1),
+            (502, 2),
+        ]
+
+    def test_same_search_with_another_limit_counts_once(self, tmp_path, monkeypatch):
+        from tools.research_sources import (
+            scratch_check_coverage,
+            scratch_init,
+            scratch_set_note,
+        )
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("coverage-flags")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        self._log_search(tmp_path, "parami", [101], limit="10")
+        self._log_search(tmp_path, "parami", [101], limit="15")
+        note = tmp_path / "note.md"
+        note.write_text("# Note\n", encoding="utf-8")
+        assert scratch_set_note(str(note))["ok"]
+
+        assert scratch_check_coverage()["unaccounted"][0]["queries"] == 1
+
+    def test_checks_a_draft_before_the_vault_note_exists(self, tmp_path, monkeypatch):
+        from tools.research_sources import scratch_check_coverage, scratch_init
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("coverage-draft")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        self._log_search(tmp_path, "parami", [101, 202])
+        draft = tmp_path / "coverage-draft.phase5-draft.md"
+        draft.write_text("Cited.[^calibre-101]\n", encoding="utf-8")
+
+        result = scratch_check_coverage(note=draft)
+
+        assert [d["document_id"] for d in result["unaccounted"]] == [202]
 
     def test_refuses_without_vault_note(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_check_coverage, scratch_init

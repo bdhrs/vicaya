@@ -803,7 +803,69 @@ def scratch_verify(through: str | None = None, scratch: Path | None = None) -> d
     }
 
 
-def scratch_check_coverage(scratch: Path | None = None) -> dict:
+# Unaccounted hits shown with full detail; the rest list id and title only.
+_COVERAGE_REVIEW_FIRST = 10
+_LIBRARY_SEARCH_BLOCK_RE = _re.compile(
+    r"^### \S+ · search-library-folders\n(.*?)(?=^### |\Z)", _re.M | _re.S
+)
+_HIT_JSON_RE = _re.compile(r"\{[^{}]*\"document_id\"\s*:\s*\d+[^{}]*\}")
+_FENCED_JSON_RE = _re.compile(r"```json\n(.*?)\n```", _re.S)
+_QUERY_FLAG_RE = _re.compile(r"\s--[\w-]+(?:\s+\d+(?:\.\d+)?)?")
+
+
+def _logged_library_hits(text: str) -> list[dict]:
+    """Library hits in logged results, in their logged order.
+
+    Each fenced JSON block is parsed whole. A flat-object regex alone skipped
+    every hit whose `possible_duplicate_of` holds nested objects — 22% of
+    documents across 148 real dossiers never reached the coverage check. The
+    regex stays only for a block that does not parse as JSON.
+    """
+    hits: list[dict] = []
+    for block in _FENCED_JSON_RE.finditer(text):
+        try:
+            data = json.loads(block.group(1))
+        except json.JSONDecodeError:
+            for m in _HIT_JSON_RE.finditer(block.group(1)):
+                try:
+                    data_item = json.loads(m.group(0))
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(data_item.get("document_id"), int):
+                    hits.append(data_item)
+            continue
+        items = data if isinstance(data, list) else [data]
+        hits.extend(
+            item
+            for item in items
+            if isinstance(item, dict) and isinstance(item.get("document_id"), int)
+        )
+    return hits
+
+
+def _library_hit_stats(text: str) -> dict[int, tuple[int, int]]:
+    """{document_id: (distinct queries that returned it, best 1-based rank)}.
+
+    Only `search-library-folders` blocks are ranked. A query is its search
+    terms without flags, so one search re-run with another `--limit` counts once.
+    """
+    queries: dict[int, set[str]] = {}
+    best: dict[int, int] = {}
+    for block in _LIBRARY_SEARCH_BLOCK_RE.finditer(text):
+        body = block.group(1)
+        args = _re.search(r"^- args: `(.*)`$", body, _re.M)
+        raw = args.group(1) if args else body[:40]
+        query = _QUERY_FLAG_RE.sub("", " " + raw).strip().casefold()
+        for rank, hit in enumerate(_logged_library_hits(body), start=1):
+            doc_id = hit["document_id"]
+            queries.setdefault(doc_id, set()).add(query)
+            best[doc_id] = min(best.get(doc_id, rank), rank)
+    return {d: (len(q), best[d]) for d, q in queries.items()}
+
+
+def scratch_check_coverage(
+    scratch: Path | None = None, note: Path | None = None
+) -> dict:
     """Flag library-folder hits gathered but mentioned nowhere in the final note.
 
     Advisory, not gating: a 2026-07-05 audit of 6 recent notes found canon/web
@@ -822,33 +884,41 @@ def scratch_check_coverage(scratch: Path | None = None) -> dict:
     searchable text, so notes kept citing it in place of the `document_id`.
     That cites a different document, so it is reported apart from plain
     omissions with the token to paste instead.
+
+    Broad sweeps leave dozens of tangential hits unaccounted (median 42 per
+    dossier over 73 real runs), which buried the one real miss (issue #89).
+    So `unaccounted` is ordered by how likely a hit is to matter — returned by
+    more distinct queries first, then by best rank — and only the first ten
+    keep their path and snippet. The ordering helps but does not decide: in
+    those dossiers a book the note did cite, removed and re-ranked among more
+    than ten unaccounted, landed in the first ten 49% of the time against 35%
+    for random order (1,416 trials). `note` checks a draft instead of the
+    recorded vault note, so a miss can be pulled in before the Phase 6 review.
     """
     path = scratch or _scratch_path()
     if not path.exists():
         return {"ok": False, "error": f"scratch not initialised: {path}"}
     text = path.read_text(encoding="utf-8")
 
-    note_match = _re.search(r"^\*\*Vault note:\*\*\s*(.+)$", text, _re.M)
-    note_path_str = note_match.group(1).strip() if note_match else ""
-    if not note_path_str or note_path_str == "<set at Phase 7>":
-        return {
-            "ok": False,
-            "error": "no vault note recorded — run scratch-set-note first",
-        }
-    note_path = Path(note_path_str)
+    if note is not None:
+        note_path = note
+    else:
+        note_match = _re.search(r"^\*\*Vault note:\*\*\s*(.+)$", text, _re.M)
+        note_path_str = note_match.group(1).strip() if note_match else ""
+        if not note_path_str or note_path_str == "<set at Phase 7>":
+            return {
+                "ok": False,
+                "error": "no vault note recorded — run scratch-set-note first, "
+                "or pass --note <draft>",
+            }
+        note_path = Path(note_path_str)
     if not note_path.exists():
-        return {"ok": False, "error": f"vault note not found: {note_path}"}
+        return {"ok": False, "error": f"note not found: {note_path}"}
     note_text = note_path.read_text(encoding="utf-8")
 
-    docs: dict[int, dict] = {}
-    for m in _re.finditer(r"\{[^{}]*\"document_id\"\s*:\s*\d+[^{}]*\}", text):
-        try:
-            hit = json.loads(m.group(0))
-        except json.JSONDecodeError:
-            continue
-        doc_id = hit.get("document_id")
-        if isinstance(doc_id, int):
-            docs[doc_id] = hit
+    docs: dict[int, dict] = {
+        hit["document_id"]: hit for hit in _logged_library_hits(text)
+    }
 
     def cites(number: int) -> bool:
         # `&` excludes HTML entities such as `&#8212;`.
@@ -892,6 +962,25 @@ def scratch_check_coverage(scratch: Path | None = None) -> dict:
             }
         )
 
+    stats = _library_hit_stats(text)
+    unaccounted.sort(
+        key=lambda d: (
+            -stats.get(d["document_id"], (0, 0))[0],
+            stats.get(d["document_id"], (0, 10**6))[1],
+            d["document_id"],
+        )
+    )
+    for index, entry in enumerate(unaccounted):
+        queries, best_rank = stats.get(entry["document_id"], (0, 0))
+        if index < _COVERAGE_REVIEW_FIRST:
+            entry["queries"] = queries
+            entry["best_rank"] = best_rank or None
+        else:
+            unaccounted[index] = {
+                "document_id": entry["document_id"],
+                "title": entry["title"],
+            }
+
     cited_not_gathered = sorted(
         {int(n) for n in _re.findall(r"calibre[\s#-]*(\d+)", note_text, _re.I)}
         - docs.keys()
@@ -902,6 +991,7 @@ def scratch_check_coverage(scratch: Path | None = None) -> dict:
         "ok": not unaccounted and not folder_number_cited,
         "note": str(note_path),
         "library_hits_gathered": len(docs),
+        "unaccounted_count": len(unaccounted),
         "unaccounted": unaccounted,
         "folder_number_cited": folder_number_cited,
         "cited_not_gathered": cited_not_gathered,
