@@ -3548,6 +3548,40 @@ def _cli() -> int:
             code = 1
         return _done(exit_code=code, autolog=False)
 
+    def _handle_get_paragraph(args):
+        from tools.canon_paragraphs import get_paragraph
+
+        if (args.paranum is None) == (args.row_id is None):
+            _dump({"ok": False, "error": "give exactly one of: a paranum, or --row-id"})
+            return _done(exit_code=2, autolog=False)
+        result = get_paragraph(
+            args.book_code,
+            args.paranum,
+            row_id=args.row_id,
+            canon_db=DEFAULT_CANON_DB,
+        )
+        # Never compacted: the full paragraph text is what this command is for,
+        # and --quiet would clip it to a snippet. The flag is accepted only so a
+        # uniform call template does not error.
+        _dump(result)
+        argv = [args.book_code] + (
+            [str(args.paranum)]
+            if args.paranum is not None
+            else ["--row-id", str(args.row_id)]
+        )
+        return _done(argv, result, exit_code=0 if result.get("ok") else 1)
+
+    def _handle_check_quotes(args):
+        from tools.canon_paragraphs import check_quotes
+
+        path = resolve_vault_path(args.note)
+        if not path.exists():
+            _dump({"ok": False, "error": f"note not found: {path}"})
+            return _done(exit_code=2, autolog=False)
+        result = check_quotes(path.read_text(encoding="utf-8"), DEFAULT_CANON_DB)
+        _dump({"note": str(path), **result}, quiet=getattr(args, "quiet", False))
+        return _done(exit_code=0 if result.get("ok") else 1, autolog=False)
+
     def _handle_check_citation_shape(args):
         path = resolve_vault_path(args.note)
         if not path.exists():
@@ -4006,6 +4040,28 @@ def _cli() -> int:
     pvc.add_argument("ref", help='Reference, e.g. "SN 46.42", "MN60", "Sn 4.8".')
     pvc.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
     pvc.set_defaults(func=_handle_verify_citation)
+
+    pgp = sub.add_parser(
+        "get-paragraph",
+        help="Every row of one CST paragraph, under its real paragraph number, "
+        "with variant readings removed. Give the paranum, or --row-id for any "
+        "row inside the paragraph (a row id is never a citation number).",
+    )
+    pgp.add_argument("book_code", help="CST table name, e.g. s0202m_mul")
+    pgp.add_argument("paranum", nargs="?", type=int, help="Paragraph number.")
+    pgp.add_argument("--row-id", type=int, help="Any row id inside the paragraph.")
+    pgp.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
+    pgp.set_defaults(func=_handle_get_paragraph)
+
+    pcq = sub.add_parser(
+        "check-quotes",
+        help="Check each cited Pāḷi blockquote in a note against the paragraph "
+        "its db: citation names. Advisory: reports quotes found in another "
+        "paragraph, not found as written, or citing a missing paragraph.",
+    )
+    pcq.add_argument("note", help="Note path (absolute, or Vicaya/<file>.md).")
+    pcq.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
+    pcq.set_defaults(func=_handle_check_quotes)
 
     pcs = sub.add_parser(
         "check-citation-shape",
