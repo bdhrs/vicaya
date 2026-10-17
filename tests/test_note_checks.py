@@ -405,3 +405,133 @@ def test_t3_t4_footnotes_do_not_trigger_under_quoted_evidence() -> None:
     )
     issues = note_checks.validate_note_text(text)
     assert not any(i.code == "under-quoted-evidence" for i in issues)
+
+
+# Real paragraph from Vicaya/2026-10-02 - deva-human-help-theravada.md: the
+# middle sentence chains four ideas with colons and dashes (issue: plain-English
+# note prose). The sentences before and after it are short.
+_DENSE_PARAGRAPH = (
+    "The doctrine is stated with complete clarity in the earliest stratum. "
+    'The Buddha lists five things "unobtainable by a recluse or a brahmin or a '
+    '**deva** or Māra or Brahmā or anyone else in the world":[^s0403m1-48] — and '
+    "the tradition knows the limits of its own absolute: the one lifespan in the "
+    "canon that *was* negotiable, the Buddha's own (*āyusaṅkhāra*), was "
+    'relinquished by himself at the Cāpāla shrine — "mindful and clearly '
+    'comprehending, the Blessed One relinquished the life-formation,"[^s0102m-169] '
+    "— with Māra playing the tempter who had failed to ask at the right time, not "
+    "a god granting a lease. Even the exception is self-power within kamma, not "
+    "heaven's gift."
+)
+
+_PLAIN_PARAGRAPH = (
+    "The earliest texts state the doctrine clearly. The Buddha lists five things "
+    "that no recluse, brahmin, deva, Māra or Brahmā can obtain.[^s0403m1-48] The "
+    "tradition knows one exception. The Buddha's own lifespan could be extended, "
+    "and he gave it up himself at the Cāpāla shrine.[^s0102m-169] Māra was there "
+    "as the tempter. No god granted extra time. Even this exception is the "
+    "Buddha's own power within kamma, not a gift from heaven."
+)
+
+
+def _with_findings(paragraph: str) -> str:
+    return valid_note_text().replace(
+        "The evidence supports a cautious answer.", paragraph
+    )
+
+
+def _long_sentences(text: str) -> list[note_checks.ValidationIssue]:
+    return [
+        i for i in note_checks.validate_note_text(text) if i.code == "long-sentence"
+    ]
+
+
+def test_dense_sentence_from_a_real_note_is_flagged() -> None:
+    issues = _long_sentences(_with_findings(_DENSE_PARAGRAPH))
+
+    assert len(issues) == 1
+    assert issues[0].severity == "warning"
+    assert '"The Buddha lists five things' in issues[0].message
+
+
+def test_plain_rewrite_of_the_same_paragraph_passes() -> None:
+    assert _long_sentences(_with_findings(_PLAIN_PARAGRAPH)) == []
+
+
+def test_quotes_tables_and_reference_sections_are_not_checked() -> None:
+    long_text = _DENSE_PARAGRAPH.replace("[^s0403m1-48]", "").replace(
+        "[^s0102m-169]", ""
+    )
+    text = (
+        valid_note_text()
+        .replace(
+            "- MN 21 gives the relevant example.",
+            f"> {long_text}\n\n| Source | {long_text} |\n|---|---|",
+        )
+        .replace("- Example source.", f"- {long_text}")
+        .replace("[^1]: Footnote after the footer.", f"[^1]: {long_text}")
+    )
+
+    assert _long_sentences(text) == []
+
+
+def test_abbreviation_does_not_split_a_sentence() -> None:
+    # Real sentence from Vicaya/2026-06-14 - atakkavacara-beyond-reasoning.md:
+    # splitting at "e.g." would leave two halves under the limit.
+    sentence = (
+        '**Bhikkhu Anālayo** renders *atakkāvacara* "beyond thought" and reads the '
+        'gradual path as one "that eventually leads to what is beyond thought, '
+        '*atakkāvacara* (e.g. MN 26)," underscoring that the term names the '
+        "*terminus* of practice rather than a barrier to it — the deep is reached, "
+        "but by cultivation and direct knowing, not by reasoning.[^analayo]"
+    )
+
+    assert len(_long_sentences(_with_findings(sentence))) == 1
+
+
+def test_list_items_are_checked_one_at_a_time() -> None:
+    # Two short bullets must not be joined into one long "sentence".
+    half = " ".join(["word"] * 25)
+    text = _with_findings(f"- {half}\n- {half}")
+
+    assert _long_sentences(text) == []
+
+
+def test_sentence_ending_in_no_still_ends() -> None:
+    # "no" is an abbreviation only before a number ("no. 5").
+    half = " ".join(["word"] * 25)
+    text = _with_findings(f"{half} said no. The monk {half} left.")
+
+    assert _long_sentences(text) == []
+
+
+def test_labelled_translation_lines_are_not_checked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Real list item from Vicaya/2026-08-16 - 32-body-parts.md: quoted canon
+    # translation outside a blockquote must stay verbatim (Rule P1).
+    line = (
+        '  - English: "…four further things should be developed: the unbeautiful '
+        "should be developed for the abandoning of lust; loving-kindness for the "
+        "abandoning of ill will; mindfulness of breathing for the cutting off of "
+        "thinking; the perception of impermanence for the uprooting of the conceit "
+        "'I am'.\""
+    )
+    # The real line is 44 words; a lower limit keeps the test meaningful.
+    monkeypatch.setattr(note_checks, "PLAIN_ENGLISH_MAX_WORDS", 30)
+
+    assert _long_sentences(_with_findings(f"- AN 9.1:\n{line}")) == []
+    assert _long_sentences(_with_findings(line.replace("English: ", ""))) == []
+
+
+def test_code_fences_and_subsections_of_reference_sections_are_skipped() -> None:
+    long_text = " ".join(["word"] * 60) + "."
+    text = (
+        valid_note_text()
+        .replace("- Example source.", f"### Primary\n\n{long_text}")
+        .replace(
+            "The evidence supports a cautious answer.",
+            f"```\n{long_text}\n```",
+        )
+    )
+
+    assert _long_sentences(text) == []

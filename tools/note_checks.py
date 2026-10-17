@@ -63,6 +63,30 @@ _EVIDENCE_TIER_HEADING_RE = re.compile(r"^##\s+.*\(T[12]\)\s*$")
 # is one notion of "T1 evidence section" in this file rather than two.
 _T1_EVIDENCE_HEADING_RE = re.compile(r"^##\s+.*\(T1\)\s*$")
 
+# Notes kept drifting into compressed academic prose: one in ten sentences
+# across the vault ran past 49 words, and the user could not follow them.
+# A written style rule alone does not hold (the absence rule, #116, failed the
+# same way), and Phase 7 tells the agent to clear every warning before it
+# proceeds, so each over-long sentence is reported for the agent to split.
+PLAIN_ENGLISH_MAX_WORDS = 45
+# Reference sections hold citations and table rows, not explanatory prose.
+_NON_PROSE_SECTION_RE = re.compile(
+    r"^##\s+(Bibliography|Sources Investigated|Critical Gaps|Angles Not Pursued)",
+    re.IGNORECASE,
+)
+_SENTENCE_END_RE = re.compile(r"[.!?…]+[\"”’)\]*_]*\s+")
+# Never end a sentence, whatever follows.
+_ABBREVIATIONS = frozenset({"e.g", "i.e", "cf", "vs", "eds", "ven", "dr"})
+# Abbreviations only before a number ("no. 5", "p. 12", "c. 250 BCE"); as plain
+# words ("he said no.") they do end a sentence.
+_NUMBER_ABBREVIATIONS = frozenset({"no", "p", "pp", "vol", "vols", "c", "ca", "ed"})
+# A line that labels quoted text ("English: …") carries a quotation, which must
+# stay verbatim (Rule P1), not explanatory prose.
+_QUOTE_LABEL_RE = re.compile(
+    r"^(\*\*)?(English|Pāḷi|Pāli|Pali|Sanskrit|Translation)(\*\*)?\s*:", re.IGNORECASE
+)
+_QUOTED_SPAN_RE = re.compile(r"\"[^\"]*\"|“[^”]*”")
+
 
 def _t1_evidence_heading(lines: list[str]) -> str | None:
     """The note's own T1 evidence heading, whatever wording it uses."""
@@ -283,6 +307,8 @@ def _validate_body(body: str, issues: list[ValidationIssue], frontmatter: str) -
                 )
             )
 
+    issues.extend(_long_sentence_issues(lines, line_offset))
+
     evidence_footnote_refs, evidence_blockquote_lines = (
         _evidence_section_footnote_and_blockquote_counts(lines)
     )
@@ -300,6 +326,101 @@ def _validate_body(body: str, issues: list[ValidationIssue], frontmatter: str) -
                 "error",
             )
         )
+
+
+def _prose_paragraphs(lines: list[str]) -> list[tuple[int, str]]:
+    """Return (index of first line, joined text) for each explanatory paragraph.
+
+    Blockquotes (the Pāḷi and its translation), tables, code, headings,
+    footnote definitions and the reference sections are not prose.
+    """
+    paragraphs: list[tuple[int, str]] = []
+    current: list[str] = []
+    start = 0
+    skip_section = False
+    in_code = False
+
+    def flush() -> None:
+        if current:
+            text = " ".join(current)
+            quoted = sum(len(m) for m in _QUOTED_SPAN_RE.findall(text))
+            # Mostly quotation: the words are the source's, not the note's.
+            if quoted * 2 <= len(text):
+                paragraphs.append((start, text))
+            current.clear()
+
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code = not in_code
+            flush()
+            continue
+        if in_code:
+            continue
+        if stripped.startswith("## "):
+            skip_section = bool(_NON_PROSE_SECTION_RE.match(stripped))
+        if (
+            skip_section
+            or not stripped
+            or stripped.startswith(("#", ">", "|", "<", "![[", "---"))
+            or re.match(r"^\[\^[^\]]+\]:", stripped)
+        ):
+            flush()
+            continue
+        item = re.match(r"^(?:[-*+]|\d+[.)])\s+(.*)$", stripped)
+        if item:
+            flush()
+            stripped = item.group(1)
+        if _QUOTE_LABEL_RE.match(stripped):
+            flush()
+            continue
+        if not current:
+            start = index
+        current.append(stripped)
+    flush()
+    return paragraphs
+
+
+def _sentences(text: str) -> list[str]:
+    sentences: list[str] = []
+    start = 0
+    for match in _SENTENCE_END_RE.finditer(text):
+        following = text[match.end() : match.end() + 4].lstrip('"“(*_[')
+        if not following or not (following[0].isupper() or following[0].isdigit()):
+            continue
+        last_word = text[start : match.start()].split()[-1:]
+        word = last_word[0].lower().strip("(*_") if last_word else ""
+        if word in _ABBREVIATIONS or (
+            word in _NUMBER_ABBREVIATIONS and following[0].isdigit()
+        ):
+            continue
+        sentences.append(text[start : match.end()].strip())
+        start = match.end()
+    sentences.append(text[start:].strip())
+    return [s for s in sentences if s]
+
+
+def _long_sentence_issues(lines: list[str], line_offset: int) -> list[ValidationIssue]:
+    issues: list[ValidationIssue] = []
+    for index, paragraph in _prose_paragraphs(lines):
+        text = re.sub(r"\[\^[^\]]+\]", "", paragraph)
+        text = re.sub(r"\[\[(?:[^\]|]+\|)?([^\]]+)\]\]", r"\1", text)
+        for sentence in _sentences(text):
+            words = [w for w in sentence.split() if re.search(r"\w", w)]
+            if len(words) <= PLAIN_ENGLISH_MAX_WORDS:
+                continue
+            opening = " ".join(sentence.split()[:10])
+            issues.append(
+                ValidationIssue(
+                    "long-sentence",
+                    f"sentence has {len(words)} words (limit "
+                    f"{PLAIN_ENGLISH_MAX_WORDS}): split it, one idea per "
+                    f'sentence — "{opening} …"',
+                    index + 1 + line_offset,
+                    "warning",
+                )
+            )
+    return issues
 
 
 def _parse_frontmatter(frontmatter: str) -> FrontmatterFields:

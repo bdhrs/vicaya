@@ -1,7 +1,11 @@
 # Vicaya skill improvements — work in progress
 
 This file replaces the run-by-run reflection backlog. Processed reflections
-live in `runs/processed/`. Last triage: 2026-08-14, covering 9 runs from
+live in `runs/processed/`.
+
+Last triage: 2026-10-17, covering 98 runs from 2026-08-15 to 2026-10-16 (349 global findings, extracted by 7 parallel batch agents and clustered by hand by mechanism, not wording — the user asked for this explicitly, since separate agents describe one cause in different words). Result: 28 new issues (#124–#151), 2 REGRESSIONS (#54 placeholder detector, #90 sub-agent summary drift), 10 parked items revived on fresh evidence (#96, #97, #100, #109, #111, #112, #118, #121; #123 merged into #126), #89/#113/#116 moved up, ~60 single sightings parked as one-liners, 3 stale findings dropped (library index rebuild and pre-commit hook, both fixed 2026-09-03). The cycle is dominated by **wrong locators**: library books cited by an unstable or wrong id (#113, 24 runs), row ids cited as paragraph numbers (#124, 16), resolver mislabels in restarting books (#125, 9), CST-vs-SuttaCentral numbering (#112, 9). The second theme is **prose rules that did not hold**: the absence rule (#116, landed 09-20, six later failures), quotes from memory (#96, 11 runs), carried-over claims in enrichment runs (#127, 9). Every one of those has a structural fix proposed by the runs themselves — a helper or validator check rather than more prose. Channel tuning: five content-farm channels excluded (20261009-150500); every promotion the runs requested was already applied.
+
+Prior triage: 2026-08-14, covering 9 runs from
 2026-08-09 to 2026-08-14 — 13 new issues (#111–#123; 2 Medium, 11 Low), zero
 regressions, zero drops. No run named a component the 2026-08-10 fixes
 touched; the note-14 route-guard mystery resolved as a non-issue (staged
@@ -192,6 +196,12 @@ the premise behind dropped #5.
 | #105 Thematic-run gate documentation cluster | done (2026-08-15) | `docs: add a thematic gate map naming exactly which gates auto-skip` — three confusions, one root: the rules lived in prose far from the call sites. The Sub-agent dispatch thematic paragraph is now a compact gate map stating exactly two gates auto-skip on `--class thematic` (2.5, 3b), every other gather gate (1, 2, 3, 4, 4b, 4c) is gated normally, an explicit call on an auto-skipped gate demands logged evidence, and gating Phase 4 does not gate 4a/4b/4c. Callouts at the three places agents act: Critical-execution-rules item 2 names the two auto-skipped gates explicitly; the Phase 2.5 exit line warns thematic runs not to call it explicitly (work still runs when angle 16 is applicable); the Phase 4 exit line states 4b/4c still need their own explicit gates on every run. Docs-only; all 392 tests pass. |
 | #107 Comparative Indo-Aryan dictionary access notes | done (2026-08-15) | `docs: record comparative Indo-Aryan dictionary access in Phase 4a` — all three sighting runs confirmed bdhrs by git. New Phase 4a paragraph: DSAL CDIAL search CGI 404s (platform migrated) and the Internet Archive Turner copy is lending-only, so Wiktionary root entries are the working proxy for the Mayrhofer/Turner consensus; the Cologne `csl-orig` plain-text dictionaries (`mw.txt`, `ap90.txt`) fetch verbatim MW/Apte entries from raw.githubusercontent.com but use SLP1-style transliteration (ā=A, ś=S, ṛ=f, ṇ=R) — search `darSiv` not `darśivas`; and Mayrhofer EWA / Turner CDIAL / Whitney Roots are typically scanned/OCR-less, so budget a curl of Cologne CDSD or an archive.org full-text copy up front. Docs-only; all 392 tests pass. |
 | #101 No documented run shape for lexicographic/glossary tasks | done (2026-08-15) | `docs: document the lexicographic/glossary run shape in Phase 7` — both sighting runs are bdhrs and are the same 65-word task run two ways (one serial, one parallel), so the shape is a verified consensus. The "Caller-supplied fixed formats" paragraph is now "…and non-essay deliverables (series; glossaries, catalogues, comparative tables)" and a new "Lexicographic / glossary tasks" block documents the adapted shape: build the shared lookup tool once from raw dictionary source files before fan-out; find the primary text first via `search-library-folders` (nīti literature lives there, not the canon DB) and never trust a gloss over the attested verse (the DPD *vibudha* backwards-gloss case named); batch-parallel gather in ~13-word batches as one concurrent wave; single synthesis; and the note shape (frontmatter/Question/Findings/tail + a Summary Table and Word-by-Word Findings replacing the evidence sections). The two other global findings from these runs (rogue-fork hard-stop, check-citation-shape path) were already closed as #93 and #95 — not re-raised. Docs-only; all 392 tests pass. |
+| #116 (doc half) absence claims need a concept-family sweep | done (2026-09-20) | `feat: add research budget, absence rule, and OpenAlex scholarly search` (`1e76682`) — Hard Rule 13 "absence is a claim". Six later runs still skipped the sweep, so the issue stays open in High as a structural residue (triage 2026-10-17). |
+| Library index empty or ~15% built mid-run; library-folders-check said ok (20260902-174106, 20260903-120116) | dropped (stale, 2026-10-17) | both runs predate the durable-refresh work of 2026-09-03 (`8b56f5e` reinstate OCR with per-chunk timeouts and durable refresh, `2b1a99a` scope index deletion to walked roots); no later run reports an empty index. |
+| sync_run_report.py pre-commit hook fails: No module named pre_commit (20260902-174106) | dropped (stale, 2026-10-17) | fixed by `ff82b5b` (2026-09-03) — pre-commit kept in the dev group so the hook works. |
+| #123 second-reviewer prompt is Claude-Code-specific | merged (2026-10-17) | folded into #126 (the Phase 6 second reviewer cannot do its job outside Claude Code). |
+| #113 Library books cited by the wrong number; coverage check knew one spelling (24 runs) | done (2026-10-17) | `fix: credit every spelling of a library citation and flag folder numbers` — mechanism traced before coding, and the runs' own fix was rejected: they proposed citing the Calibre folder number because it "survives rebuilds", but only 20,762 of 46,427 indexed files (45%) have one, and the numbers repeat across libraries (915 is one book in the Bodhirasa library and another in Susima). Root cause of the folder-number mistakes: the index writes each Calibre book's own number into its searchable text as "Calibre #<N>", the same label the skill uses for the `document_id`, so agents copied the wrong number in good faith. Drift is real but one-time: `_upsert_document` keeps each id by path across ordinary refreshes, and every id changed only in the 2026-09-03 full rebuild (all rows indexed from that date, ids 1..46427), as the user confirmed. User chose to keep the index number. `scratch_check_coverage` now credits `calibre-<id>`, `Calibre #<id>` and bare `#<id>` (so `(#11854)`, `#765, #860`, and both ids of `#a/#b` count; HTML entities do not); reports a hit cited by its folder number under `folder_number_cited` with a `cite_as` token (makes `ok` false); lists Calibre-tagged numbers matching no gathered hit under `cited_not_gathered` (advisory). SKILL.md: hit shape, Rule F4 (folder-number trap with the real 2097/8904 example, refresh-vs-rebuild), the rejection-row note, and the coverage section (accepted forms + response shape, which also closes #89's "undocumented keys" sub-point). 5 regression tests from real run data; reverting the checker fails 3 of the first 4 (the 4th guards against false matches by design). CodeRabbit found one real gap — a correct citation elsewhere in the note hid a folder-number citation of the same book — fixed by checking the folder number first, with a 5th test that fails on the old order; its second point (a folder number equal to another gathered document's id) left as is, since only a title match could tell which book is meant. Live over 73 post-rebuild dossiers: false "unaccounted" 5107 → 4876, and 45 real folder-number citations surfaced in finished notes — split off as #152. 500 tests pass (1 skipped: live Obsidian); ruff + pyright clean. |
+| #153 Note prose is dense academic English (user-ranked; 1 run + vault measurement) | done (2026-10-17) | `feat: warn on long sentences and require plain-English note prose` — parked at triage as a single sighting (20261010-171500, user: "five separate ideas in one sentence"); the user ranked it second regardless of run count, and a vault measurement confirmed it is a pattern, not one note: across 300 notes, mean sentence length 20–23 words but the slowest decile runs past 49 words, and Sep–Oct Findings sections alone held 538 sentences over 45 words (real worst cases 78 and 89 words, four ideas chained with colons and dashes). Because prose rules alone did not hold this cycle (#116), the fix has a structural half: `note_checks.py` gains a `long-sentence` warning for every explanatory sentence over 45 words — prose only (blockquotes, tables, code, footnote definitions, Bibliography / Sources Investigated / Critical Gaps / Angles Not Pursued excluded), list items checked one at a time, footnote markers and wikilinks stripped, abbreviations such as "e.g." not treated as sentence ends; Phase 7 already requires clearing every warning, so each one must be split. SKILL.md Style notes gain the plain-English rule (one idea per sentence, ~15–20 words, 45 max, split by ideas never by shaving words, long citation runs become bullet lists, normal subject-verb-object order, verbs over abstract nouns, no clause chains, example in the next sentence, quotes in blockquotes, precision kept) with a real 89-word sentence and its rewrite; Phase 5 says to draft plainly from the first sentence; the validator paragraph explains the warning. Limit chosen by the user after an independent Sonnet review and a before/after on real sentences: first shipped at 40 (10.4% of sentences, median 22 warnings per Sep–Oct note), the reviewer called that "somewhat too drastic" (forced rewrites of 20+ sentences invite word-shaving and choppy prose; suggested 55–60), and the user picked 45 (7.3% of sentences, median 16 per note; 50 → 5.0%/11, 60 → 2.5%/5). Review fixes: `no`/`p`/`c`/`ed` count as abbreviations only before a number ("he said no. The…" was one sentence); lines labelled `English:`/`Pāḷi:`/`Translation:` (also as bullet items) and mostly-quoted paragraphs are skipped, since quoted canon text must stay verbatim; a sentence-final `…` ends a sentence. Not adopted: exempting citation-list sentences in code (the rule says to make them bullet lists instead). 8 regression tests, real vault fixtures where the behaviour depends on real text; disabling the check fails the 2 positive tests, and each review fix's test fails when that fix is removed. Over the existing vault the check reports 2,863 warnings, so an enrichment run that re-validates an old note will have to split its long sentences. 507 tests pass (1 skipped: live Obsidian); ruff + pyright clean. |
 
 ## Remaining — prioritized
 
@@ -217,6 +227,20 @@ _(#92 moved to Done — each source root is probed once with a bounded stat and
 _(#93 moved to Done — every dispatch prompt, standard or custom, now carries a
 hard-stop SCOPE block; shared fan-out tooling is durable data under
 data/scratch/, and the Phase 7 cleanup sweep is orchestrator-only, 2026-08-14)_
+
+- **#152 Finished vault notes cite library books by the wrong number (residue of #113).** The #113 fix stops new mistakes, but notes already published still carry them. Measured 2026-10-17 by running the new checker over the 73 dossiers written since the 2026-09-03 index rebuild: 45 citations in finished notes use a book's Calibre folder number, which names a different document in the index (bhavaṅga note: Anālayo's *Luminous Mind* cited as Calibre #8904, which is a Piya Tan essay; madhupindaka note: Ñāṇananda cited as #696, which is an Ajahn Sumedho anthology). The checker's `cited_not_gathered` list adds more suspects (a Nyanatiloka *Buddhist Dictionary* citation whose number names an Anālayo paper). Whole-vault scan the same day (every `Calibre #N` / `calibre-N` mention, title on the citation line compared with the index title for N): 2,687 mentions name the right book; a strict match (citation line names the title, exactly one document has folder number N and that title) finds **945 fixable mentions in 123 notes**, 15/15 random samples correct (e.g. Gombrich *Theravada Buddhism* 923 → 10253, Sujato *Mystique of the Abhidhamma* 904 → 2560); a looser match (2,332) had false positives in long prose lines, so use the strict one; ~3,200 mentions in 198 notes cannot be matched by machine — mostly pre-rebuild index ids (no copy of the old index survives) and bare id lists in rejection tables. So most older notes cited the folder number, not the index number — the de facto vault convention until now. **User decision 2026-10-17: leave the vault for now.** When picked: apply the strict set only, keep each note's numbers consistent (footnote markers, frontmatter `library_refs`), skip a note where N also correctly names another book, regenerate those notes' PDFs, show the changed-notes list before syncing. The new `cited_not_gathered` list flags old numbers whenever a run reworks a note in the meantime. (evidence: measurements 2026-10-17; underlying runs as #113)
+
+- **#124 A database row number gets cited as if it were the paragraph number.** The CST tables split a long paragraph across several rows; only the first row carries `paranum`, the rest are blank (some carry the number only as inline `<hi rend="paranum">N</hi>`). Agents pulling rows by `id` then cite the row id as the section number (abh01a_att §1908/1909/1910, vin07t_nrf §1234, s0505a_att §931, Dhs §41, Vism §47, s0102m_mul 280 → a phantom DN18), and `WHERE paranum=?` pulls silently drop the continuation rows, so quotes come out truncated or spliced across two paragraphs (AN5.69 outcome glued to AN5.70's list, shown as verbatim). Commentary tables add range paranums ("583-4", "436-7") that a direct lookup misses. Hard Rule 9 says "resolve every paranum", but the agent usually has a row id, not a paranum, in hand. Fix direction (structural, not more prose): one helper that takes `<table> <row-id>` (or a paranum) and returns the whole paragraph — every row from the paranum-bearing row to the next — with its true paranum and human label; and have `check-citation-shape` flag a cited `table §N` whose N is not a paranum in that table. (seen in 16 runs: 20260911-163831, 20260912-nibbida-viraga-nirodha-enrichment, 20260928-020423, 20261002-123216, 20261012-120548, +11 more — 20260818-054108, 20260902-133318, 20260902-174106, 20260903-120116, 20260904-213000, 20260915-031056, 20260924-114212, 20260924-190415, 20260925-142300, 20261011-024434, 20261011-062929)
+
+- **#125 resolve-citation names the wrong sutta in books whose numbering restarts or is stored as a range.** Distinct from #124 (there the paranum is wrong; here the paranum is right and the label is wrong). The label comes from the nearest preceding heading/sutta_info row, which fails where paranums restart per section or headings are sparse: Jātaka (`s0513m_mul 88` → Sarambha instead of Dasaratha; `s0514m_mul 2113` → JA545 for a Vessantara/JA547 verse), Cūḷaniddesa, *_att/*_tik commentaries ("MNa10 para 115"), Snp (Sabhiya paras 514ff → "SNP31 Māgha"), Dhammapada (every paranum labelled "DHP1-20 Yamakavaggo", so Rule F2 "copy `human` verbatim" manufactures a false vagga), AN 3.80 mapped to Cūḷanikā, and a Visuddhimagga passage that search-canon and resolve-citation place differently. Done #44 added "paranum repeats per section" flagging for some books; these are the ones it misses. Fix: audit every book table for paranum restarts and range storage (one SQL pass), and either resolve them correctly or return the restart warning instead of a confident name. (seen in 9 runs: 20260818-190500, 20260902-165800, 20260903-120116, 20260905-045500, 20260908-084542, +4 more — 20260913-102000, 20260920-023254, 20260920-050252, 20260927-033629)
+
+- **#116 Absence claims still skip the synonym family — the rule landed and did not hold.** *(Moved up from Low.)* The doc fix shipped 2026-09-20 as Hard Rule 13 (`1e76682`, "absence is a claim … sweep the concept family"). Before it, 20260920-023254 *published* a false universal negative ("the four brahmavihāras" is commentarial — it is in DN17, MN83, AN5.192; a reader caught it). After it, six runs still hit the same failure: searching `sīṅga` not `visāṇa` for the horn simile, sweeping `s*_mul` only and missing Paṭṭhāna §417, checking a ṭīkā table and calling the aṭṭhakathā silent, short/long-vowel and sandhi variants missed, counting 140 rows and writing "every occurrence". The prose rule is right but agents do not run it. Fix direction: a helper that performs the sweep — stem plus listed variants across every T1a/T1b/T2 table incl. `*_tik` and `abh*` — and prints a per-table count table to paste into the dossier, so "absent" always has its evidence attached. (seen in 12 runs: 20260920-023254, 20260927-033629, 20260928-004814, 20260928-020423, 20261010-171500, +7 more — 20260812-093512, 20260812-095506, 20260903-bhikkhu-upahana-vinaya, 20260913-102000, 20260919-041931, 20260925-142300, 20261007-025707)
+
+- **#127 Enrichment runs carry wrong claims forward from the old note.** When a run extends an existing note, it trusts the old note's citations, sequences, and Critical Gaps. Wrong items then survive into the new note (DN19 blockquote that was really DN21; MN111 §93 for §94; a Visuddhimagga §233 that resolves to the wrong chapter; an AN6.29 bullet contradicting its own correction), and one error — "tividhena" attributed to AN8.63, 0 hits there, it is SN47.3 — had already propagated across four published brahmavihāra notes plus two older ones. A prior note's gaps were also trusted as gaps and turned out to be findable. The re-verify rule exists in prose and a reference-existence check passes these, because the reference exists — the claim about it is wrong. Fix direction: a Phase 1 "prior-note audit" step that runs verify-citation/resolve-citation over the old note's `canon_refs` and footnotes before planning, plus wording that carried *claims* (sequences, quotes, attributions), not just references, need re-checking against the mūla. (seen in 9 runs: 20260912-063554, 20260912-153500, 20260912-nibbida-viraga-nirodha-enrichment, 20260905-005804, 20260818-054108, +4 more — 20260904-161444, 20260911-162500, 20260912-150000, 20260924-190415)
+
+- **#54 REGRESSION — the placeholder detector still trips on a sutta quote.** Done #54 (2026-07-05) bounded "would search" with a trailing word boundary, which fixed "would searching". The arrow simile (MN36, MN63/DN, "he would search for the arrow with a probe") matches the exact word, so `scratch-verify` marks a 500-line evidence phase as `placeholder` and reports `ok: false`. Verified 2026-10-17 in `tools/scratch.py` `_phase_content_issue`: the pattern scan runs over the whole phase body, including auto-logged JSON. Fix as four runs propose: skip fenced ```json blocks and `>` blockquotes when scanning for placeholders. Quick win. (seen in 4 runs: 20260902-133318, 20260902-165800, 20260905-005804, 20260905-033059)
+
+- **#90 REGRESSION — sub-agent summaries still restate their own tool output wrongly.** Done #90 (2026-07-17) made "copy citations verbatim from your resolve log" a dispatch rule. Later runs: a Phase 2 report called a sutta "SN36 Samādhisuttaṃ" when its own resolve output said "SN36.3 Pahānasuttaṃ"; gather summaries repeated Pc rule numbers and a speaker attribution the DB does not support; a library agent reported a snippet inference ("seven perfections" from Endo) as Appleton's content. The orchestrator spot-check caught all three. Fix direction: decide whether the dispatch template lost the rule, or the rule needs a mechanical form (summary lines must quote a logged tool block id). (seen in 3 runs: 20260924-190415, 20260927-061700, 20261011-062929)
 
 ### Medium severity
 
@@ -278,6 +302,32 @@ _(#103 moved to Done — the sentinel names the failing entry and reason,
 preflight probes the chain for seconds before the long wait, and the stale
 "expect self-review" doc line is gone, 2026-08-15)_
 
+- **#126 The Phase 6 second reviewer cannot do its job outside Claude Code.** *(Absorbs parked #123.)* The source-armed reviewer dispatch assumes a sub-agent with a shell that can run the helpers. On pi the available agents have file tools only (`reviewer`, `scout`), so the reviewer cannot run resolve-citation or search-canon; it then works from memory or from the dpd-db plain-text recension and marks correct citations as unverified or wrong (NP30 / §659 flagged; asantasamava, Dhp 203 orthography false positives). Other failure shapes: an external `pi -p` reviewer ran 17 and 28 minutes with no output (it writes only on clean exit); a reviewer died on "Connection error" or "session limit"; and #123's case — the prompt's "Do NOT use SendMessage" line is wrong on RLM/prime harnesses. Fix direction: the dispatch prompt names the tools the reviewer will actually have and what to do without a shell (return raw findings; the orchestrator runs the resolve/verify sweep inline); the reviewer writes findings incrementally to a named file under `data/scratch/<slug>-shared/`; a time budget after which the orchestrator verifies inline; give the reviewer the one command that prints a row range. (seen in 13 runs: 20260904-163008, 20260904-233205, 20260920-050252, 20260927-090500, 20261012-120548, +8 more — 20260812-095506, 20260830-120431, 20260905-005804, 20260905-032829, 20260912-063554, 20261001-134330, 20261002-123216, 20261011-024434)
+
+- **#89 The coverage check's leftover count is mostly noise from broad library searches.** *(Moved up from Low; re-reported by 12 more runs.)* Separate from #113 (wrong id): even with correct ids, broad author or theme sweeps gather 50–260 documents that merely mention the topic (duplicate .pdf/.epub/.mobi copies, bibliography lists), and a consolidated "reviewed as a set" row cannot clear them because matching is per id — so a fully reviewed run still shows 28, 60, 123 "unaccounted". The JSON also runs to ~50 KB on stdout, its keys (`library_hits_gathered`, `unaccounted`) are undocumented so agents probe wrong keys and read the empty result as clean, and SBS Textual files without a Calibre id can never be credited. On the positive side, the check found real missed sources in at least three runs (see Working well) — keep it. Fix direction: count only hits whose documents were opened or quoted, or let a consolidated row declare the ids it covers; compact default output; document the response shape; consider running it right after the Phase 3 gate, before drafting. (seen in 14 runs: 20260904-223000, 20260910-042426, 20260911-103350, 20260925-142300, 20261002-123216, +9 more — 20260730-060651, 20260814-052550, 20260822-133000, 20260831-185500, 20260904-233056, 20260908-084542, 20260912-150000, 20260920-100058, 20261001-134330)
+
+- **#112 resolve-citation answers in CST numbering, not the numbers readers and reviewers use.** *(Revived from Parked — 8 new runs.)* The resolver's `human` label uses CST/DPD-internal numbering, which diverges from SuttaCentral/PTS in many places: Thag/Thig (TH233 vs Thag 10.1), AN1 blocks (AN1.41-50 vs AN1.49-52), the Kālāma sutta (AN3.66 vs AN3.65), SN45.176 vs SN45.175, SN45.172 Ogha vs sc_code SN45.171, SN21 for SN21.1, Snp DPD codes (SNP9 = Hemavata), Kathāvatthu paragraphs with no debate number, Snp verse ranges. Reviewers and web sources (dhammatalks AN 1:49) use the other scheme, so each run loses time reconciling and cross-check "corrections" go the wrong way. `sutta_info` already has `sc_code` for many of these. Fix direction: print the SuttaCentral number next to the CST label whenever they differ, and state the house convention once. (seen in 9 runs: 20260902-133109, 20260904-233205, 20260928-004814, 20261007-025707, 20260913-104226, +4 more — 20260814-053113, 20260830-120431, 20260902-133318, 20260904-161608)
+
+- **#96 Pāḷi quotes are still completed from memory.** *(Revived from Parked — 8 new runs on this machine.)* The snippet in a search hit is cut at ~250–300 characters (`--quiet`), and the agent finishes the sentence from memory: four wrong completions in one run (SN16.13 bālā→moghapurisā, appamāde→samādhismiṃ), MN86 pādas that do not exist, a DN13 continuation that is not in the text, a DN3 phrase that belongs to DN5, a remembered compound with 0 hits, a blockquote spliced across two paragraphs. The source-armed reviewer caught nearly all of them, so the net works — but late. `e3ba16b` (2026-09-02, quote-to-claim fit at review) did not move the check earlier. Fix direction proposed by three runs: a validator step that checks every Pāḷi blockquote in the note is an exact substring of the canon DB (after markup strip) — a structural catch instead of a rule; plus a `--full` stdout mode on search-canon for quoting. (seen in 11 runs: 20260904-223000, 20260904-230800, 20260905-010740, 20261002-123216, 20261010-171500, +6 more — 20260731-183100, 20260806-174019, 20260808T065938Z, 20260904-213000, 20260912-nibbida-viraga-nirodha-enrichment, 20260925-112009)
+
+- **#130 Scripted and batched edits fail silently, so fixes do not land.** Python replace scripts no-op on a string that differs by one character, crash after printing "patched" but before writing, or die on an unescaped apostrophe; atomic multi-edit batches fail on one item; a correction lands in one of the two places the claim is stated; a stale contradicting bullet survives. Each was found only by a later grep or the verification pass. Fix: a Phase 6 integration rule — scripts assert every target is present and report applied/not-found at the end; after any correction, grep the whole note for every other statement of the claim. (seen in 8 runs: 20260904-233205, 20260905-032829, 20260911-163831, 20260927-111500, 20260928-020423, +3 more — 20260818-054108, 20260905-005804, 20260913-181500)
+
+- **#128 The cross-check times out on long notes.** The chain's deepseek-v4-pro entry times out at 180–300 s on a full draft (~300–400 lines, ~20 KB) and the run falls back to self-review; retries at 420–480 s succeeded twice. The helper default is `--timeout 180`. Related chain handling: a rate-limited entry (Z.ai five-hour cap, 402 balance) did not fall through to the next configured entry until the user prompted, and an opencode CLI syntax change broke one entry. Fix direction: a size-aware default timeout (or retry once at 2×), and fall through to the next chain entry on rate-limit errors. (seen in 8 runs: 20260817-034516, 20260903-bhikkhu-upahana-vinaya, 20260908-saccanurakkhana-speech-ethics, 2026-09-22-rebirth-cosmology-modern-research-ebt, 20261005-180920, +3 more — 20260824-what-suttas-say-comparative, 20260831-172511, 20260925-142300)
+
+- **#129 Library search times out or returns non-JSON on multi-word queries.** Phrases like "Buddhist Analysis of Matter", "suffering of change", "Vimuttimagga path of freedom" hit the 20 s too-broad abort; four runs saw a non-JSON line instead of the JSON error that Done #87 added to stdout — needs one live reproduction to see which path still prints plain text. Agents then retry the same string. Fix: reproduce the non-JSON case; document the retry order ("exact phrase" + author surname, then 1–2 words, then file-name `find`). (seen in 7 runs: 20260830-120431, 20260902-133109, 20260902-133318, 20260904-161608, 20260928-020423, +2 more — 20261008-133440, 20261011-062929)
+
+- **#97 Scholarly attributions and bibliographic details are written from memory.** *(Revived from Parked — 6 new runs.)* A guessed publisher and volume for a Gethin article; a prior note citing a conference paper as a fabricated "Cambridge UP 2023" book; a lateness claim pinned on Anālayo with no source; Childers 1872 credited for a PED 1921-25 gloss — twice, because the library file name looked like PED; a figure from one author's snippet assigned to another. Fix: extend the cite-from-memory rule to bibliographic metadata and named-scholar positions — name a scholar only with a source read this session, and confirm a dictionary's edition from its title page. (seen in 7 runs: 20260818-190500, 20260904-161444, 20260925-043036, 20260927-090500, 20260927-111500, +2 more — 20260730-045620, 20260924-190415)
+
+- **#132 scratch-* helpers reject `--quiet`, though the skill says the call template never errors.** `scratch-log`, `scratch-set-note` and the other scratch subcommands fail with an argparse error on `--quiet`; in one chained call two Phase 2 notes silently failed to log. `check-citation-shape` rejects `--slug` though the Phase 7 exit sequence lists it beside scratch commands. A run also saw `resolve-citation --quiet` print no JSON inside a `while read` loop (probably `uv run` eating the heredoc stdin — verify). Fix: accept `--quiet` as a harmless flag on every subcommand, like #91/#104 did for the lookup helpers. Quick win. (seen in 6 runs: 20260908-084542, 20260911-110444, 20261004-190500, 20260905-010740, 20260905-004416, +1 more — 20260816-164754)
+
+- **#109 Huge dossiers cost a run its time.** *(Revived from Parked.)* Auto-log stores the full Pāḷi+English JSON of every hit, and "pull the whole argument range" has no ceiling: one run wrote 10,321 Phase 2 lines and 15,638 Phase 3 lines (5.5 MB), took 160 min, and spent 25–35 min writing five compression scripts; others built a "condensed digest" or an evidence-pack agent for 9,000- and 18,000-line dossiers; a cross-canon run took 400 min for an 8,000-word note. `1e76682` (2026-09-20) added a research budget; 20261007-025707 postdates it. Fix direction: an excerpt mode for auto-log, or a `scratch-summary`/evidence-pack helper, plus a size ceiling on id-window pulls. (seen in 5 runs: 20260912-150000, 20260928-004814, 20261007-025707, 20260905-032829, +1 more — 20260720-141435; 20260912-160000 is a second report of the 150000 run)
+
+- **#131 WisdomLib is behind a Cloudflare challenge — Phase 4c cannot run as written.** Since ~2026-09-27 every WisdomLib fetch returns 403 (curl with any UA, r.jina.ai, headless playwright). One run read 15 pages from Internet Archive snapshots. Phase 4c is mandatory for Indological runs. Fix: document the block, the archive.org fallback, and library substitutes (Encyclopedia of Indian Religions, Ñāṇamoli glossary, PTS/MW); log the block once as a gap and do not retry. Quick doc win; recent. (seen in 4 runs: 20260927-033629, 20260927-111500, 20260928-004814, 20260928-020423)
+
+- **#111 Gather citations are verified only after the draft is written.** *(Revived from Parked.)* A sub-agent's citation (DN3 §256 for a phrase from DN5 §331) was used unverified until review; GRETIL verse numbers (Maitrāyaṇī, Ṛgveda off-by-one) need the same treatment — GRETIL stamps the verse number at the end of the line. Overlaps #124/#125: once those helpers exist, a pre-draft sweep over every gather citation becomes cheap. (seen in 3 runs: 20260813-155241, 20260912-151050, 20260925-112009)
+
+- **#100 Āgama texts that exist in the EBC vault are reported missing.** *(Revived from Parked.)* `get-agama MA211` returned `found: []` while the BDK file was on disk; earlier, `text_gaps` from sc-parallels was logged as a gap though the Patton translation existed. Fix: get-agama falls back to a file-name scan of `Agamas BDK/` and `Agamas Dhamma pearls/`; Phase 2.5 checks those folders before logging a gap. (seen in 2 runs: 20260730-060651, 20260830-120431)
+
 ### Low severity
 
 _(#38 moved to Done — WisdomLib skip clause added 2026-06-20)_
@@ -304,25 +354,6 @@ the 21 runs since, and the workaround is one `rm`)_
 _(#87 moved to Done — the timeout diagnostic now lands on stdout as JSON,
 not stderr only, 2026-08-10)_
 
-- **#89 (residue of #77) scratch-check-coverage counts raw index hits, not
-  investigated candidates.** The doc half is closed (consolidated rows are
-  the sanctioned account for FTS-noise tails), but the underlying signal
-  quality stands: the advisory count is dominated by shelf noise from broad
-  sweeps (50–300 hits), which buries the one real miss the check was built
-  to catch (see Done #64). Possible tool follow-ups, none picked yet:
-  distinguish hits whose files were actually extracted/read from raw index
-  hits; a relevance/snippet threshold; or excluding hits matched only via a
-  generic query word. Needs a design decision on what "investigated" means
-  mechanically before any code. Re-reported 2026-07-30 ("137 of 147
-  unaccounted" read as alarming until the skill's expected-tail guidance was
-  recalled) with a cheaper interim proposal than the full design decision:
-  print a one-line reminder in the tool's own output that a large residual is
-  the expected outcome of a broad FTS sweep. Re-reported twice more this
-  cycle: 20260814-052550 (43 unaccounted after a consolidated row — "the
-  residual COUNT can stay high and still be fine" needs saying up front) —
-  the reminder proposal stands. (residue of the 8-run evidence
-  under #77; +2 runs: 20260730-060651, 20260814-052550)
-
 _(#88 moved to Done — search-craft one-liners folded into Phase 2 and Hard Rule 9, 2026-07-17)_
 
 _(#91 moved to Done — --quiet accepted on resolve-citation, lookup-book,
@@ -339,19 +370,6 @@ _(#107 moved to Done — comparative Indo-Aryan dictionary access recorded
 in Phase 4a: DSAL 404 + Wiktionary proxy, csl-orig SLP1 transliteration,
 2026-08-15)_
 
-- **#113 The `Calibre #<id>` token has two candidate ids and only one is
-  right.** Two runs stumbled over the same ambiguity from different sides:
-  library-folders hits carry an FTS `document_id`, while file paths carry a
-  *parenthesised Calibre-library id* that is a different number — and the
-  note convention `Calibre #<id>` doesn't say which one to cite. Rule F4
-  says the `book_id` must come from the hit's `document_id`, but doesn't
-  name the path-id trap; one run flagged that a mismatched id silently
-  *passes* the coverage check (both numbers happened to match in its case).
-  Fix: one clarifying clause at Rule F4 and the coverage-check section —
-  the token is always the FTS `document_id`; the parenthesised path number
-  is a separate Calibre id never used in notes.
-  (seen in 2 runs: 20260813-155241, 20260814-101028)
-
 - **#114 Wikipedia craft for Phase 4a is undocumented.** Two complementary
   findings: (a) the plain-text extracts API
   (`api.php … prop=extracts&explaintext=1&redirects=1`, with a UA header and
@@ -361,7 +379,7 @@ in Phase 4a: DSAL 404 + Wiktionary proxy, csl-orig SLP1 transliteration,
   clusters where many articles are stubs or redirects (Buddhist manuscript
   finds), cite the one comprehensive article and log the stubs in Sources
   Investigated, Not Used. Fix: both as a short recipe in the Phase 4a / pi
-  fallback guidance. (seen in 2 runs: 20260814-052550, 20260813-081200)
+  fallback guidance. A third run (pi, no WebSearch) hit Brave rate limits after ~5 queries and DuckDuckGo challenge pages, and fell back to the Wikipedia REST/action API with a UA — same recipe. (seen in 3 runs: 20260814-052550, 20260813-081200, 20260911-103350)
 
 - **#115 Thematic non-doctrinal notes: T1-section handling is allowed but
   undocumented.** A pure archaeology/epigraphy run renamed `## Canon
@@ -373,22 +391,9 @@ in Phase 4a: DSAL 404 + Wiktionary proxy, csl-orig SLP1 transliteration,
   canon content. Fix: one paragraph extending the comparative-religion
   clause to thematic material-culture/directory questions (artefact-
   appropriate headings; omission = soft warning = correct), plus the
-  one-line statement in Phase 7.
-  (seen in 2 runs: 20260813-081200, 20260814-052550)
-
-- **#116 Absence claims need a synonym-family sweep, and the rule exists
-  only in the series format.** Two sibling runs on antarābhava made the
-  same mistake from opposite sides: asserting "the word never occurs in the
-  suttas" without sweeping the *concept family* — the antarā- idiom
-  (antarāparinibbāyī, sambhavesin, opapātika, AN 9.12) is frequent even
-  though the compound noun is absent, and foregrounding it re-spined the
-  note. SKILL.md's absence-search rule (stem + synonyms, Hard Rule 12) is
-  written only inside the series-format section. Fix: generalize it to
-  Phase 2 as a checklist item — before asserting a doctrinal term is absent,
-  search near-synonyms and grammatical variants and count them; a doctrinal
-  term can be absent while its concept is frequent. Also: when the *user*
-  says a concept is "frequently mentioned", read that as a claim about the
-  family, not the compound. (seen in 2 runs: 20260812-093512, 20260812-095506)
+  one-line statement in Phase 7. A secular run also read "fix every
+  validator warning" as requiring a T1 section it could not honestly fill.
+  (seen in 3 runs: 20260813-081200, 20260814-052550, 20260904-200000)
 
 - **#119 Run retrospectives don't record the vicaya repo commit they ran
   against.** The 2026-08-10 triage found 9 of 21 runs came from a machine
@@ -400,6 +405,48 @@ in Phase 4a: DSAL 404 + Wiktionary proxy, csl-orig SLP1 transliteration,
   self-declared. (evidence: triage 2026-08-10 note 14, confirmed again
   2026-08-14 while annotating #96)
 
+- **#133 In a parallel wave, a later-phase agent cannot gate and keeps retrying.** Gates must be written in order, so a 4b or 4c agent that finishes before Phase 4 is gated gets refused — one retried 14 times over 9 minutes. Fix: the dispatch prompt says "if the gate refuses because an earlier gate is missing, log your work, report it, and stop; the orchestrator backfills". (seen in 4 runs: 20260908-saccanurakkhana-speech-ethics, 20260911-khandhaka-anadara-anapatti, 20260927-033629, 20261007-025707)
+
+- **#134 Phase 4 vs 4a labels still confuse.** The web phase is gated and pinned as `4`, while the skill's headings say 4a; a `VICAYA_PHASE=4a` pin is silently normalised to 4, a `scratch-log 4a` entry was not read by the gate-4 check in one run, and `scratch-gate 4a` returns `title: null`. Fix: one explicit line "4a work logs and gates as 4" at the phase table, and give 4a a title in the gate map. (seen in 4 runs: 20260818-170240, 20260904-161608, 20260904-213000, 20260905-004416)
+
+- **#135 Parallel helper calls that change the dossier race each other.** A `scratch-log` and `scratch-gate` in the same parallel batch gave a spurious "no logged evidence"; `scratch-verify` read before a gate landed; `scratch-set-note --pdf` ran before the PDF existed; one first search call never reached the dossier. Fix: one line in "Calling the helpers" — run state-changing scratch calls one at a time. (seen in 3 runs: 20260822-133000, 20260831-172511, 20260905-004416)
+
+- **#136 Footnote ids drift or go undefined in long drafts.** Inline `[^id]` used before defined, stray `[^web-8?]`, a footnote attached to the wrong source. Fix: a used-vs-defined footnote check in validate_note.py. (seen in 3 runs: 20260902-174106, 20260904-200000, 20261011-024434)
+
+- **#137 Vault index edits clip rows or miss their anchor.** An insert into summary-vicaya.md clipped the next table row; byte-exact anchors on `Pāḷi` vs `Pāli` failed; one run found a bullet appended to all 33 catalog sections. The 2026-09-08 index check (`4ffeb30`) catches damage after the fact. Fix: anchor on the section heading, never a body line, and grep that the new line appears exactly once. (seen in 3 runs: 20260908-084542, 20260912-150000, 20260919-041931)
+
+- **#138 Enrichment date and footer rule is unclear.** Runs disagree on whether an in-place enrichment keeps the original note date, takes the run date, or keeps the filename but updates the frontmatter date, and the footer convention is unstated. Fix: one sentence in Phase 7. (seen in 3 runs: 20260911-162500, 20260911-163831, 20260912-053133)
+
+- **#139 Term-meaning searches skip the ṭīkā and Abhidhamma tables.** The key statement often lives only in `*_tik` (uddhacca-kukkucca: s0401t_tik §14) or in `abh*_mul` (Paṭṭhāna §417 for bhavaṅga), but Phase 2 targets name `s*_mul` and aṭṭhakathā. Fix: the Phase 2 dispatch target line lists `*_tik`, `abh*_mul`, Niddesa and Visuddhimagga for term questions. (seen in 3 runs: 20260911-163831, 20260925-043036, 20260925-142300)
+
+- **#140 Validator rules for T1 sections surprise agents.** H3 subsections under a `(T1)` H2 count against its quote ratio; a heading with a suffix after `(T1)` does not match. Fix: state both in the Phase 7 template. (seen in 2 runs: 20260925-112009, 20261010-171500)
+
+- **#141 Gather sub-agents stall at the 600-second watchdog.** In parallel waves, several agents stopped with "no progress for 600s"; one had logged real content and could be gated, others succeeded on retry with a prescriptive numbered search list. Fix: check the dossier before relaunching; give gather prompts a numbered search list. (seen in 2 runs: 20260904-213800, 20260904-221900)
+
+- **#142 Dispatch briefs do not carry the user's shell rules.** Sub-agents ran `awk`/`sed` against the user's standing rules because the brief did not repeat them, and left helper scripts in `temp/`. Fix: a fixed shell-rules line in the dispatch template. (seen in 2 runs: 20261007-025707, 20261011-062929)
+
+- **#143 Obsidian update banner blocks vault search until the update finishes.** Post-#68 the banner is parsed around, but while an update is in progress the CLI prints only the banner and a relaunch does not clear it; `rg` fallback worked. Fix: add "wait for the update, then restart" to the banner note. (seen in 2 runs: 20260905-sangha-light-item-borrow, 20260908-saccanurakkhana-speech-ethics)
+
+- **#144 The full ceremony runs on questions the user considers simple.** The user redirected twice to "just answer"; another bounded question needed >1000 lines of skill. `1e76682` added a research budget; 20261008-133440 postdates it. Fix: a Phase 0 cost triage that offers vicaya-quick for bounded questions. (seen in 2 runs: 20260912-151050, 20261008-133440)
+
+- **#145 check-citation-shape flags things that are not citations.** A PTS page reference inside a rejection-table row (DN 2.222) and a manuscript siglum with a percentage ("KP 5.5%") were read as depth errors. Fix: skip table rows marked as rejected, whitelist sigla near `%`, document the roman-PTS form. (seen in 2 runs: 20260902-133109, 20260905-014337)
+
+- **#146 Phase 1 vault search misses existing notes on the same topic.** An overlapping note surfaced only via summary-vicaya.md because the query lacked its key word; two adjacent bhavaṅga notes were found only at the index update. Fix: Phase 1 also greps the summary-vicaya.md rows for the topic terms. (seen in 2 runs: 20260904-161608, 20260925-142300)
+
+- **#147 Direct SQL pulls do not auto-log.** Window pulls by SQL leave the quote text only in the agent's context; one run wrote ~15 manual log entries and rebuilt a hit-list parser for the third run in a row. Fix: a `scratch-hits`-style helper or a logged SQL wrapper (overlaps #124's paragraph helper — build that one to auto-log). (seen in 2 runs: 20260904-163008, 20260904-233056)
+
+- **#148 The tier of a GRETIL Sanskrit text is unclear.** One run tiered non-Buddhist Sanskrit primary texts as T1 (should be T3); another found the skill's blanket "GRETIL is T3" wrong for Buddhist canonical Sanskrit (Mahāvastu → T1b). Fix: tier by the text's own canonicity, not by the website. (seen in 2 runs: 20260912-151050, 20260924-190415)
+
+- **#149 No rule for "enrich the old note or write a new one".** One run found an un-migrated older note on the same topic and wrote a sibling; another followed a handoff's "enrichment" label when the user wanted a full rewrite. Fix: one paragraph — when to enrich in place, when to write a sibling, cross-link either way, confirm a handoff's run type with the user. (seen in 2 runs: 20260920-023254, 20260927-061700)
+
+- **#150 sync_notes.py cannot carry a deletion or rename.** A remote-side delete blocked the local push of the catalog; a `git mv` fix for a wrong date could not be staged by the script. Separate single sighting: an SSH "Repository not found" with valid https auth (20261016-112900). Fix: stage deletions/renames under the Vicaya/ pathspec; print the remote URL and protocol on failure. (seen in 2 runs: 2026-09-22-rebirth-cosmology-modern-research-ebt, 20260928-004814)
+
+- **#151 Commentaries get flattened into one voice.** A note presented the tradition's deflationary reading of nibbāna as settled, and another described a "commentarial consensus" that hid a real DN-a vs MN-a/AN-a divergence. Fix: treat each commentary as a separate witness; pull the other side of a known dispute before drafting. (seen in 2 runs: 20261001-134330, 20261016-112900)
+
+- **#118 The orchestrator's own inline calls are exempted from the phase pin by implication.** *(Revived from Parked 2026-10-17: a background cross-check ran unpinned and auto-logged via the run pointer; another run raised a false misfiling alarm over the orchestrator's own unpinned Phase 1 calls.)* SKILL.md says there is "nothing to pin" while a single agent works Phases 0/1 and 5–7, and the harness-fallback block frames `VICAYA_PHASE` as a sub-agent rule — so an orchestrator's own Phase 1/2 inline calls ran unpinned and surfaced `phase-source: run-pointer` markers (harmless while phases run linearly, but the marker exists precisely to be absent). Fix: one clause in the harness-fallback block — pin on every helper call once you are working more than one phase in a session, orchestrator or not. (seen in 3 runs: 20260814-101028, 20260911-103350, 20260912-160000)
+
+- **#121 Stratum-distribution scan is hand-written SQL every time.** *(Revived from Parked 2026-10-17: a second run asked for the same "corpus-statistics sweep" recipe for dating questions.)* The single most useful operation for "when does X first appear" questions — counting each name-stem across every mūla/att table classified T1a/T1b/T2 — turned a fuzzy biographical question into an exact first-attestation table, but the run had to write a one-off `temp/scan_names.py` to get it. Fix: promote it to a helper subcommand (per-term tier-classified counts across all canon tables). Same shape as the Working-well entry on per-stratum term-counts as accretion evidence. (seen in 2 runs: 20260814-053113, 20260831-185500)
+
 ### Parked — minor, revive only if it resurfaces
 
 Two populations live here (user rule, 2026-08-14): single-sighting issues —
@@ -410,54 +457,6 @@ real historical evidence. Never ranked in Phase 6; pull back into the ranked
 list at original severity on a fresh report.
 
 **Single-sighting (parked 2026-08-14):**
-
-- **#96 Pāḷi blockquotes drafted from memory reach the Phase 5 draft.** Four
-  distinct instances across three runs: a *fabricated* Ratana Sutta verse at
-  SNP13 §226 that direct SQL confirmed exists in neither `s0501m_mul` nor
-  `s0505m_mul`; MN7's cloth simile replaced in the draft by an unrelated
-  mind-reading passage (*cetasā ceto paricca pajānāti*); MN21's saw simile
-  mis-quoted (`Ubhosu cepi me…hatthesu` for `Ubhatodaṇḍakena cepi…`); and a
-  ṭīkā paranum cited for a claim the cited paragraphs don't discuss. All were
-  caught at Phase 6 — which means the net works, but the existing rules
-  (never cite a verse from memory; Hard Rule 9) are aimed at *locators*, and
-  these are *quoted text*. Fix as proposed by two of the runs: a Phase 5
-  pre-writing hard check — every Pāḷi blockquote is grep/SQL-verified against
-  the canon DB at the moment it is typed into the draft, not left for Phase 6.
-  *(Authorship caveat, confirmed by git 2026-08-14: 2 of the 3 sighting runs
-  (20260806-174019, 20260808T065938Z) are SBS-resident, i.e. an outdated
-  checkout whose mistakes may simply be pre-fix code — per the user's
-  2026-08-14 directive, rank on this-machine evidence only, so the live
-  weight is 1 run (20260731-183100, bdhrs) plus the same-family locator
-  instance caught pre-note in 20260812-095506, also bdhrs.)*
-  (seen in 3 runs: 20260806-174019, 20260808T065938Z, 20260731-183100)
-  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
-
-- **#97 Position attributions written from model memory escape the
-  cite-from-memory rule.** A sentence attributing to Nattier a position on the
-  Mahādeva five theses was written mid-draft from memory and was substantively
-  backwards (Nattier and Prebish argue Mahādeva is *later* and unconnected to
-  the primary schism), in a paragraph where every numbered citation around it
-  was correctly sourced. The existing rule targets verses and page numbers, so
-  a claim of the form "X argues that…" / "modern scholarship holds…" passes
-  straight through. Fix: extend the Phase 5 drafting check to scholarly
-  position attributions — route each through a source read this session or
-  soften to tradition-level attribution. Caught, incidentally, by
-  `scratch-check-coverage` (see Working well). (seen in 1 run: 20260730-045620)
-  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
-
-- **#100 sc-parallels `text_gaps` needs an explicit EBC fallback step.** A
-  Phase 2.5 agent reported SA 470 as a "hard text gap … cannot be
-  content-checked from local sources"; the Patton translation was sitting in
-  the EBC vault, and it turned out to be one of the most valuable sources in
-  the run (its closing verse forecloses a misreading the note would otherwise
-  have carried). The agent checked only the offline SuttaCentral archive and
-  treated absence there as absence everywhere. Fix: make the fallback an
-  explicit numbered step in the Phase 2.5 instructions — on non-empty
-  `text_gaps`, check `Agamas Dhamma pearls/<nik>-patton/` and
-  `Agamas BDK/<nik>-bdk/` before logging a gap. Same family as #70: a
-  metadata-level claim logged without checking the text underneath.
-  (seen in 1 run: 20260730-060651)
-  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
 
 - **#106 Gather dispatch prompts should name the hypothesis to test, not only
   the search terms.** A Phase 2 agent given the explicit proposition to check
@@ -477,14 +476,6 @@ list at original severity on a fresh report.
   live data gap.)* (seen in 1 run: 20260726-logical-fallacies)
   *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
 
-- **#109 No per-phase summary helper for very large scratch dossiers.** A
-  650KB scratch file needed careful offset/limit reads plus grep to navigate
-  after compaction; a 42k-line one recurred later in the cycle. Resume works
-  correctly — this is a navigation-cost nicety, not a correctness gap. Fix
-  sketch: a `scratch-summary` subcommand extracting the key findings per phase.
-  (seen in 1 run: 20260720-141435)
-  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
-
 - **#110 Undocumented what `subagent_type: "fork"` actually does in this
   harness.** A run planning a 5-way parallel fan-out found Agent calls
   resolving synchronously ("you are now the fork") rather than backgrounding,
@@ -492,41 +483,6 @@ list at original severity on a fresh report.
   Fix: state the observed behavior in the Sub-agent dispatch section so a
   large task doesn't have to discover it mid-run.
   (seen in 1 run: 20260801-150452)
-  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
-
-- **#111 Gather citations are verified only after the draft is written.** A
-  thematic teacher-comparison run's Phase 2 agent cited AN6.10 for content
-  that is AN6.9 (*Anussatiṭṭhānasuttaṃ*, s0403m2_mul:9); the off-by-one
-  propagated into two locations of the Phase 5 draft and was caught only at
-  Phase 6 self-review. The existing rules verify a *sample*, not the set:
-  #49 has the orchestrator re-verify the 2–3 highest-priority citations per
-  agent, #90 requires citations to be copied verbatim from a resolve log
-  (which was silent here because the gather agent never resolved this one).
-  Fix as the run proposes: before the Phase 5 draft is written, run
-  `resolve-citation`/`verify-citation` over *every* sutta citation the gather
-  agents produced — off-by-one paranums should fail at gather time, not in
-  Phase 6. Same defect-vs-discipline family as #96, one layer down
-  (locators, not quoted text). *(Evidence caveat: the sighting run is
-  SBS-resident — an outdated checkout per the user — so per the 2026-08-14
-  directive this is ranked only if it reproduces on this machine; #49's
-  sample-only rule exists in the current SKILL.md regardless, so the
-  discipline gap is plausible here too.)* (seen in 1 run: 20260813-155241)
-  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
-
-- **#112 resolve-citation answers in CST-internal numbering for the verse
-  books, diverging from conventional citations.** Asked to resolve the
-  Theragāthā row standard scholarship cites as Thag 10.1, resolve-citation
-  returned "TH233 Kāḷudāyittheragāthā" — CST's per-book sutta index, not the
-  chapter.verse form every modern edition and the note's readers use. The
-  reverse direction is already handled (`verify-citation "Thag 10.1"`
-  resolves correctly; SKILL.md tells agents to cite by chapter.verse), but
-  resolve-citation's own label silently produces citations nobody recognises,
-  and in this run it took an independent reviewer re-checking against the
-  bilara text to catch it. Fix: for Thag/Thig/Khp, surface the conventional
-  chapter.verse alongside (or instead of) the internal index, and flag the
-  divergence in the book-code map. Distinct from Done #29 (Thag/Thig/Kp
-  *aliases* in verify-citation) — this is the numbering layer.
-  (seen in 1 run: 20260814-053113)
   *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
 
 - **#117 Teacher-identity runs need setup guardrails.** A teacher with a
@@ -544,18 +500,6 @@ list at original severity on a fresh report.
   (seen in 1 run: 20260813-155241)
   *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
 
-- **#118 The orchestrator's own inline calls are exempted from the phase
-  pin by implication.** SKILL.md says there is "nothing to pin" while a
-  single agent works Phases 0/1 and 5–7, and the harness-fallback block
-  frames `VICAYA_PHASE` as a sub-agent rule — so an orchestrator's own
-  Phase 1/2 inline calls ran unpinned and surfaced `phase-source:
-  run-pointer` markers (harmless while phases run linearly, but the marker
-  exists precisely to be absent). Fix: one clause in the harness-fallback
-  block — pin on every helper call once you are working more than one phase
-  in a session, orchestrator or not.
-  (seen in 1 run: 20260814-101028)
-  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
-
 - **#120 Library availability is discovered mid-run, not at Phase 0.** A
   run lost the whole modern-scholarship gather (Anālayo, Bhikkhu Bodhi,
   Nyanaponika, Gethin, Ledi Sayadaw — all unreachable) because the offline
@@ -570,17 +514,6 @@ list at original severity on a fresh report.
   (seen in 1 run: 20260809-230226)
   *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
 
-- **#121 Stratum-distribution scan is hand-written SQL every time.** The
-  single most useful operation for "when does X first appear" questions —
-  counting each name-stem across every mūla/att table classified T1a/T1b/T2
-  — turned a fuzzy biographical question into an exact first-attestation
-  table, but the run had to write a one-off `temp/scan_names.py` to get it.
-  Fix: promote it to a helper subcommand (per-term tier-classified counts
-  across all canon tables). Same shape as the Working-well entry on
-  per-stratum term-counts as accretion evidence.
-  (seen in 1 run: 20260814-053113)
-  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
-
 - **#122 Enrichment triage re-reads the old note by hand every time.** A
   run noted that identifying what an existing note already covers required
   manual re-reading; a helper that diffs a proposed topic against existing
@@ -591,14 +524,67 @@ list at original severity on a fresh report.
   (seen in 1 run: 20260810-042343)
   *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
 
-- **#123 The second-reviewer prompt carries a Claude-Code-specific
-  prohibition.** The "Do NOT use SendMessage" line in the Phase 6
-  second-reviewer dispatch is wrong on RLM/prime harnesses, where child
-  agents MUST reply via `agent_message.send(receiver_role='parent')` — a
-  run had to override the prompt's own instruction to make the reviewer
-  work. Fix: a harness note next to the line (mirrors the #78
-  harness-fallbacks pattern). (seen in 1 run: 20260812-095506)
-  *(parked 2026-08-14 under the single-sighting rule — revive on a second report)*
+**Single-sighting (parked 2026-10-17, triage of 98 runs 20260815→20261016 — one line each, revive on a second report):**
+
+- Append-a-section enrichment runs have no placement/footnote guidance (20260816-164754).
+- Practice section for a multi-topic theory programme should be one built theme (20260817-034516).
+- No `scratch-rename-slug` when the question is replaced mid-run (20260818-170240).
+- GRETIL reformat counted as an independent witness — check the corpus provenance file (20260818-170240).
+- sacred-texts.com 403s; local library holds the Ganguli Mahābhārata as text (20260818-170240).
+- User-requested evidence heading form not covered by the template (20260818-191105).
+- Quoted multi-word phrases to search-youtube 0-hit while keywords work (20260831-172511).
+- Quality-form vs factor-form of a term stratify differently (dhutaguṇa / dhutaṅga) (20260831-185500).
+- `scratch-log --summary-file` run twice duplicates a block (20260902-174106).
+- SQLite rejects ORDER BY inside a UNION ALL subquery in canon-SQL recipes (20260903-bhikkhu-upahana-vinaya).
+- `find` without `-iname`; `env` eval fails outside the repo root (20260904-161444).
+- Chat-mode drift: agent answered instead of running the loaded workflow (20260904-200000).
+- PubMed E-utilities needs retry-with-backoff (20260904-200000).
+- get-agama / sc-parallels for mn36 returned DN3 material — compare fetched title to the requested code (20260904-213000).
+- cross-check should auto-log its output path at write time (20260904-223000).
+- EBC frontmatter titles can contradict the text (MĀ 101/102) (20260904-233056).
+- Vault writes >10 KB should go through a subprocess `obsidian create` (20260904-233205).
+- WisdomLib HTML stripping recipe for pi (20260904-233205).
+- Peyyāla compression: refrains live only in a cross-referenced sutta (MN22 → MN54) (20260905-010740).
+- Read 2–3 surrounding paragraphs before naming a verse's speaker (20260905-010740).
+- Old note's textual claim ("BJT has no pe") contradicted the machine texts (20260905-014337).
+- Double backgrounding (`nohup … &` inside a background call) produced an empty review file (20260905-033059).
+- A promoted vicaya-quick run cannot backfill Phase 1 evidence into Phases 2–4c (20260905-sangha-light-item-borrow).
+- Multi-session run: gate state had to be reconstructed (20260905-sangha-light-item-borrow).
+- Parallel dispatch spent half the user's rate-limit quota; each agent re-reads the ~40k-token SKILL.md (20260908-084542).
+- Integration delegated to a fork leaves no reviewer to message back (20260911-105106).
+- search-canon returned empty for Vinaya queries in Phase 6 that worked in Phase 2 (20260911-162500).
+- Term-meaning runs should state the DPD headword count from a query (20260911-163831).
+- Channel promotions should record the name exactly as search-youtube returns it (20260911-163831).
+- Parivāra/multi-section structural claims need a direct-SQL check (20260911-khandhaka-anadara-anapatti).
+- A lighter Phase 3–4c path for narrow named-source enrichment runs (20260912-043103).
+- Three Phase 6 review passes are unconditional; make the verification pass conditional (20260912-150000).
+- Agent claimed completion of steps whose files were stale; raised a false misfiling alarm (20260912-160000).
+- Agent interrupted the user with questions the sources could settle (20260912-160000).
+- search-sanskrit `--folder` scoping under-returns and GRETIL index files dominate output (20260912-151050).
+- Pre-2026 notes need `tool:` and `## Bibliography` backfilled on enrichment (20260913-154500).
+- Machine English of *_att tables is unreliable — quote the Pāḷi (20260913-181500).
+- T2 convention (Paṭis/Niddesa/Netti are T2) missing from the reviewer prompt (20260919-041931).
+- Phase 5 draft filename diverged from the scratch stem (20260915-105500).
+- DN book-code table wrong for this DB build: DN33/DN34 are in s0103m_mul; LIKE is case-sensitive on non-ASCII (20260915-105500).
+- Second-reviewer verification pass as a checklist of finding ids (20260915-105500).
+- Bare `--slug` created a new dossier instead of attaching to the dated one (20260924-100023).
+- Thematic 3b auto-skip message reads as "not applicable" on cross-canon questions (20260924-190415).
+- pi dispatch pin should be `VICAYA_SCRATCH=<absolute path>` + `VICAYA_PHASE` (20260925-045957).
+- `search-chinese --text` ids are not Taishō numbers; wrong id returns an unrelated text (20260927-033629).
+- "An earlier version of this note claimed X" sentences in Findings break Hard Rule 2 (20260927-100000).
+- Dispatch prompts omitted step 1 (`scratch-resume`), so calls did not auto-log (20260927-111500).
+- search-84000 body search misses TEI `<term>` glossary entries (20260927-111500).
+- Note dated from the UTC clock, not local time (20260928-004814).
+- Library PDFs that the index says are ok extract empty with pdftotext (20261002-123216).
+- Vault path not in the shell env at the Phase 7 write (20261004-190500).
+- vicaya-quick's scratch-init omits Target/Falsifier lines (20261008-133440).
+- Enrichment rewrites should re-run set-note / citation-shape / validate (20261009-032200).
+- DPD inflection tables: grey cells come from corpus membership at render time (20261010-171500).
+- WebFetch returns summaries — fetch with curl for anything to be quoted (20261011-024434).
+- Lexicographic runs: DPD/PED case frames right after the frequency scan (20261012-120548).
+- Caller-named comparison artifacts (before/after) should be built and shown first, inside the note (20261013-103225).
+- validate_note.py passes `canon_refs` entries that YAML parses as mappings (20261016-112900).
+- Phase 7 should say the vault git repo is the Vicaya/ subfolder (20261016-112900).
 
 **Older dormant items:**
 
@@ -852,6 +838,16 @@ list at original severity on a fresh report.
   missed (20260701-135123), and a SQL-filtered query cleanly separated the
   Buddha's own locomotion from other flying/vanishing events for a
   quantitative comparison (20260705-053727).
+
+- **Source-armed second reviewer (triage 2026-10-17)**: the single most-praised mechanism of the cycle — 25 runs credit it with catching real errors the external cross-check missed (memory-completed Pāḷi, wrong paranums, carried-over claims, misattributed speakers). Preserve it; #126 is about making it work on pi, not about trimming it. (seen in 25 runs: 20260904-223000, 20260912-153500, 20260928-020423, 20261007-025707, 20261011-062929, +20 more)
+
+- **Verify every reviewer claim against the mūla, in both directions (triage 2026-10-17)**: external reviewers made confident false corrections in at least ten runs (AN7.45 "is AN7.63", DN33 "contains paramattha-sacca", MN40 §435, NP30/PC34 reversed, EA12.1); each was caught because the rule is followed, and verifying a wrong finding sometimes produced the run's best evidence. (seen in 10+ runs: 20260902-133109, 20260904-221900, 20260905-045500, 20260915-031056, 20261012-120548, +5 more)
+
+- **Cross-check `--preflight` (triage 2026-10-17)**: caught a dead chain (429 cap + 402 balance) in ~10 s instead of a 10-minute wait. (seen in 5 runs: 20260831-172511, 20260904-213000, 20260910-042426, 20260911-110444, 20260925-045957)
+
+- **scratch-check-coverage finds real misses despite its noise (triage 2026-10-17)**: it surfaced load-bearing uncited sources (Schumacher; Sujato, Chatchai, Pa-Auk; Jones's Mahāvastu, Endo, Conze) — the case for fixing #113/#89 rather than retiring it. (seen in 3 runs: 20260822-133000, 20260912-150000, 20260924-190415)
+
+- **Count lists and terms programmatically (triage 2026-10-17)**: temp/ SQL counts settled list-stability and first-attestation questions (31 vs 32 body parts across 8+ texts; frequency-matrix-first for lexicographic runs). (seen in 3 runs: 20260817-045540, 20260831-185500, 20261012-120548)
 
 ## Notes for the next session
 
@@ -1216,3 +1212,6 @@ list at original severity on a fresh report.
     hard-stop, check-citation-shape path) were already Done as #93 and #95.
     Ranked backlog after: the 2-run doc items #113–#116; #89 (8-run
     residue), #119 parked.
+23. Triage 2026-10-17 (98 runs, 08-15→10-16): the user asked to work only on the most frequent issues and warned that separate extraction agents would describe one cause in different words. So the 7 batch agents only extracted; all clustering was done in one pass by mechanism and by the component named, and two clusters that looked alike were kept apart on purpose: #113 (wrong library id / one accepted spelling) vs #89 (broad-sweep noise), and #124 (row id cited as paranum) vs #125 (right paranum, wrong sutta name) — each pair needs a different fix. Ranked by run count: #113 (24), #124 (16), #89 (14), #126 (13), #116 (12), #96 (11). Note that `document_id` drift may have been a one-time effect of the 2026-09-02 index rebuild — verify on a normal refresh before building #113 around it. 20260912-150000 and 20260912-160000 describe the same brahmavihāra run; count them once.
+24. Session 2026-10-17 (first pick): **#113 closed** in code, not prose — the checker change plus the Rule F4 trap. Two corrections to the triage-time text: the runs' "switch to the stable folder number" fix was wrong (45% coverage, numbers repeat across libraries), and `document_id` drift is a one-time rebuild effect, not ongoing. The fix exposed #152 (45 wrong citations already published), which needs the user's go-ahead to repair. #89 shrank: its "undocumented keys" sub-point is closed; the broad-sweep noise remains. Next pick per the user: note prose must be plain English (parked one-liner from 20261010-171500 — the user ranks it second regardless of run count).
+25. Session 2026-10-17 (second pick, user-chosen): **#153 closed** — plain-English note prose, rule plus a `long-sentence` validator warning at 45 words (user's choice after review; 40 was judged too drastic). The candidate limits were measured on the vault, not guessed. Watch the next few runs: if Phase 7 rewrites of 25+ warnings per note prove costly, the fix is earlier drafting discipline, not a looser limit. Old vault notes were not rewritten.

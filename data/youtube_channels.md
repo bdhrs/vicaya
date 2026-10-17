@@ -115,7 +115,6 @@ Prune dead links periodically.
 - Buddhist Geeks
 - Mingalar MaungMe
 - Sayalay Dipankara
-- Meditation and Neuroscience
 - Everyday Meditations
 - Friends Of Sasana
 - Dhamma Gyan With Kavita
@@ -151,3 +150,8 @@ Prune dead links periodically.
 - Unlocking Buddhism
 
 ## excluded
+- CRYSTAL
+- Dr. Mindfulness
+- TINGLING NIRVANA
+- Meditation and Neuroscience
+- Sama Meditation & Stories

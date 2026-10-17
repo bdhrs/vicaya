@@ -154,7 +154,7 @@ Every helper returns dataclasses serialised to JSON by the CLI. Field names are 
 - **VaultHit**: `path` (str), `snippet` (str), `line` (int | null)
 - **CanonHit**: `book_code` (str, e.g. `s0201m_mul`), `paranum` (str), `pali` (str), `english` (str). **No `snippet` field** — quote from `pali` / `english` directly. XML/TEI markup is stripped automatically; text is plain UTF-8. Hits on continuation rows (which carry no paranum of their own) come back with the nearest preceding paranum — the paragraph they belong to — so `paranum` pipes straight into `resolve-citation`.
 - **Citation**: `machine` (e.g. `s0201m_mul:23`), `human` (e.g. `MN60 Apaṇṇakasuttaṃ para 97`), `pitaka`, `text_type`, `paranum`, `paranum_exists` (`true` = the book's table has a row for this paranum; `false` = it has none, so the reference is bogus and the command exits 1; `null` = could not be checked). Never cite a `false`.
-- **Library folders hit**: plain dict with `document_id`, `title`, `relative_path`, `source_path`, `extension`, `snippet`, `extraction_status`, `duplicate_count`, `duplicate_paths`, `possible_duplicate_of`, and `source_available` (`true` = the file is on disk; `false` = it is genuinely missing; `null` = its volume could not be reached, so presence is unknown — the index still has the extracted text, and the fix is to mount the drive, not to treat the book as lost).
+- **Library folders hit**: plain dict with `document_id`, `title`, `relative_path`, `source_path`, `extension`, `snippet`, `extraction_status`, `duplicate_count`, `duplicate_paths`, `possible_duplicate_of`, and `source_available` (`true` = the file is on disk; `false` = it is genuinely missing; `null` = its volume could not be reached, so presence is unknown — the index still has the extracted text, and the fix is to mount the drive, not to treat the book as lost). `document_id` is the number a note cites; the `(N)` at the end of a Calibre folder name in `relative_path` is Calibre's own book number, a different number that names a different document in the index.
 - **YouTubeHit**: `video_id` (str), `title` (str), `channel` (str), `channel_id` (str), `duration` (float | null, seconds), `url` (str), `tier` (str — `trusted` | `probationary`; `excluded` never appears here, those are filtered out).
 - **YouTubeTranscript**: `video_id` (str), `lang` (str, e.g. `"en"`), `is_auto` (bool — **true means Pāḷi terms are unreliable; paraphrase, don't quote**), `segments` (list of `{start, duration, text}`), `fetched` (ISO date).
 - **search-chinese result** (plain dict): `query`, `total_hits` (int, all matches), `total_texts` (int, all matching texts), `by_text` (list of `{id, title, count}`, at most 50, most matches first — `id` like `T0099`, suffix letters kept as in `T0128a`), `hits` (list of `{id, title, vol, line, snippet}` — `vol` is the volume, e.g. `T02`; `line` is the Taishō page-line the match starts on, e.g. `0120a05`).
@@ -1835,7 +1835,7 @@ should be complete. Organize entries into the five subsections as you write them
 Secondary Sources alphabetically by author surname. See the `## Bibliography` section
 above for format rules.
 
-**Draft durability — the full draft body lives in `data/scratch/`, always.** As the first action after drafting (before any Phase 6 work), write the complete draft body to `data/scratch/<slug>.phase5-draft.md` and log the path with `scratch-log 5`. Model context and session temp directories do not survive every interruption — a real run's draft lived only in the session scratchpad across a compaction boundary and survived by luck. This same file is what Phase 6 pipes to the cross-check (the draft, never the accumulating scratch dossier), and it can be pre-validated before the vault write by passing `validate_note.py` its ABSOLUTE path (a repo-relative path resolves against the vault and fails).
+**Draft durability — the full draft body lives in `data/scratch/`, always.** As the first action after drafting (before any Phase 6 work), write the complete draft body to `data/scratch/<slug>.phase5-draft.md` and log the path with `scratch-log 5`. **Draft in plain English from the first sentence** (Style notes) — a dense draft costs a rewrite of every sentence at the end; pre-validating this file lists each sentence over 45 words as a `long-sentence` warning. Model context and session temp directories do not survive every interruption — a real run's draft lived only in the session scratchpad across a compaction boundary and survived by luck. This same file is what Phase 6 pipes to the cross-check (the draft, never the accumulating scratch dossier), and it can be pre-validated before the vault write by passing `validate_note.py` its ABSOLUTE path (a repo-relative path resolves against the vault and fails).
 
 **Deferred-draft handoff (very large dossiers).** When the dossier is too large
 to draft in the remaining context, do not gate Phase 5 on a rushed draft.
@@ -2118,7 +2118,7 @@ Evidence funnel: <N> T1 canon hits → <N> T2 commentary hits → <N> T3 library
 | https://example.com/article | T3 Web | Blocked / JS-only; content not retrievable |
 | Channel — Talk Title (video_id) | T4 Talks | Auto-captions only; Pāḷi terms mangled beyond reliable paraphrase |
 
-Individually rejected library sources carry their own `Calibre #<id>` token (one per id — grouped ids like `#1944/#27645` are only machine-checked on the first). A broad FTS sweep's tangential tail does not get per-row entries: review it as a set and account for it with a single consolidated row, as in the example.
+Individually rejected library sources carry their `document_id` as a `Calibre #<id>` token (grouped forms like `Calibre #1944/#27645` count for every id). A broad FTS sweep's tangential tail does not get per-row entries: review it as a set and account for it with a single consolidated row, as in the example.
 
 ## Angles Not Pursued
 | Angle | Reason not pursued |
@@ -2246,7 +2246,7 @@ library_refs:
   - "223: On Meditation — Ajahn Chah"
 ```
 
-The `book_id` must come from the `document_id` in a library folders hit — never invent an ID. **`document_id`s are not stable across `library-folders-refresh` runs**: a rebuild reassigns them silently, so a Calibre id cited in an older vault note may now point to a different book (a real drift instance: id 8757 moved from Anālayo's *Memento Mori* to an unrelated Abhidhamma title). Re-resolve any id you reuse from an older note with a fresh `search-library-folders` hit before citing it.
+The `book_id` must come from the `document_id` in a library folders hit — never invent an ID. **Never use the number in brackets at the end of the book's folder name.** In `…/The Luminous Mind in Theravada and Dharmaguptaka Discourses (8904)/…` the `8904` is Calibre's own book number, and the index also prints it as "Calibre #8904" inside its searchable text, so it can turn up in a snippet. It is not the citation number: that hit's `document_id` is 2097, and index id 8904 is an unrelated Piya Tan essay. `scratch-check-coverage` reports a hit cited by its folder number under `folder_number_cited`, with the token to paste instead. **`document_id`s survive an ordinary `library-folders-refresh`, but a full rebuild renumbers every document.** The index was rebuilt on 2026-09-03, so an id in a note written before then may now name a different book (a real instance: id 8757 moved from Anālayo's *Memento Mori* to an unrelated Abhidhamma title). Re-resolve any id you reuse from an older note with a fresh `search-library-folders` hit before citing it.
 
 **Rule F5 — `agent` field and footer line: self-identify accurately.**
 
@@ -2368,7 +2368,7 @@ uv run scripts/validate_note.py "Vicaya/${TODAY} - ${SLUG}.md"
 
 **Read the validator's output, including warnings and errors.** An `error`-severity line
 (e.g. `under-quoted-evidence` or `missing-canon-ref`) fails the command. A `warning` still
-names a real defect in the note you just wrote. Before continuing: edit the note to fix
+names a real defect in the note you just wrote. A `long-sentence` warning means a sentence of explanatory prose runs past 45 words: split it into one idea per sentence (Style notes), never just shave words to get under the limit. Before continuing: edit the note to fix
 every issue the validator reports, then re-run `validate_note.py` to confirm the output is
 clean. Only once it prints no warnings or errors, proceed:
 
@@ -2412,13 +2412,13 @@ citations and the rejection table silently. It is advisory, not a hard
 gate — a nonzero exit just means review the listed documents and either cite
 them or add a one-line reason to the rejection table.
 
-The check matches `calibre-<document_id>` / `Calibre #<document_id>` (the
-two forms already used in notes) anywhere in the note text. **When logging a
-library source in `## Sources Investigated, Not Used`, include its calibre
-id** (e.g. `Author, Title (Calibre #2365)`) so the rejection is machine-
-checkable, not just a title a future pass can't verify against. The match is
-per id: a grouped row like `Calibre #1944/#27645` credits only the first id —
-give each individually rejected document its own `Calibre #<id>` token.
+The check credits a document when its `document_id` appears anywhere in the note as `calibre-<id>`, `Calibre #<id>`, or a bare `#<id>`; grouped forms such as `Calibre #1944/#27645` or `#765, #860` count for every id. **When logging a library source in `## Sources Investigated, Not Used`, include its `document_id`** (e.g. `Author, Title (Calibre #2365)`) so the rejection is machine-checkable, not just a title a future pass can't verify against. Never use the Calibre folder number (see Rule F4).
+
+The JSON result holds `ok`, `note`, `library_hits_gathered`, and three lists:
+
+- `unaccounted` — gathered documents the note never mentions. Cite them, or give each a rejection row.
+- `folder_number_cited` — documents the note cited by their Calibre folder number. That number names a different document, so the citation is wrong: replace it with the `cite_as` token. Any entry here makes `ok` false.
+- `cited_not_gathered` — `Calibre #` numbers in the note that match no library hit logged this run. Advisory: a number carried from an older note or written from memory lands here, so check that each one still names the book the note says.
 
 **Large FTS tails don't need per-row accounting.** A broad Phase 3 sweep on a
 common term routinely leaves 50–300 tangential index hits unaccounted, and the
@@ -2619,6 +2619,16 @@ run fighting it; fall back to `rg` over `$VICAYA_VAULT_PATH` meanwhile.
 
 ## Style notes
 
+- **Write the note in plain English, not academic English.** The reader is the user weeks later, who knows some Pāḷi but should never have to untangle a sentence. This applies to every line of explanatory prose: Findings, the commentary between quotes in the Evidence sections, and table cells that explain. The rules:
+  - One idea per sentence. Aim for sentences of about 15–20 words. Never go past 45 words — the validator warns on every sentence that does, and Phase 7 cannot proceed until each is split.
+  - Split by ideas, never by shaving words. Splitting may add a few words; that is fine and is not padding. A long run of citations or examples becomes a bulleted list, one item per bullet.
+  - Normal sentence order: a concrete subject, an active verb, then the object. "The Buddha lists five things", not "Five things are listed as unobtainable".
+  - Use verbs, not abstract nouns. Write "the commentary explains the term", not "the commentarial explanation of the term is provided". Avoid stacks of nouns and chains of "of" phrases.
+  - No chains of clauses. If a sentence needs a colon, a dash and a semicolon to hold together, it is three sentences. A second semicolon always means split.
+  - Put the example in the next sentence, not inside the claim. Gloss each technical term the first time it appears (Rule P2).
+  - Quotes go in blockquotes (Rule P1). Prose does not carry long inline quotations with commentary wrapped around them.
+  - Precision stays. Plain English does not mean vague. Keep every citation, every Pāḷi term and every qualification — just give each its own sentence.
+  Real example (89 words, one sentence, from a published note): *The Buddha lists five things "unobtainable by a recluse or a brahmin or a deva or Māra or Brahmā or anyone else in the world" — and the tradition knows the limits of its own absolute: the one lifespan in the canon that was negotiable, the Buddha's own (āyusaṅkhāra), was relinquished by himself at the Cāpāla shrine — "mindful and clearly comprehending, the Blessed One relinquished the life-formation," — with Māra playing the tempter who had failed to ask at the right time, not a god granting a lease.* Rewritten: *The Buddha lists five things that no recluse, brahmin, deva, Māra or Brahmā can obtain. The tradition knows one exception. The Buddha's own lifespan could be extended, and he gave it up himself at the Cāpāla shrine. Māra was there as the tempter. No god granted extra time.*
 - **The note's primary job is to surface sources.** The user wants a research map they can follow themselves — every relevant canon passage, every library book, every credible web source, every Dhamma talk. The Findings section orients them; the Evidence sections are the point. A note with thin evidence and expansive analysis has failed. A note with comprehensive evidence and concise analysis has succeeded.
 - **"Don't pad" means:** don't add summary paragraphs the user can derive from reading the evidence themselves. It does **not** mean "keep it short." It means every line must earn its place — either as a direct quote, a citation, or a sentence that cannot be inferred from the sources alone.
 - **Direct quotes over paraphrase.** When you have canon text, quote it in full with the blockquote format (Rule P1). Paraphrasing is a fallback for when you cannot retrieve the text — not the default. If you found 15 relevant canon hits, all 15 go in the Canon Evidence section.

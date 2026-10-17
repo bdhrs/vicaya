@@ -2698,7 +2698,9 @@ class TestScratchCheckCoverage:
     with an on-topic snippet slipped through uncited and unlisted.
     """
 
-    def _log_library_hit(self, tmp_path, document_id, title="A Relevant Book.pdf"):
+    def _log_library_hit(
+        self, tmp_path, document_id, title="A Relevant Book.pdf", relative_path=None
+    ):
         import json as _json
 
         from tools.research_sources import scratch_log
@@ -2710,7 +2712,7 @@ class TestScratchCheckCoverage:
                     {
                         "document_id": document_id,
                         "title": title,
-                        "relative_path": f"Library/{title}",
+                        "relative_path": relative_path or f"Library/{title}",
                         "snippet": "... clearly on-topic passage ...",
                     }
                 ]
@@ -2802,6 +2804,120 @@ class TestScratchCheckCoverage:
 
         assert result["ok"] is True
         assert result["unaccounted"] == []
+
+    def _coverage_for(self, tmp_path, monkeypatch, slug, hits, note_text):
+        from tools.research_sources import (
+            scratch_check_coverage,
+            scratch_init,
+            scratch_set_note,
+        )
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init(slug)
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        for hit in hits:
+            self._log_library_hit(tmp_path, **hit)
+        note = tmp_path / "note.md"
+        note.write_text(note_text, encoding="utf-8")
+        assert scratch_set_note(str(note))["ok"]
+        return scratch_check_coverage()
+
+    def test_credits_every_spelling_of_the_index_number(self, tmp_path, monkeypatch):
+        # Issue #113: forms real notes used that the checker read as missing.
+        result = self._coverage_for(
+            tmp_path,
+            monkeypatch,
+            "coverage-spellings",
+            [{"document_id": n} for n in (11854, 765, 860, 42333, 42334, 3203)],
+            "# Note\n\n"
+            "Timeline source (#11854).\n\n"
+            "| Reviewed as a set: #765, #860 | T3 Library | tangential |\n"
+            "| Duplicate pair (Calibre #42333 / #42334) | T3 Library | dup |\n"
+            "| Clark, library index #3203 | T3 Library | off-topic |\n",
+        )
+
+        assert result["unaccounted"] == []
+        assert result["ok"] is True
+
+    def test_html_entity_is_not_a_citation(self, tmp_path, monkeypatch):
+        result = self._coverage_for(
+            tmp_path,
+            monkeypatch,
+            "coverage-entity",
+            [{"document_id": 8212}],
+            "# Note\n\nA dash &#8212; in prose.\n",
+        )
+
+        assert [d["document_id"] for d in result["unaccounted"]] == [8212]
+
+    def test_reports_folder_number_cited_in_place_of_index_number(
+        self, tmp_path, monkeypatch
+    ):
+        # Real index row (20260904-161608): document_id 2097, Calibre folder 8904.
+        result = self._coverage_for(
+            tmp_path,
+            monkeypatch,
+            "coverage-folder-number",
+            [
+                {
+                    "document_id": 2097,
+                    "title": "The Luminous Mind in Theravada and Dharmag - Bhikkhu Analayo.pdf",
+                    "relative_path": "Bodhirasa eBook Library/Bhikkhu Analayo/"
+                    "The Luminous Mind in Theravada and Dharmaguptaka Discourses (8904)/"
+                    "The Luminous Mind in Theravada and Dharmag - Bhikkhu Analayo.pdf",
+                }
+            ],
+            "# Note\n\n[^calibre-8904]: [[The Luminous Mind]] — Anālayo (Calibre #8904)\n",
+        )
+
+        assert result["ok"] is False
+        assert result["unaccounted"] == []
+        assert result["folder_number_cited"] == [
+            {
+                "document_id": 2097,
+                "folder_number": 8904,
+                "title": "The Luminous Mind in Theravada and Dharmag - Bhikkhu Analayo.pdf",
+                "cite_as": "Calibre #2097",
+            }
+        ]
+        assert result["cited_not_gathered"] == []
+
+    def test_correct_citation_does_not_hide_a_folder_number_citation(
+        self, tmp_path, monkeypatch
+    ):
+        result = self._coverage_for(
+            tmp_path,
+            monkeypatch,
+            "coverage-both-numbers",
+            [
+                {
+                    "document_id": 2097,
+                    "relative_path": "Bodhirasa eBook Library/Bhikkhu Analayo/"
+                    "The Luminous Mind in Theravada and Dharmaguptaka Discourses (8904)/"
+                    "The Luminous Mind in Theravada and Dharmag - Bhikkhu Analayo.pdf",
+                }
+            ],
+            "# Note\n\nClaim.[^calibre-2097]\n\nLater claim (Calibre #8904).\n",
+        )
+
+        assert result["ok"] is False
+        assert [d["folder_number"] for d in result["folder_number_cited"]] == [8904]
+
+    def test_lists_cited_numbers_that_match_no_gathered_hit(
+        self, tmp_path, monkeypatch
+    ):
+        # An enrichment note carrying a number from before the 2026-09-03
+        # index rebuild, which now names a different book.
+        result = self._coverage_for(
+            tmp_path,
+            monkeypatch,
+            "coverage-stale-number",
+            [{"document_id": 2365}],
+            "# Note\n\nClaim.[^calibre-2365]\n\nOld claim (Calibre #1272).\n",
+        )
+
+        assert result["ok"] is True
+        assert result["cited_not_gathered"] == [1272]
 
     def test_refuses_without_vault_note(self, tmp_path, monkeypatch):
         from tools.research_sources import scratch_check_coverage, scratch_init

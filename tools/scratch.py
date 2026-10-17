@@ -813,9 +813,15 @@ def scratch_check_coverage(scratch: Path | None = None) -> dict:
     for the rest). The one confirmed gap was a library document with an
     on-topic snippet that never appeared in the note's citations or its
     Sources Investigated, Not Used table. This checks for that specific
-    pattern by matching `calibre-<document_id>` / `Calibre #<document_id>`
-    (the two forms already used in notes) anywhere in the note text — tag a
+    pattern by matching the hit's `document_id` anywhere in the note text,
+    written as `calibre-<id>`, `Calibre #<id>`, or a bare `#<id>` — tag a
     rejection with the id to clear this check.
+
+    A Calibre path also carries Calibre's own book number as a `(N)` folder
+    suffix, and the index prints that number as "Calibre #N" inside its
+    searchable text, so notes kept citing it in place of the `document_id`.
+    That cites a different document, so it is reported apart from plain
+    omissions with the token to paste instead.
     """
     path = scratch or _scratch_path()
     if not path.exists():
@@ -844,24 +850,61 @@ def scratch_check_coverage(scratch: Path | None = None) -> dict:
         if isinstance(doc_id, int):
             docs[doc_id] = hit
 
+    def cites(number: int) -> bool:
+        # `&` excludes HTML entities such as `&#8212;`.
+        pattern = rf"(?:calibre[\s#-]*|(?<![\w&])#){number}(?!\d)"
+        return _re.search(pattern, note_text, _re.I) is not None
+
     unaccounted = []
+    folder_number_cited = []
+    folder_numbers_reported: set[int] = set()
     for doc_id, hit in sorted(docs.items()):
-        if _re.search(rf"calibre[\s#-]*{doc_id}\b", note_text, _re.I):
+        relative_path = hit.get("relative_path") or ""
+        folder = _re.findall(r"\((\d+)\)[/\\]", relative_path)
+        folder_number = int(folder[-1]) if folder else None
+        # Checked before the correct id, so a right citation elsewhere in the
+        # note does not hide a wrong one. A folder number that is also a
+        # gathered document_id could be a correct citation of that other
+        # document, so it proves nothing here.
+        if (
+            folder_number is not None
+            and folder_number not in docs
+            and cites(folder_number)
+        ):
+            folder_numbers_reported.add(folder_number)
+            folder_number_cited.append(
+                {
+                    "document_id": doc_id,
+                    "folder_number": folder_number,
+                    "title": hit.get("title"),
+                    "cite_as": f"Calibre #{doc_id}",
+                }
+            )
+            continue
+        if cites(doc_id):
             continue
         unaccounted.append(
             {
                 "document_id": doc_id,
                 "title": hit.get("title"),
-                "relative_path": hit.get("relative_path"),
+                "relative_path": relative_path,
                 "snippet": (hit.get("snippet") or "")[:200],
             }
         )
 
+    cited_not_gathered = sorted(
+        {int(n) for n in _re.findall(r"calibre[\s#-]*(\d+)", note_text, _re.I)}
+        - docs.keys()
+        - folder_numbers_reported
+    )
+
     return {
-        "ok": not unaccounted,
+        "ok": not unaccounted and not folder_number_cited,
         "note": str(note_path),
         "library_hits_gathered": len(docs),
         "unaccounted": unaccounted,
+        "folder_number_cited": folder_number_cited,
+        "cited_not_gathered": cited_not_gathered,
     }
 
 
