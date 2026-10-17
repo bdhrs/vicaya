@@ -1120,6 +1120,7 @@ Steps:
 - **Inline gather is the default on pi.** Its generic named agents (`planner`/`reviewer`/`scout`/`worker`) don't carry the vicaya dispatch prompt reliably, and its `subagent` tool has aborted or hit a ~120s cap mid-phase. Run each gather phase inline in the orchestrator: pin `VICAYA_PHASE=<n>` inline on every helper call, pass `--quiet` on every search, prefer targeted id-window SQL pulls over broad stem dumps, and gate each phase before starting the next. Watch the context budget — inline is fine for a bounded single-term question; a broad multi-sutta topic will overflow, so trim search breadth or split the run.
 - **Small enrichment runs (≤5 clear gaps from an existing note's Critical Gaps) may run inline by choice in any harness** — per-phase dispatch is optional overhead there.
 - **No WebSearch/WebFetch tools (pi):** use `curl` for server-rendered pages (WisdomLib, dhammatalks.org, accesstoinsight.org). JS-only sites (SuttaCentral) remain unfetchable — cite via the canon DB / EBC vault instead. Log each `curl` fetch with `scratch-log` exactly as documented for `WebFetch`.
+- **Phase 6 second reviewer on pi: use the `vicaya-reviewer` agent** (installed by `just sync`), never pi's own `reviewer`, which has no shell — see "Which agent, by harness" under Phase 6.
 - **Run the cross-check; never pre-assume the SELF_REVIEW fallback** (issue #103: the chain is configured and returns real reviews on this setup — a run that assumed the sentinel nearly skipped a genuine review). **Preflight first when a chain is configured:** `printf 'probe' | uv run tools/research_sources.py cross-check --preflight --timeout 60` — a few seconds, per-entry status JSON; on failure the named reason tells you what to fix (auth, missing binary, latency) and you can go straight to the checklist without burning a 180s wait. If the full call does return `# SELF_REVIEW:`, its header names the exact entry and failure — fix that, retry **once**, then run the checklist. **Never re-invoke cross-check after it already returned a substantive review** — a re-run can clobber the real review with the sentinel; the first successful output is the review. On hosts where none of the chain apps (`opencode`/`agy`/`pi`) are genuinely installed or authenticated, the sentinel is the expected outcome — run the embedded checklist per Phase 6 and record `cross-check: self-review`; it is not a failure.
 - **Per-run scratch state can fail to resolve across fresh shells on hosts with unstable process keys** (seen on pi: `scratch-gate`/`scratch-which` return "no scratch path" while auto-logging works). The deterministic fix is `--slug <slug>` — every `scratch-*` subcommand accepts it (same resolution as `scratch-resume`: bare or date-prefixed filename), bypassing env and state entirely, e.g. `scratch-gate 2 --slug <slug>`. The `VICAYA_SCRATCH=data/scratch/<slug>.md` inline prefix and a same-invocation `scratch-resume <slug>` still work as alternatives.
 - **Verify summary sentences against the raw logged JSON they claim to describe — not just the headline conclusions.** A sub-agent's prose reliably *sounds* right while drifting from the data underneath: real runs caught a "confirmed EA43.8 parallel for MN51" that appears nowhere in the logged sc-parallels JSON, fabricated content descriptions for real suttas (SN37.23 "five precepts", AN4.212 "ingratitude"), a web summary conflating AN2.120 with AN2.31/32, and a claimed transcript fetch with no `fetch-transcript` call anywhere in the scratch. For each load-bearing claim in a completion report, grep the scratch for the tool call and payload that would support it; a claim with no matching logged entry is treated as false until re-run.
@@ -1926,6 +1927,13 @@ Dispatch it with a **read-only tool set**: no `Edit`, no `Write`, no `NotebookEd
 
 Give it the polished question and the Phase 5 draft file path (`data/scratch/<slug>.phase5-draft.md`) — never the accumulating dossier.
 
+**Which agent, by harness.** The reviewer is useless without a shell: real runs where it had only file tools marked correct citations as wrong (NP30, §659) and checked quotes against the wrong recension. Pick the agent so that it can run the helpers:
+
+- **Claude Code:** an `Agent` sub-agent with Bash plus the read tools (no Edit/Write/NotebookEdit).
+- **pi:** the `vicaya-reviewer` agent (read, grep, find, ls, bash), installed into `~/.pi/agent/agents/` by `just sync`. Never pi's own `reviewer` (no shell) or `scout` (a code-recon persona). If the `subagent` tool is unavailable or aborts, run it as a background process instead: `pi -p --no-session --tools read,grep,find,ls,bash "<prompt>"` with `run_in_background`, never in the foreground.
+- **Any harness:** name an output file in the prompt, `data/scratch/<slug>-shared/reviewer-findings.md`, and require the reviewer to append each finding as it goes. A `pi -p` reviewer writes stdout only on a clean exit, and two real runs lost 17 and 28 minutes to a reviewer that never returned. If that file has not grown for 10 minutes, stop the reviewer and run the six checks inline yourself with the helpers.
+- **No shell-capable reviewer at all** (a host that only offers file-tool agents): run the six checks inline. A reviewer that cannot run `resolve-citation` may only *raise* doubts; you settle each one with the helpers before it counts as a finding.
+
 ```text
 You are an independent reviewer of a research synthesis on a Pāḷi/Buddhist question.
 You have read-only access. Do NOT edit any file. Report findings only.
@@ -1938,7 +1946,12 @@ You have the canon helpers. USE THEM — this is the whole reason you exist:
   uv run tools/research_sources.py resolve-citation <table> <paranum>
   uv run tools/research_sources.py verify-citation "<ref>"
   uv run tools/research_sources.py search-canon "<pāḷi>" --quiet
+  uv run tools/research_sources.py get-paragraph <table> <paranum>   # full text of a paragraph
+  uv run tools/research_sources.py check-quotes <draft>              # every Pāḷi quote vs its cited paragraph
   uv run tools/research_sources.py lookup-book <code>
+
+If you cannot run these commands, say so in the first line of your report and stop.
+Append each finding to <output file> as soon as you have it.
 
 Rules:
 1. CHECK, do not reason. Every citation you doubt, resolve it before reporting it.
@@ -1947,9 +1960,7 @@ Rules:
 2. Report only what you verified, and paste the command output that establishes it.
 3. Say plainly when you could not check something, rather than guessing.
 
-Return your report as your final message. Do NOT use SendMessage — the
-dispatching session is not addressable from a sub-agent, and a report sent
-that way is lost.
+Return your report as your final message.
 
 Report against these six, specifically or "no issue":
 1. Perspective coverage — named positions underrepresented or mischaracterised; schools, teachers, or scholarly voices missing entirely.
@@ -1960,13 +1971,15 @@ Report against these six, specifically or "no issue":
 6. Quote-to-claim fit — for each blockquote, resolve the passage and check whether it says what the sentence built on it claims. Report over-reading (the quote is weaker than the claim), misreading (the Pāḷi does not mean what the claim takes it to mean), and conflation (two distinct terms treated as one). Paste the resolved text that establishes each finding.
 ```
 
+**How the report comes back is a harness detail, kept out of the shared prompt.** On Claude Code, add to the prompt: "Do NOT use SendMessage — the dispatching session is not addressable from a sub-agent, and a report sent that way is lost." On RLM/prime harnesses the opposite holds — a child must reply via `agent_message.send(receiver_role='parent')` — so say that instead. On pi the final message is returned by the `subagent` tool; the output file is the fallback.
+
 Point 6 is the reason this reviewer is source-armed. Existence checks confirm a citation is a real sutta and the shape check confirms it is well-formed; neither looks at whether the quoted passage carries the weight the sentence puts on it. Real runs have lost `asantasanto` to `asanta` and conflated distinct terms with every other check green.
 
 Integrate its findings under the same discipline as the external review: verify before accepting, drop anything you cannot substantiate, and never write that a review surfaced something (the IRON RULE applies unchanged).
 
 #### Verification pass
 
-After integrating, send the **same** reviewer sub-agent a follow-up naming each finding you accepted and asking it to confirm the fix landed in the revised draft. A fresh reviewer cannot do this — it never made the findings. Instruct it again to return its verification as its final message, not via SendMessage.
+After integrating, send the **same** reviewer sub-agent a follow-up naming each finding you accepted and asking it to confirm the fix landed in the revised draft. A fresh reviewer cannot do this — it never made the findings. On pi every `subagent` call is a new process, so give the follow-up reviewer its own findings file from the first pass; that file is what it verifies against. Instruct it again to return its verification as its final message, not via SendMessage.
 
 **Check partial landings specifically.** In the run this was built from, the reviewer's most useful finding was that a caveat had been added to `## Critical Gaps` but *not* to the `## Findings` prose asserting the same claim — so a reader of Findings alone would take the drafting agent's inference for something the tradition states. Ask explicitly whether each caveat appears where the claim is made, not merely somewhere in the note.
 

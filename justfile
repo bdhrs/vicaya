@@ -64,7 +64,7 @@ lf-dups *args:
 migrate-env *args:
     uv run scripts/migrate_env.py {{args}}
 
-# Symlink every skill under skill/ into every coding agent installed on this machine (Claude Code, opencode, agy, Pi, Codex, …) plus their command stubs. Content auto-updates via the symlink; re-run to pick up newly added skills.
+# Symlink every skill under skill/ into every coding agent installed on this machine (Claude Code, opencode, agy, Pi, Codex, …) plus their command stubs, and the Pi `vicaya-reviewer` agent. Content auto-updates via the symlink; re-run to pick up newly added skills.
 sync:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -115,5 +115,15 @@ sync:
         fi
         echo "synced: $name"
     done
+    # Pi's own `reviewer` agent has no shell, so Phase 6's source-armed review
+    # needs this one; Pi reads ~/.pi/agent/agents and accepts symlinks there.
+    pi_agents="$HOME/.pi/agent/agents"
+    if [ -d "$(dirname "$pi_agents")" ]; then
+        mkdir -p "$pi_agents"
+        for agent in "$(pwd)"/config/pi/agents/*.md; do
+            ln -sfn "$agent" "$pi_agents/$(basename "$agent")"
+            echo "synced pi agent: $(basename "$agent" .md)"
+        done
+    fi
     echo "skills dirs:"
     printf '  %s\n' "${linked[@]}" | sort
