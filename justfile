@@ -115,4 +115,5 @@ sync:
         fi
         echo "synced: $name"
     done
-    echo "skills dirs: ${linked[*]}"
+    echo "skills dirs:"
+    printf '  %s\n' "${linked[@]}" | sort
