@@ -74,12 +74,10 @@ Each source is optional — if the tool or path isn't configured it is silently 
    ```bash
    just sync
    ```
-   Symlinks every skill under `skill/` into both `~/.pi/agent/skills/` (for the
-   `/skill:name` form) and `~/.pi/agent/prompts/` (for the bare `/name` form,
-   pointed at the matching stub in `config/pi/prompts/` rather than directly at
-   `SKILL.md` — Pi's bare-slash form only forwards arguments via literal
-   `$ARGUMENTS` substitution, which `SKILL.md` files don't contain). Re-run
-   after pulling changes or adding a new skill.
+   Symlinks every skill under `skill/` into `~/.pi/agent/skills/` only.
+   Pi exposes skills natively as `/skill:name` and forwards arguments, so
+   no prompt-template stubs are installed — the bare `/name` form is
+   intentionally absent to keep one entry point per skill.
 
    Open a fresh agent session after adding a new skill symlink; skill discovery
    happens when the session starts.
@@ -536,10 +534,11 @@ ln -sf "$(pwd)/skill/vicaya-what-the-suttas-say" ~/.claude/skills/vicaya-what-th
 just sync
 ```
 
-This symlinks every skill under `skill/` into both `~/.pi/agent/skills/`
-(for the `/skill:name` form) and `~/.pi/agent/prompts/` (for the bare
-`/name` form, pointed at the matching stub in `config/pi/prompts/` rather
-than directly at `SKILL.md`, so typed arguments aren't silently dropped).
+This symlinks every skill under `skill/` into
+`~/.pi/agent/skills/` only. Pi exposes skills natively as
+`/skill:name` and forwards arguments, so no prompt-template stubs are
+installed (the bare `/name` form is intentionally absent to keep one
+entry point per skill).
 
 **Verification:**
 
@@ -564,10 +563,9 @@ ls ~/.claude/skills/vicaya-digest/SKILL.md
 ls ~/.claude/skills/vicaya-pdf/SKILL.md
 ls ~/.claude/skills/vicaya-what-the-suttas-say/SKILL.md
 
-# Check Pi — should point at config/pi/prompts/, not skill/*/SKILL.md
-readlink ~/.pi/agent/prompts/vicaya.md
-readlink ~/.pi/agent/prompts/vicaya-quick.md
-readlink ~/.pi/agent/prompts/vicaya-digest.md
+# Check Pi — skills symlink into ~/.pi/agent/skills; no prompt stubs
+ls ~/.pi/agent/skills/vicaya/SKILL.md
+ls ~/.pi/agent/prompts/ | grep -c vicaya   # should print 0
 ```
 
 If you ever move or rename this repository, you will need to re-run these

@@ -69,7 +69,6 @@ sync:
     #!/usr/bin/env bash
     set -euo pipefail
     src="$(pwd)/skill"
-    pi_stubs="$(pwd)/config/pi/prompts"
     oc_stubs="$(pwd)/config/opencode/commands"
 
     # ~/.agents/skills is the shared hub: opencode (~/.config/opencode/skills) and
@@ -84,7 +83,6 @@ sync:
         "$HOME/.qwen/skills"
         "$HOME/.cline/skills"
     )
-    pi_prompts="$HOME/.pi/agent/prompts"
     oc_commands="$HOME/.config/opencode/command"
 
     linked=()
@@ -104,20 +102,9 @@ sync:
             ln -sfn "${dir%/}" "$d/$name"
         done
 
-        # Prompt/command-template forms (bare /name <args>) only substitute
-        # $ARGUMENTS-style placeholders, which SKILL.md files don't contain — a
-        # stub is required to forward the typed argument instead of silently
-        # dropping it. Claude Code needs no stub: it passes arguments to the
-        # skill itself.
-        if [ -d "$pi_prompts" ] || [ -d "$(dirname "$pi_prompts")" ]; then
-            mkdir -p "$pi_prompts"
-            if [ -f "$pi_stubs/$name.md" ]; then
-                ln -sfn "$pi_stubs/$name.md" "$pi_prompts/$name.md"
-            else
-                ln -sfn "${dir}SKILL.md" "$pi_prompts/$name.md"
-                echo "  warn: no Pi stub for $name (arguments will be dropped)"
-            fi
-        fi
+        # Pi needs no prompt stub: /skill:name forwards arguments natively,
+        # so ~/.pi/agent/skills is the only Pi registration (no bare /name
+        # form — it duplicated every skill in the command menu).
         if [ -d "$(dirname "$oc_commands")" ]; then
             mkdir -p "$oc_commands"
             if [ -f "$oc_stubs/$name.md" ]; then
