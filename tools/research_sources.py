@@ -3715,6 +3715,13 @@ def _cli() -> int:
         "is still written to the scratch dossier — use in gather sub-agents to "
         "keep context small."
     )
+    _QUIET_NOOP_HELP = (
+        "Accepted so one call template fits every command; no effect here."
+    )
+    _SLUG_NOOP_HELP = (
+        "Accepted so the Phase 7 exit commands share one call template; this "
+        "command reads the note file, not a scratch, so it has no effect."
+    )
     _SLUG_HELP = (
         "Target the scratch by slug (same resolution as scratch-resume), "
         "bypassing VICAYA_SCRATCH and the per-process state file — use on "
@@ -4227,6 +4234,18 @@ def _cli() -> int:
         'shell-quoted). Usage: eval "$(uv run tools/research_sources.py env)"',
     )
     pe.set_defaults(func=_handle_env)
+
+    # The skill's call template prefixes every helper with the same flags, so a
+    # subcommand that rejects one fails the whole call (issue #132: two chained
+    # scratch-log notes were silently lost). Accept them everywhere; a flag a
+    # command has no use for does nothing.
+    for sp in sub.choices.values():
+        try:
+            sp.add_argument("--quiet", action="store_true", help=_QUIET_NOOP_HELP)
+        except argparse.ArgumentError:
+            pass  # the command already defines its own --quiet
+    for name in ("check-citation-shape", "check-quotes"):
+        sub.choices[name].add_argument("--slug", default=None, help=_SLUG_NOOP_HELP)
 
     args = p.parse_args()
 
