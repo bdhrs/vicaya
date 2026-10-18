@@ -233,6 +233,17 @@ _PHASE_INDEX = {
 
 # SKILL.md names the web phase "4a" but the phase table stores it as "4".
 _PHASE_ALIASES = {"4a": "4"}
+_PHASE_ALIAS_NOTE = (
+    "Phase 4a is stored as Phase 4: log it, pin it and gate it as 4 or 4a, "
+    "they are the same phase."
+)
+
+# Gather phases that sub-agents may run side by side. Each needs only the
+# briefing (Phases 0 and 1) before it; the order among them is not checked
+# here, because `scratch-gate 5` and `scratch-verify` still require every one
+# of them, and a wave agent that finishes early was otherwise refused until
+# its siblings gated (issue #133: one retried 14 times over 9 minutes).
+_PARALLEL_GATHER_PHASES = frozenset({"2", "2.5", "3", "3b", "4", "4b", "4c"})
 
 
 def _normalize_phase(phase: str) -> str:
@@ -613,8 +624,14 @@ def scratch_gate(phase: str, scratch: Path | None = None) -> dict:
                     f"{stitle} not applicable to a non-sutta-anchored question.",
                 )
                 text = path.read_text(encoding="utf-8")
-    # Verify every prior phase has a gate.
-    for prev_id, prev_title, prev_expected in _SCRATCH_PHASES[:idx]:
+    # Verify every prior phase has a gate (a parallel gather phase needs only
+    # the briefing phases, 0 and 1).
+    required = (
+        _SCRATCH_PHASES[: _PHASE_INDEX["2"][0]]
+        if phase in _PARALLEL_GATHER_PHASES
+        else _SCRATCH_PHASES[:idx]
+    )
+    for prev_id, prev_title, prev_expected in required:
         if _gate_marker(prev_id) not in text:
             return {
                 "ok": False,
@@ -624,8 +641,9 @@ def scratch_gate(phase: str, scratch: Path | None = None) -> dict:
                 "message": (
                     f"cannot write Phase {phase} gate: Phase {prev_id} "
                     f"({prev_title}) gate is missing — "
-                    f"run scratch-gate {prev_id} first"
-                ),
+                    f"run scratch-gate {prev_id} first. "
+                    + (_PHASE_ALIAS_NOTE if "4" in (phase, prev_id) else "")
+                ).strip(),
             }
     # Already gated?
     if _gate_marker(phase) in text:
@@ -691,7 +709,9 @@ def scratch_gate(phase: str, scratch: Path | None = None) -> dict:
                 "reason": "no logged evidence",
                 "message": (
                     f"Phase {phase} gate refused: the phase section has no logged "
-                    f"tool calls — {action}, then gate. "
+                    f"tool calls — {action}, then gate. If you just ran the "
+                    f"search or scratch-log in the same batch as this gate, run "
+                    f"the gate again on its own once they have finished. "
                     f"Expected evidence: {_PHASE_INDEX[phase][2]}"
                 ),
             }
@@ -707,7 +727,10 @@ def scratch_gate(phase: str, scratch: Path | None = None) -> dict:
     next_phase = _next_worked_phase(text, idx)
     if next_phase is not None:
         _write_state(phase=next_phase)
-    return {"ok": True, "phase": phase, "title": title}
+    result = {"ok": True, "phase": phase, "title": title}
+    if phase == "4":
+        result["alias"] = _PHASE_ALIAS_NOTE
+    return result
 
 
 def scratch_set_note(
@@ -737,6 +760,18 @@ def scratch_set_note(
                 "the Phase 7 gate scans this file for [REJECTED] tags"
             ),
         }
+    if pdf is not None and pdf.strip().lower() != "skipped":
+        pdf_file = resolve_vault_path(pdf)
+        if not pdf_file.exists():
+            return {
+                "ok": False,
+                "pdf": pdf,
+                "message": (
+                    f"PDF not found: {pdf_file} — generate the PDF first, then "
+                    "record it. Run scratch-set-note after the PDF step has "
+                    "finished, not in the same parallel batch."
+                ),
+            }
     note = note.resolve()
     note_line = f"**Vault note:** {note}"
     with _file_lock(path):
@@ -1179,11 +1214,21 @@ def scratch_resume(slug: str | None = None, scratch: Path | None = None) -> dict
         return {"ok": False, "error": f"scratch not found: {path}"}
     text = path.read_text(encoding="utf-8")
     last = None
-    next_phase = _SCRATCH_PHASES[0][0]
-    for i, (pid, title, _) in enumerate(_SCRATCH_PHASES):
+    for pid, title, _ in _SCRATCH_PHASES:
         if _gate_marker(pid) in text:
             last = {"phase": pid, "title": title}
-            next_phase = _next_worked_phase(text, i)
+    # The first phase still without a gate, not the one after the highest gate:
+    # parallel gather phases can be gated out of order (issue #133).
+    thematic = _run_class(text) == "thematic"
+    next_phase = next(
+        (
+            pid
+            for pid, _, _ in _SCRATCH_PHASES
+            if _gate_marker(pid) not in text
+            and not (thematic and pid in _AUTO_SKIP_PHASES)
+        ),
+        None,
+    )
     _write_state(path, next_phase)
     return {"ok": True, "path": str(path), "last_gate": last, "next_phase": next_phase}
 

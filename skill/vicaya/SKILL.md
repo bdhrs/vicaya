@@ -19,7 +19,7 @@ workflow and the only behavioral source of truth.
 Four structural commands carry the run. Everything else is reference.
 
 1. **Phase 0:** `scratch-init <slug> --question-original "…" --question-polished "…" --scope-assumptions "…" --ambiguity <clear|minor_uncertainty|unclear>` (add `--class thematic` for non-sutta-anchored questions). This records the active scratch for *this run*, fills the Phase 0 header fields, and — because all the Phase 0 evidence is then present — writes the Phase 0 exit gate automatically, so the run starts at Phase 1. Do not run the bare form unless the question is still unresolved; a bare init leaves gate 0 unwritten and every later gate will refuse until you run `scratch-gate 0`. **If the slug already has a dossier on disk, `scratch-init` reuses it (never overwrites) and the JSON response carries a `warning` field naming the last gate written and whether the vault note is already set.** If you are starting an independent run of a question another agent already handled, do not ignore that warning — pick a different slug; reusing an in-progress or finished dossier silently attaches your new work to it. Auto-logging is isolated automatically — the run's state is keyed to your agent process, so parallel runs never collide. There is nothing to pin or export **while you are the only agent working the run** (Phase 0/1, and Phases 5–7). The moment gather phases are delegated to sub-agents (below), that guarantee no longer holds — see the mandatory `VICAYA_PHASE` pin in **Sub-agent dispatch**.
-2. **Each phase boundary:** end the prior phase with `scratch-gate <prev-phase>`. The gate auto-advances the active phase, so the next phase's helper calls log correctly without any manual step. It refuses if earlier gates are missing and prints the exact evidence still needed. Thematic runs auto-skip **exactly two gates — Phase 2.5 (SC-parallels) and 3b (Sanskrit)**; every other gather gate is still gated explicitly, and calling an auto-skipped gate explicitly demands evidence (see the thematic gate map under Sub-agent dispatch).
+2. **Each phase boundary:** end the prior phase with `scratch-gate <prev-phase>`. The gate auto-advances the active phase, so the next phase's helper calls log correctly without any manual step. It refuses if earlier gates are missing and prints the exact evidence still needed. The gather phases (2, 2.5, 3, 3b, 4, 4b, 4c) need only Phases 0 and 1 gated first, so a parallel wave's agent can gate its own phase as soon as it is logged, whatever its siblings have done; Phases 5, 6 and 7 still need every earlier gate. Thematic runs auto-skip **exactly two gates — Phase 2.5 (SC-parallels) and 3b (Sanskrit)**; every other gather gate is still gated explicitly, and calling an auto-skipped gate explicitly demands evidence (see the thematic gate map under Sub-agent dispatch).
 3. **Start of Phase 5:** `scratch-verify`. Exit 0 = proceed to synthesis. Exit 1 = backfill the named phase first; do not draft.
 4. **End of Phase 7:** `scratch-set-note <note-path> --pdf <pdf-path|skipped>` (records the saved paths in the scratch header — the [REJECTED] hard-gate target), then `check-citation-shape <note-path>` (hard — fix every finding), then `scratch-self-audit` (answer the failure checklist — the gate refuses without it), then `scratch-gate 7`, then publish the saved note with `uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"`; then add the note's own row/wikilink to `Vicaya/summary-vicaya.md` (matching table, date order, one-sentence description) and `Vicaya/catalog-by-topics.md` (matching or a new topic heading), then verify both with `uv run scripts/check_vault_indexes.py --note <note-path>` (hard — fix every finding first) and publish them the same way (`uv run scripts/sync_notes.py "Vicaya/summary-vicaya.md"` and `... "Vicaya/catalog-by-topics.md"`); after writing the reflection, publish the run report with `uv run scripts/sync_run_report.py`. The run is not complete until the gate passes and all sync commands have been attempted.
 
@@ -99,6 +99,8 @@ It prints all `VICAYA_*` values as shell-quoted `export` lines with `~` expanded
 
 **Prefer the CLI over `python -c` heredocs.** Heredoc invocations have repeatedly caused quoting bugs (single-quotes-in-single-quotes SyntaxErrors) and field-name guesses (`.snippet` on a `CanonHit`, which has no such field). The CLI eliminates both.
 
+**Run state-changing scratch calls one at a time.** `scratch-init`, `scratch-log`, `scratch-gate`, `scratch-set-note` and the PDF step they record must not share a parallel batch: a gate that runs before the log beside it refuses with "no logged evidence", `scratch-verify` can read before a gate lands, and `scratch-set-note --pdf` now refuses a PDF that does not exist yet. Searches and other read-only helpers may run in parallel; finish them, then log and gate. (Issue #135: three runs lost minutes to this.)
+
 **`jq` may be absent on this machine** (same caveat as `rg` — it's a Claude Code wrapper, not always a real binary). To slice helper JSON, pipe to `uv run python3 -c "import json,sys; …"`, not `jq`.
 
 **Never put backticks inside a double-quoted `--summary` or `--answer`.** The shell command-substitutes the span *before* the helper runs, so the enclosed word is deleted from the logged entry and all you get is a stray `gap: command not found` on stderr — the dossier looks fine and is quietly missing a word. Two runs lost logged content this way (issue #98). Markdown prose is exactly the text most likely to carry backticks, so this is easy to hit. Use `--summary-file <path>` / `--answer-file <path>` (both accept `-` for stdin), which the shell cannot touch, or single-quote the argument. If the helper reports a `warning` about an unpaired backtick, part of your text was probably already eaten — re-check the entry it just wrote.
@@ -120,6 +122,11 @@ phase pointer moves whenever any agent gates, so the orchestrator must also pin
 e.g. re-checking a sub-agent's negative library result during a later phase.
 Two real runs misfiled orchestrator searches under the wrong phase heading by
 treating "bare calls are fine for the orchestrator" as blanket permission.
+The same pin applies to a single agent that works more than one phase in a
+session, with no sub-agents at all (inline gather, a pi run, an enrichment): the
+moment you are past the first phase you work, pin `VICAYA_PHASE=<n>` on every
+helper call. An unpinned call leaves a `phase-source: run-pointer` marker, and
+that marker is meant to be absent from the dossier.
 
 Subcommands (each prints JSON to stdout):
 
@@ -1058,6 +1065,8 @@ The only datum each prompt must carry is the **scratch slug** — `uv run tools/
 | 4b | `### Phase 4b — YouTube search` |
 | 4c | `### Phase 4c — WisdomLib` |
 
+**Phase 4a and Phase 4 are one phase.** The dossier heading and the gate are stored as `4`; `4a` is accepted everywhere (`VICAYA_PHASE=4a`, `scratch-log 4a`, `scratch-gate 4a`) and means the same thing. The gate result for `4a` carries an `alias` line saying so.
+
 **Dispatch prompt** (one per phase — fill `<PHASE>` and `<PHASE-SECTIONS>`):
 
 ```text
@@ -1109,6 +1118,10 @@ Steps:
    If you didn't resolve it, resolve it now or write the raw book_code:paranum
    and flag it unresolved.
 5. Gate it: uv run tools/research_sources.py scratch-gate <PHASE>
+   (Gather gates need only Phases 0 and 1, so a sibling agent's gate is never
+   a reason it refuses. If it refuses anyway, read the message once, fix what
+   it names, and run it again at most once more; never retry in a loop —
+   report the refusal to the orchestrator and stop.)
 6. Return a 2–3 line report: source counts, gate status, and anything you could
    NOT do (0-hit bodies you expected to find, missing files) so the orchestrator
    can backfill.

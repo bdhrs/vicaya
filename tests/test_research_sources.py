@@ -2766,7 +2766,9 @@ class TestScratchSetNote:
         note = tmp_path / "note.md"
         note.write_text("# Note\n", encoding="utf-8")
 
-        assert scratch_set_note(str(note), pdf="/tmp/out.pdf")["ok"]
+        pdf = tmp_path / "out.pdf"
+        pdf.write_bytes(b"%PDF-1.4")
+        assert scratch_set_note(str(note), pdf=str(pdf))["ok"]
         assert scratch_set_note(str(note), pdf="skipped")["ok"]
 
         text = path.read_text(encoding="utf-8")
