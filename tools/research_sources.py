@@ -3732,6 +3732,19 @@ def _cli() -> int:
         _dump(result)
         return _done(exit_code=0 if result["ok"] else 1, autolog=False)
 
+    def _handle_audit_note(args):
+        from tools.note_audit import audit_note
+
+        path = resolve_vault_path(args.note)
+        if not path.exists():
+            _dump({"ok": False, "error": f"note not found: {path}"})
+            return _done(exit_code=2, autolog=False)
+        result = audit_note(
+            path.read_text(encoding="utf-8"), DEFAULT_CANON_DB, DEFAULT_DPD_DB
+        )
+        _dump({"note": str(path), **result}, quiet=getattr(args, "quiet", False))
+        return _done(exit_code=0 if result.get("ok") else 1)
+
     def _handle_sweep_canon(args):
         from tools.canon_sweep import sweep_canon
 
@@ -4285,6 +4298,17 @@ def _cli() -> int:
     )
     pae.add_argument("file", help="Absolute path of the draft or note to edit.")
     pae.set_defaults(func=_handle_apply_edits)
+
+    pan = sub.add_parser(
+        "audit-note",
+        help="Test the claims an existing note makes about its references "
+        "(quotes against the paragraph cited, footnote labels against the "
+        "paragraph's real sutta, canon_refs codes) and list its Critical "
+        "Gaps to search again. Run it on the old note at the start of an "
+        "enrichment run.",
+    )
+    pan.add_argument("note", help="Path to the existing note.")
+    pan.set_defaults(func=_handle_audit_note)
 
     psc = sub.add_parser(
         "sweep-canon",
