@@ -3592,6 +3592,22 @@ def _cli() -> int:
         )
         return _done(argv, result, exit_code=0 if result.get("ok") else 1)
 
+    def _handle_apply_edits(args):
+        from tools.note_edits import apply_edits
+
+        try:
+            edits = json.loads(sys.stdin.read())
+        except json.JSONDecodeError as exc:
+            edits = None
+            print(f"error: stdin is not valid JSON: {exc}", file=sys.stderr)
+        result = (
+            apply_edits(Path(args.file), edits)
+            if edits is not None
+            else {"ok": False, "error": "stdin is not valid JSON"}
+        )
+        _dump(result)
+        return _done(exit_code=0 if result["ok"] else 1, autolog=False)
+
     def _handle_sweep_canon(args):
         from tools.canon_sweep import sweep_canon
 
@@ -4129,6 +4145,15 @@ def _cli() -> int:
     pgp.add_argument("--row-id", type=int, help="Any row id inside the paragraph.")
     pgp.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
     pgp.set_defaults(func=_handle_get_paragraph)
+
+    pae = sub.add_parser(
+        "apply-edits",
+        help="Apply a JSON list of {old, new} text edits to a file, all or "
+        "nothing: every old string must be found (exactly once unless "
+        '"all": true) or the file is left untouched. Edits arrive on stdin.',
+    )
+    pae.add_argument("file", help="Absolute path of the draft or note to edit.")
+    pae.set_defaults(func=_handle_apply_edits)
 
     psc = sub.add_parser(
         "sweep-canon",
