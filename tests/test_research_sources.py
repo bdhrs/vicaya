@@ -176,6 +176,30 @@ class TestResolveCitationCanonHeadings:
         assert "Mettasutta" not in c.human or "repeats" in c.human
         assert "repeats" in c.human
 
+    @dpd_available
+    def test_jataka_repeating_verse_number_is_flagged_not_named(self):
+        # #125: s0513m_mul numbers verses per nipāta, so §88 sits in 16 rows.
+        # sutta_info's nearest-earlier lookup named "JA88 Sārambhajātakaṃ" for
+        # a verse the agent had read in the Dasaratha jātaka.
+        c = resolve_citation("s0513m_mul", "88")
+        assert "repeats" in c.human
+        assert not c.human.startswith("JA88")
+
+    @dpd_available
+    def test_jataka_two_never_borrows_a_neighbouring_jataka(self):
+        # #125: sutta_info lists 27 of ~110 jātakas for s0514m_mul, so the
+        # paragraph in Vessantara read as JA545 and §57 (in JA521) as JA527.
+        assert "JA545" not in resolve_citation("s0514m_mul", "2113").human
+        assert "JA527" not in resolve_citation("s0514m_mul", "57").human
+
+    @dpd_available
+    def test_restarting_commentary_numbers_are_flagged(self):
+        # #125: the aṭṭhakathā path built "ANa…" labels from the mūla table
+        # even where the commentary restarts its numbering.
+        c = resolve_citation("s0506a_att", "5")
+        assert "repeats" in c.human
+        assert not c.human.startswith("VVa")
+
     def test_vism_gets_book_and_chapter_name(self):
         c = resolve_citation("e0101n_mul", "176")
         assert "Visuddhimagg" in c.human

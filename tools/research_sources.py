@@ -403,8 +403,11 @@ def search_canon(
 # sutta_info's cst_paranum is not a usable paranum→sutta map for these stems:
 # Khp's paranums restart per sutta (cst_paranum stores the sutta index, not a
 # paragraph number), and Snp's entries have gaps (many suttas stored with an
-# empty cst_paranum), so nearest-preceding lookup silently mislabels.
-_SUTTA_INFO_UNRELIABLE_STEMS = {"s0501m", "s0505m"}
+# empty cst_paranum), so nearest-preceding lookup silently mislabels. The two
+# Jātaka tables are the same case (issue #125): the second lists 27 of its ~110
+# jātakas, so "para 57" resolved to JA527 although the verse sits in JA521, and
+# every paragraph past the last row read as JA545.
+_SUTTA_INFO_UNRELIABLE_STEMS = {"s0501m", "s0505m", "s0513m", "s0514m"}
 
 _HEADING_RENDS = ("chapter", "title", "subhead")
 
@@ -510,6 +513,19 @@ def _canon_paranum_exists(
     preceding* heading or paranum, so without this check a paranum that
     exists nowhere still produces a confident-looking reference.
     """
+    count = _canon_paranum_count(book_code, paranum_int, canon_db)
+    return None if count is None else count > 0
+
+
+def _canon_paranum_count(
+    book_code: str, paranum_int: int, canon_db: Path | None
+) -> int | None:
+    """How many rows of the book's canon table carry `paranum_int`?
+
+    More than one means the book restarts its numbering (verses per jātaka,
+    paragraphs per saṃyutta), so the number alone names no single sutta.
+    Returns None when the count cannot be taken.
+    """
     if canon_db is None or not canon_db.exists():
         return None
     try:
@@ -521,13 +537,13 @@ def _canon_paranum_exists(
             if not table:
                 return None
             row = conn.execute(
-                f"SELECT 1 FROM {book_code} "
-                f"WHERE paranum=? OR CAST(paranum AS INTEGER)=? LIMIT 1",
+                f"SELECT COUNT(*) FROM {book_code} "
+                f"WHERE paranum=? OR CAST(paranum AS INTEGER)=?",
                 (str(paranum_int), paranum_int),
             ).fetchone()
     except sqlite3.Error:
         return None
-    return row is not None
+    return int(row[0])
 
 
 def _dpd_code_for_sutta_name(
@@ -682,9 +698,14 @@ def resolve_citation(
         # "this paranum is somewhere after a heading I recognise". Check the
         # book's own table once, up front, and refuse to name a paranum that
         # has no row rather than interpolating a plausible-looking label.
-        exists = _canon_paranum_exists(
+        row_count = _canon_paranum_count(
             book_code, first_para, canon_db or DEFAULT_CANON_DB
         )
+        exists = None if row_count is None else row_count > 0
+        # A number found in several rows names no single sutta, so the
+        # sutta_info shortcut below (nearest earlier cst_paranum) would pick
+        # one at random. Skip it and let the heading lookup list the candidates.
+        restarts = row_count is not None and row_count > 1
         if exists is False:
             base, pitaka = _fallback_human(stem, text_type, para_display)
             return Citation(
@@ -703,6 +724,7 @@ def resolve_citation(
 
         if (
             db_path is not None
+            and not restarts
             and text_type == "mul"
             and stem not in _SUTTA_INFO_UNRELIABLE_STEMS
         ):
@@ -719,7 +741,7 @@ def resolve_citation(
                     paranum_exists=exists,
                 )
 
-        elif db_path is not None and text_type in ("att", "tik"):
+        elif db_path is not None and not restarts and text_type in ("att", "tik"):
             # Derive sutta from the mūla equivalent (same stem, replace a→m or t→m)
             mula_stem = stem[:-1] + "m" if stem[-1] in ("a", "t") else stem
             result = _lookup_sutta_info(mula_stem, "mul", first_para, db_path)
