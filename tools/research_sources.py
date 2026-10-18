@@ -3757,6 +3757,17 @@ def _cli() -> int:
         _dump({"note": str(path), **result}, quiet=getattr(args, "quiet", False))
         return _done(exit_code=0 if result.get("ok") else 1)
 
+    def _handle_fetch_wisdomlib(args):
+        from tools.wisdomlib import fetch_wisdomlib
+
+        result = fetch_wisdomlib(
+            args.term,
+            archive=not args.no_archive,
+            max_chars=None if args.full else 2500,
+        )
+        _dump(result, quiet=getattr(args, "quiet", False))
+        return _done([args.term], result, exit_code=0 if result["ok"] else 1)
+
     def _handle_sweep_canon(args):
         from tools.canon_sweep import sweep_canon
 
@@ -4333,6 +4344,24 @@ def _cli() -> int:
     )
     pan.add_argument("note", help="Path to the existing note.")
     pan.set_defaults(func=_handle_audit_note)
+
+    pwl = sub.add_parser(
+        "fetch-wisdomlib",
+        help="Definitions of one term from WisdomLib (Phase 4c): the live "
+        "page, else the newest Wayback snapshot. Each definition has its "
+        "section, text and source. If both fail it returns blocked=true: "
+        "record one gap and do not retry.",
+    )
+    pwl.add_argument("term", help="One term, with or without diacritics.")
+    pwl.add_argument(
+        "--no-archive", action="store_true", help="Do not fall back to Wayback."
+    )
+    pwl.add_argument(
+        "--full",
+        action="store_true",
+        help="Keep each definition whole (default cuts each at 2,500 characters).",
+    )
+    pwl.set_defaults(func=_handle_fetch_wisdomlib)
 
     psc = sub.add_parser(
         "sweep-canon",
