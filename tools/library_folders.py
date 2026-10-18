@@ -1252,6 +1252,29 @@ class LibraryFoldersSearchTimeout(RuntimeError):
 
 
 _SEARCH_TIMEOUT_SECONDS = 20.0
+
+# Function words that sit in almost every book. As one word of an AND query
+# each forces a scan of a huge share of the index, so "Manual of Insight" ran
+# into the timeout while "Manual Insight" answers in about 3 s (issue #129).
+_FTS_STOPWORDS = frozenset(
+    "a an and as at by for from in is of on or the to with".split()
+)
+_FTS_SYNTAX = re.compile(r'["*:()^+]|\b(?:AND|OR|NOT|NEAR)\b')
+
+
+def _drop_stopwords(query: str) -> str:
+    """Remove function words from a plain multi-word query.
+
+    A query that uses FTS5 syntax (quotes, operators, prefix stars) is the
+    caller's own and stays as written, as does one made only of stopwords.
+    """
+    if _FTS_SYNTAX.search(query):
+        return query
+    words = query.split()
+    kept = [w for w in words if w not in _FTS_STOPWORDS]
+    return " ".join(kept) if kept else query
+
+
 _SEARCH_PROGRESS_STEPS = 1000
 
 
@@ -1308,6 +1331,7 @@ def _search_rows(
             if timeout is not None:
                 conn.set_progress_handler(None, 0)
 
+    query = _drop_stopwords(query)
     try:
         return _run(query)
     except LibraryFoldersSearchTimeout:

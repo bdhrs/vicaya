@@ -727,6 +727,34 @@ def test_search_times_out_on_too_broad_query(tmp_path, monkeypatch):
         search("dhamma", config, timeout=0)
 
 
+def test_search_ignores_function_words_in_a_phrase(tmp_path):
+    # Regression for #129: "of" in the query forced a scan of the index.
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "a.txt").write_text("manual insight", encoding="utf-8")
+    config = LibraryFoldersConfig(roots=[root], index=tmp_path / "folder.sqlite")
+    refresh(config)
+
+    hits = search("Manual of Insight", config)
+
+    assert [hit["relative_path"] for hit in hits] == ["a.txt"]
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("Manual of Insight", "Manual Insight"),
+        ("the heart of the matter", "heart matter"),
+        ('"manual of insight"', '"manual of insight"'),
+        ("manual OR insight", "manual OR insight"),
+        ("of the", "of the"),
+        ("Nyanaponika", "Nyanaponika"),
+    ],
+)
+def test_drop_stopwords(query, expected):
+    assert library_folders._drop_stopwords(query) == expected
+
+
 def test_search_with_generous_timeout_still_returns_hits(tmp_path):
     root = tmp_path / "root"
     root.mkdir()
