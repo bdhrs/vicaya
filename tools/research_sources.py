@@ -3185,6 +3185,7 @@ from tools.scratch import (  # noqa: E402, F401
     scratch_verify,
     scratch_check_coverage,
     scratch_resume,
+    scratch_digest,
     _maybe_autolog,
 )
 
@@ -3668,6 +3669,17 @@ def _cli() -> int:
         result = scratch_resume(slug=args.slug)
         _dump(result)
         return _done(exit_code=0 if result.get("ok") else 1, autolog=False)
+
+    def _handle_scratch_digest(args):
+        try:
+            text = scratch_digest(
+                slug=args.slug, phase=args.phase, top=args.top, width=args.width
+            )
+        except (ValueError, OSError) as e:
+            print(f"error: {e}", file=sys.stderr)
+            return _done(exit_code=1, autolog=False)
+        sys.stdout.write(text)
+        return _done(autolog=False)
 
     def _handle_scratch_which(args):
         try:
@@ -4257,6 +4269,18 @@ def _cli() -> int:
         help="Slug for the scratch file; omit if VICAYA_SCRATCH is set.",
     )
     psr.set_defaults(func=_handle_scratch_resume)
+
+    psd = sub.add_parser(
+        "scratch-digest",
+        help="Print a short, line-numbered digest of the dossier: your own "
+        "notes in full, each auto-logged call as one line with its first hits. "
+        "Read this instead of `cat`-ing a dossier that can reach megabytes.",
+    )
+    psd.add_argument("--slug", default=None, help=_SLUG_HELP)
+    psd.add_argument("--phase", default=None, help="Only this phase, e.g. 2 or 3b.")
+    psd.add_argument("--top", type=int, default=2, help="Hits shown per call.")
+    psd.add_argument("--width", type=int, default=90, help="Characters per snippet.")
+    psd.set_defaults(func=_handle_scratch_digest)
 
     psw = sub.add_parser(
         "scratch-which",

@@ -1005,6 +1005,154 @@ def scratch_check_coverage(
     }
 
 
+_DIGEST_SNIPPET_KEYS = (
+    "english",
+    "snippet",
+    "translation_en",
+    "abstract",
+    "quote",
+    "pali",
+)
+_DIGEST_REF_KEYS = (
+    "ref",
+    "url",
+    "openalex_id",
+    "video_id",
+    "path",
+    "document_id",
+    "id",
+)
+
+
+def _digest_ref(hit: dict) -> str:
+    if hit.get("book_code") and hit.get("paranum") is not None:
+        return f"{hit['book_code']}:{hit['paranum']}"
+    for key in ("title", "relative_path", *_DIGEST_REF_KEYS):
+        if hit.get(key):
+            return str(hit[key])
+    return "?"
+
+
+def _digest_snippet(hit: dict, width: int) -> str:
+    for key in _DIGEST_SNIPPET_KEYS:
+        value = hit.get(key)
+        if isinstance(value, str) and value.strip():
+            return _re.sub(r"\s+", " ", value).strip()[:width]
+    return ""
+
+
+def _digest_results(payload: str, top: int, width: int) -> list[str]:
+    """Short lines for one auto-logged JSON result: a count and the first hits."""
+    try:
+        data = json.loads(payload)
+    except ValueError:
+        return ["  (results are not valid JSON; read the entry in the dossier)"]
+    if isinstance(data, dict) and isinstance(data.get("hits"), list):
+        head = f"  total_hits={data.get('total_hits', len(data['hits']))}"
+        data = data["hits"]
+    elif isinstance(data, dict):
+        keys = ", ".join(
+            f"{k}({len(v)})" if isinstance(v, (list, dict)) else k
+            for k, v in list(data.items())[:12]
+        )
+        return [f"  keys: {keys}"]
+    else:
+        head = ""
+    if not isinstance(data, list):
+        return []
+    out = [head] if head else []
+    for hit in data[:top]:
+        if not isinstance(hit, dict):
+            out.append(f"  · {str(hit)[:width]}")
+            continue
+        snippet = _digest_snippet(hit, width)
+        out.append(f"  · {_digest_ref(hit)}" + (f" — {snippet}" if snippet else ""))
+    if len(data) > top:
+        out.append(f"  … {len(data) - top} more in the dossier entry")
+    return out
+
+
+def scratch_digest(
+    scratch: Path | None = None,
+    slug: str | None = None,
+    phase: str | None = None,
+    top: int = 2,
+    width: int = 90,
+) -> str:
+    """A short, line-numbered digest of a dossier, to read instead of the whole file.
+
+    The dossier stores every hit in full, so a long run reaches megabytes; reading
+    it whole fills the context and has cost runs hours (issue #109). The digest
+    keeps what the agent wrote itself (summaries, gates) in full, and shows each
+    auto-logged call as one header line, a hit count and its first `top` hits.
+    Every entry carries `L<line>`: `sed -n '<line>,+40p' <dossier>` reads it whole.
+    """
+    path = scratch or _scratch_path(slug)
+    lines = path.read_text(encoding="utf-8").splitlines()
+    wanted = _PHASE_ALIASES.get(str(phase).strip().lower(), phase) if phase else None
+    out: list[str] = []
+    counts: dict[str, int] = {}
+    current = ""
+    current_id = ""
+    i = 0
+    n = len(lines)
+    while i < n:
+        line = lines[i]
+        if line.startswith("## "):
+            current = line[3:].strip()
+            m = _re.match(r"Phase\s+(\S+)", current)
+            current_id = m.group(1) if m else ""
+            show = wanted is None or current_id == wanted
+            if show:
+                out.append(f"\n## {current}")
+            i += 1
+            continue
+        if not line.startswith("### "):
+            i += 1
+            continue
+        end = i + 1
+        while end < n and not lines[end].startswith(("### ", "## ")):
+            end += 1
+        entry = lines[i:end]
+        i = end
+        if not current.startswith("Phase") or (
+            wanted is not None and current_id != wanted
+        ):
+            continue
+        title = entry[0][4:].strip()
+        if title.startswith("PHASE") and "EXIT GATE" in title:
+            out.append(f"L{i - len(entry) + 1} gate: {title}")
+            continue
+        parts = title.split(" · ", 1)
+        cmd = parts[1] if len(parts) == 2 else title
+        counts[cmd] = counts.get(cmd, 0) + 1
+        meta = [
+            e[2:].strip()
+            for e in entry[1:]
+            if e.startswith(("- args:", "- hits:", "- summary:"))
+        ]
+        summary = [m for m in meta if m.startswith("summary:")]
+        brief = [m for m in meta if not m.startswith("summary:")]
+        out.append(f"L{i - len(entry) + 1} {cmd} · " + " · ".join(brief))
+        for s in summary:
+            out.append("  " + s[:1500])
+        if "```json" in entry:
+            start = entry.index("```json") + 1
+            close = next(
+                (k for k in range(start, len(entry)) if entry[k] == "```"), None
+            )
+            if close is not None:
+                out.extend(_digest_results("\n".join(entry[start:close]), top, width))
+    size_kb = path.stat().st_size // 1024
+    head = [
+        f"# Digest of {path.name} — {size_kb} KB, {len(lines)} lines in the dossier",
+        "Entries by command: "
+        + ", ".join(f"{c} {k}" for c, k in sorted(counts.items(), key=lambda x: -x[1])),
+        "Read one entry whole: sed -n 'L,+40p' <dossier> with its L number.",
+    ]
+    return "\n".join(head + out) + "\n"
+
+
 def scratch_resume(slug: str | None = None, scratch: Path | None = None) -> dict:
     """Print the last gate written and suggest the next phase."""
     path = scratch or _scratch_path(slug)
