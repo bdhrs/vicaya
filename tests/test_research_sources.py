@@ -139,6 +139,31 @@ class TestResolveCitationWithDPD:
         assert "Kesamutti" in c.human
         assert "para 66" in c.human
 
+    def test_suttacentral_number_shown_when_it_differs(self):
+        # #112: Kesamutti is AN3.66 in the DPD scheme and AN3.65 in SuttaCentral.
+        c = resolve_citation("s0402m2_mul", "66")
+        assert "AN3.66" in c.human
+        assert c.suttacentral == "AN3.65"
+
+    def test_suttacentral_number_absent_when_the_schemes_agree(self):
+        assert resolve_citation("s0202m_mul", "97").suttacentral is None
+
+    def test_sutta_numbers_returns_both_readings_of_a_bare_number(self):
+        from tools.research_sources import sutta_numbers
+
+        result = sutta_numbers("AN3.65")
+        by_scheme = {m["matched_as"]: m for m in result["matches"]}
+        assert by_scheme["dpd"]["name"] == "Sarabhasuttaṃ"
+        assert by_scheme["suttacentral"]["name"] == "Kesamuttisuttaṃ"
+        assert by_scheme["suttacentral"]["dpd_code"] == "AN3.66"
+        assert by_scheme["suttacentral"]["canon_table"] == "s0402m2_mul"
+
+    def test_sutta_numbers_accepts_spaces_and_unknown_codes(self):
+        from tools.research_sources import sutta_numbers
+
+        assert len(sutta_numbers("SN 45.175")["matches"]) == 2
+        assert sutta_numbers("XX9.9")["matches"] == []
+
     def test_commentary_mn60(self):
         c = resolve_citation("s0202a_att", "92")
         assert c.human == "MNa60 para 92"

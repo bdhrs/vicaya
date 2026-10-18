@@ -127,6 +127,10 @@ class Citation:
     # (no VICAYA_CANON_DB, or the book has no table there). False means the
     # reference is bogus — never cite it.
     paranum_exists: bool | None = None
+    # The SuttaCentral number for the sutta `human` names, only when it differs
+    # from the DPD code in `human` (issue #112). Readers, reviewers and web
+    # sources mostly use this scheme; the canon table and `human` do not.
+    suttacentral: str | None = None
 
 
 @dataclass
@@ -653,7 +657,100 @@ def _fallback_human(stem: str, text_type: str, paranum: str) -> tuple[str, str]:
     return human, pitaka_label or "Unknown"
 
 
+def _normalise_code(code: str) -> str:
+    return _re.sub(r"\s+", "", code).upper()
+
+
+def _suttacentral_number(human: str, db_path: Path | None) -> str | None:
+    """The SuttaCentral code of the sutta a `human` label starts with, if it differs.
+
+    `sutta_info` carries both numberings per sutta. The label's first token is
+    the DPD code (`AN3.66`); the row with that dpd_code gives its `sc_code`
+    (`AN3.65`). Returns None when they agree, the label starts with no DPD
+    code (commentary and book-level labels), or the db is unavailable.
+    """
+    if db_path is None or not db_path.exists():
+        return None
+    token = human.split(" ", 1)[0]
+    try:
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT sc_code FROM sutta_info WHERE dpd_code=? LIMIT 1", (token,)
+            ).fetchone()
+    except sqlite3.Error:
+        return None
+    sc = (row[0] if row else "") or ""
+    if not sc:
+        return None
+    a, b = _normalise_code(sc), _normalise_code(token)
+    # "SN45" and "SN45.1" are one sutta at two levels of detail, not two numberings.
+    if a == b or a.startswith(b + ".") or b.startswith(a + "."):
+        return None
+    return sc
+
+
+def sutta_numbers(code: str, dpd_db: Path | None = None) -> dict:
+    """Every sutta that `code` names in the DPD scheme or the SuttaCentral one.
+
+    The two schemes collide: `AN3.65` is Kesamutti in SuttaCentral and
+    Sarabha in the DPD/CST scheme, so a reviewer's number and a canon number
+    differ without either being wrong. Each match says which scheme the input
+    matched, with both codes, so the caller can pick by sutta name (#112).
+    """
+    db_path = dpd_db or DEFAULT_DPD_DB
+    if db_path is None or not db_path.exists():
+        return {"ok": False, "error": "VICAYA_DPD_DB is not set or missing"}
+    wanted = _normalise_code(code)
+    sql = """
+        SELECT dpd_code, sc_code, cst_sutta, sc_eng_sutta, cst_file, cst_paranum
+        FROM sutta_info
+        WHERE REPLACE(UPPER(dpd_code), ' ', '') = ?
+           OR REPLACE(UPPER(sc_code), ' ', '') = ?
+        ORDER BY dpd_code
+    """
+    try:
+        with sqlite3.connect(db_path) as conn:
+            rows = conn.execute(sql, (wanted, wanted)).fetchall()
+    except sqlite3.Error as exc:
+        return {"ok": False, "error": f"sutta_info query failed: {exc}"}
+    matches = []
+    for dpd, sc, cst_sutta, eng, cst_file, cst_paranum in rows:
+        as_dpd = _normalise_code(dpd) == wanted
+        as_sc = _normalise_code(sc or "") == wanted
+        table = _re.match(r"romn/(.+)\.(mul|att|tik)\.xml", cst_file or "")
+        matches.append(
+            {
+                "matched_as": "both"
+                if as_dpd and as_sc
+                else "dpd"
+                if as_dpd
+                else "suttacentral",
+                "dpd_code": dpd,
+                "suttacentral": sc or None,
+                "name": _re.sub(r"^\d+\.\s+", "", cst_sutta or "").strip() or None,
+                "english": eng or None,
+                "canon_table": f"{table.group(1)}_{table.group(2)}" if table else None,
+                "cst_paranum": cst_paranum or None,
+            }
+        )
+    return {"ok": True, "code": code, "matches": matches}
+
+
 def resolve_citation(
+    book_code: str,
+    paranum: str,
+    dpd_db: Path | None = None,
+    canon_db: Path | None = None,
+) -> Citation:
+    """`_resolve_citation_core` plus the SuttaCentral number when it differs."""
+    citation = _resolve_citation_core(book_code, paranum, dpd_db, canon_db)
+    citation.suttacentral = _suttacentral_number(
+        citation.human, dpd_db or DEFAULT_DPD_DB
+    )
+    return citation
+
+
+def _resolve_citation_core(
     book_code: str,
     paranum: str,
     dpd_db: Path | None = None,
@@ -3213,6 +3310,11 @@ def _cli() -> int:
         code = 1 if getattr(result, "paranum_exists", None) is False else 0
         return _done([args.book_code, str(args.paranum)], result, exit_code=code)
 
+    def _handle_sutta_numbers(args):
+        result = sutta_numbers(args.code)
+        _dump(result)
+        return _done([args.code], result, exit_code=0 if result["ok"] else 1)
+
     def _handle_env(args):
         import shlex
 
@@ -4227,6 +4329,15 @@ def _cli() -> int:
     pcs.add_argument("note", help="Path to a note file.")
     pcs.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
     pcs.set_defaults(func=_handle_check_citation_shape)
+
+    psn = sub.add_parser(
+        "sutta-numbers",
+        help="Look a sutta number up in both schemes (DPD/CST and "
+        "SuttaCentral). A bare AN3.65 can name two different suttas; every "
+        "match shows both codes and which one matched.",
+    )
+    psn.add_argument("code", help="A sutta code such as AN3.65 or SN45.175.")
+    psn.set_defaults(func=_handle_sutta_numbers)
 
     pe = sub.add_parser(
         "env",
