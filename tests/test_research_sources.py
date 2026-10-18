@@ -2137,6 +2137,44 @@ class TestScratchDossier:
         assert result["ok"] is True
         assert result["content_issues"] == []
 
+    def test_verify_ignores_placeholder_phrase_in_logged_results_and_quotes(
+        self, tmp_path, monkeypatch
+    ):
+        # Regression for #54: the poisoned-arrow simile (s0203m_mul 63/64, real
+        # text) contains "he would search for the arrow with a probe". It sits
+        # inside the auto-logged JSON of a search-canon call, and in a quoted
+        # block of a hand-written note; neither is a placeholder.
+        import json
+
+        from tools.research_sources import (
+            scratch_gate,
+            scratch_init,
+            scratch_log,
+        )
+
+        simile = (
+            "Having cut open the wound's entrance, he would search for the "
+            "arrow with a probe."
+        )
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("test-arrow-simile")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        scratch_gate("0")
+        results = tmp_path / "hits.json"
+        results.write_text(
+            json.dumps(
+                [{"book_code": "s0203m_mul", "paranum": "63", "english": simile}]
+            ),
+            encoding="utf-8",
+        )
+        scratch_log("2", "search-canon", results_file=results, hits=1)
+        scratch_log("2", "note", summary=f"Quoted for the simile:\n> {simile}")
+        from tools.scratch import _phase_body, _phase_content_issue
+
+        body = _phase_body(path.read_text(encoding="utf-8"), "2")
+        assert "he would search for the arrow" in body
+        assert _phase_content_issue(body) is None
+
     def test_verify_default_checks_through_4c_not_high_water_mark(
         self, tmp_path, monkeypatch
     ):

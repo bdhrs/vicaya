@@ -460,6 +460,25 @@ def _phase_body(text: str, pid: str) -> str:
     return "\n".join(out)
 
 
+def _agent_written_text(body: str) -> str:
+    """The body without fenced blocks and blockquotes.
+
+    Auto-logged results sit in ```json fences and quoted canon text in `>` lines.
+    That text is source material, so a sutta saying "he would search for the
+    arrow" is not a sign that the agent left a placeholder (issue #54).
+    """
+    kept: list[str] = []
+    in_fence = False
+    for line in body.splitlines():
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence or line.lstrip().startswith(">"):
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
 def _phase_content_issue(body: str) -> str | None:
     """Classify a gated phase's body: 'placeholder', 'empty', or None (has evidence).
 
@@ -470,7 +489,7 @@ def _phase_content_issue(body: str) -> str | None:
     """
     if "AUTO-SKIPPED" in body:
         return None
-    low = body.lower()
+    low = _agent_written_text(body).lower()
     for pat in _PLACEHOLDER_PATTERNS:
         # Patterns ending in a word character (e.g. "would search") need a
         # trailing word boundary so they don't false-match an inflected form
