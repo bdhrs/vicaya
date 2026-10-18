@@ -98,3 +98,77 @@ def test_cli_exits_1_on_a_finding_and_0_on_a_clean_note(tmp_path):
     assert bad.returncode == 1
     assert json.loads(bad.stdout)["findings"][0]["verdict"] == "label-mismatch"
     assert run(RIGHT_LABEL).returncode == 0
+
+
+# --- check-bibliography (#97) ------------------------------------------------
+# Entries copied from the real notes 2026-10-16 saddha-faith and
+# 2026-09-12 bhavanga-development-and-comparative-gap.
+
+from tools.note_audit import check_bibliography  # noqa: E402
+
+BIBLIOGRAPHY = """\
+## Bibliography
+
+### Primary Sources (Canonical)
+
+*Majjhima Nikāya* 47 (*Vīmaṃsakasuttaṃ*). Chaṭṭha Saṅgāyana Tipiṭaka.
+
+### Secondary Sources
+
+Nyanaponika Thera. *Devotion in Buddhism*. Kandy: Buddhist Publication Society, 1965.
+
+Lusthaus, Dan. *Pudgalavāda Doctrines of the Person*. (Calibre #9995)
+
+Karunadasa, Y. *Theravāda Abhidhamma: Its Inquiry into the Nature of Conditioned Reality*. (Calibre #7335)
+
+### Online Sources
+
+Ṭhānissaro Bhikkhu. "Faith in Awakening." *dhammatalks.org*. Accessed 2026-10-16. https://www.dhammatalks.org/books/PurityOfHeart/Section0005.html
+"""
+
+DOSSIER = (
+    '"title": "Devotion in Buddhism - Nyanaponika Thera.pdf", "snippet": "Kandy"\n'
+    "Calibre book 7335 Karunadasa Theravada Abhidhamma\n"
+    "fetched https://www.dhammatalks.org/books/PurityOfHeart/Section0005.html\n"
+)
+
+
+def test_bibliography_entries_the_run_never_saw_are_flagged():
+    result = check_bibliography(BIBLIOGRAPHY, DOSSIER)
+    assert result["checked"] == 4
+    (finding,) = result["findings"]
+    assert finding["entry"].startswith("Lusthaus, Dan.")
+    assert "author" in finding["reason"] or "neither" in finding["reason"]
+    assert result["ok"] is False
+
+
+def test_a_calibre_id_a_library_title_or_a_fetched_url_counts_as_evidence():
+    # Karunadasa is traced by its Calibre number, Nyanaponika by the library
+    # title in a logged hit, the dhammatalks page by the fetched URL.
+    flagged = {
+        f["entry"][:10] for f in check_bibliography(BIBLIOGRAPHY, DOSSIER)["findings"]
+    }
+    assert flagged == {"Lusthaus, "}
+
+
+def test_primary_sources_are_not_checked():
+    result = check_bibliography(BIBLIOGRAPHY, "")
+    assert all("Majjhima" not in f["entry"] for f in result["findings"])
+
+
+def test_a_note_without_a_bibliography_is_clean():
+    assert check_bibliography("# Note\n\nText.\n", DOSSIER) == {
+        "ok": True,
+        "checked": 0,
+        "findings": [],
+    }
+
+
+def test_diacritics_do_not_hide_a_match():
+    dossier = "karunadasa theravada abhidhamma inquiry nature conditioned reality"
+    entry = (
+        "## Bibliography\n\n### Secondary Sources\n\n"
+        "Karunadasa, Y. *Theravāda Abhidhamma: Its Inquiry into the Nature of "
+        "Conditioned Reality*. (Calibre #1)\n"
+    )
+    assert check_bibliography(entry, dossier)["ok"] is True

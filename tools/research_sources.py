@@ -3768,6 +3768,30 @@ def _cli() -> int:
         _dump(result, quiet=getattr(args, "quiet", False))
         return _done([args.term], result, exit_code=0 if result["ok"] else 1)
 
+    def _handle_check_bibliography(args):
+        from tools.note_audit import check_bibliography
+
+        path = resolve_vault_path(args.note)
+        if not path.exists():
+            _dump({"ok": False, "error": f"note not found: {path}"})
+            return _done(exit_code=2, autolog=False)
+        try:
+            dossier = _slug_scratch(args) or _scratch_path()
+        except ValueError as e:
+            _dump({"ok": False, "error": str(e)})
+            return _done(exit_code=2, autolog=False)
+        if not dossier.exists():
+            _dump({"ok": False, "error": f"dossier not found: {dossier}"})
+            return _done(exit_code=2, autolog=False)
+        result = check_bibliography(
+            path.read_text(encoding="utf-8"), dossier.read_text(encoding="utf-8")
+        )
+        _dump(
+            {"note": str(path), "dossier": str(dossier), **result},
+            quiet=getattr(args, "quiet", False),
+        )
+        return _done(exit_code=0 if result["ok"] else 1, autolog=False)
+
     def _handle_sweep_canon(args):
         from tools.canon_sweep import sweep_canon
 
@@ -4362,6 +4386,17 @@ def _cli() -> int:
         help="Keep each definition whole (default cuts each at 2,500 characters).",
     )
     pwl.set_defaults(func=_handle_fetch_wisdomlib)
+
+    pcb = sub.add_parser(
+        "check-bibliography",
+        help="Flag bibliography entries (secondary, online, media) whose "
+        "author or title appears nowhere in this run's dossier: those were "
+        "written from memory. Advisory; a source read outside the helpers "
+        "must be logged with scratch-log. Run before saving the note.",
+    )
+    pcb.add_argument("note", help="Path to the note (or the Phase 5 draft).")
+    pcb.add_argument("--slug", default=None, help=_SLUG_HELP)
+    pcb.set_defaults(func=_handle_check_bibliography)
 
     psc = sub.add_parser(
         "sweep-canon",

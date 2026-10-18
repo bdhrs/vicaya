@@ -9,6 +9,7 @@ claims a note makes about its references against the databases.
 from __future__ import annotations
 
 import re
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -111,3 +112,94 @@ def audit_note(
         },
         "gaps_to_retest": _critical_gaps(body),
     }
+
+
+_BIB_SECTIONS = ("Secondary Sources", "Online Sources", "Media Sources")
+_TITLE_STOP = frozenset(
+    "about their these those which where there under between through"
+    " volume edition press university journal".split()
+)
+
+
+def _plain(text: str) -> str:
+    folded = unicodedata.normalize("NFKD", text)
+    folded = "".join(c for c in folded if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", folded.lower())
+
+
+def _bibliography_entries(note_text: str) -> list[tuple[str, str]]:
+    """(subsection, entry) for each source entry of the note's bibliography."""
+    match = re.search(r"^## Bibliography\s*\n(.*?)(?=^## |\Z)", note_text, re.M | re.S)
+    if not match:
+        return []
+    entries = []
+    for block in re.split(r"^### ", match.group(1), flags=re.M)[1:]:
+        heading, _, body = block.partition("\n")
+        heading = heading.strip()
+        if not heading.startswith(_BIB_SECTIONS):
+            continue
+        for para in re.split(r"\n\s*\n", body):
+            entry = " ".join(para.split())
+            if len(entry) >= 25:
+                entries.append((heading, entry))
+    return entries
+
+
+def _untraced_reason(entry: str, dossier: str) -> str | None:
+    """Why `entry` cannot have come from this run's evidence, or None if it can."""
+    calibre = re.search(r"Calibre #(\d+)", entry)
+    if calibre and calibre.group(1) in dossier:
+        return None
+    url = re.search(r"https?://([^/\s)]+)", entry)
+    if url and url.group(1).removeprefix("www.") in dossier:
+        return None
+    head = re.split(r"[,.]", entry, maxsplit=1)[0]
+    surname_words = [w for w in re.findall(r"[a-z]{4,}", _plain(head))]
+    author_seen = (not surname_words) or any(w in dossier for w in surname_words)
+    title = re.search(r"[*\"“]([^*\"”]{8,}?)[*\"”]", entry)
+    words = (
+        [
+            w
+            for w in re.findall(r"[a-z]{5,}", _plain(title.group(1)))
+            if w not in _TITLE_STOP
+        ][:4]
+        if title
+        else []
+    )
+    title_seen = (not words) or sum(w in dossier for w in words) >= max(
+        1, len(words) // 2
+    )
+    if author_seen and title_seen:
+        return None
+    if not author_seen and not title_seen:
+        return "neither the author nor the title appears anywhere in the run's evidence"
+    if not author_seen:
+        return "the author's name appears nowhere in the run's evidence"
+    return "the title's words appear nowhere in the run's evidence"
+
+
+def check_bibliography(note_text: str, dossier_text: str) -> dict[str, Any]:
+    """Flag bibliography entries that nothing in the run's dossier supports.
+
+    A real source reaches the note through a logged search: a library hit, an
+    OpenAlex record, a fetched page. An entry whose author or title appears
+    nowhere in the dossier was written from memory, which is how a guessed
+    publisher, a book that does not exist, and a wrongly dated edition got
+    into published notes (issue #97). Advisory: a source read outside the
+    helpers is legitimate, but then it must be logged (`scratch-log`).
+    """
+    dossier = _plain(dossier_text)
+    findings = []
+    entries = _bibliography_entries(note_text)
+    for heading, entry in entries:
+        reason = _untraced_reason(entry, dossier)
+        if reason:
+            findings.append(
+                {
+                    "section": heading,
+                    "entry": entry[:160],
+                    "verdict": "not-in-evidence",
+                    "reason": reason,
+                }
+            )
+    return {"ok": not findings, "checked": len(entries), "findings": findings}
