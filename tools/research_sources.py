@@ -3572,6 +3572,50 @@ def _cli() -> int:
         )
         return _done(argv, result, exit_code=0 if result.get("ok") else 1)
 
+    def _handle_sweep_canon(args):
+        from tools.canon_sweep import sweep_canon
+
+        result = sweep_canon(
+            args.terms,
+            books=args.books,
+            exclude=args.exclude,
+            canon_db=DEFAULT_CANON_DB,
+        )
+        shown = result
+        if getattr(args, "quiet", False) and result.get("ok"):
+            # The per-table list is the bulky part; the dossier keeps it.
+            # A clipped forms list must say so, or a frequency claim off the
+            # 10 shown forms reads a truncated set as complete.
+            shown = {
+                **result,
+                "terms": [
+                    {
+                        **{k: v for k, v in t.items() if k != "tables"},
+                        "tables_with_hits": len(t["tables"]),
+                        "forms": t["forms"][:10],
+                        # The full result may already hold a count of forms
+                        # beyond its own cap; clipping adds to it.
+                        **(
+                            {
+                                "forms_not_shown": t.get("forms_not_shown", 0)
+                                + len(t["forms"])
+                                - 10
+                            }
+                            if len(t["forms"]) > 10
+                            else {}
+                        ),
+                    }
+                    for t in result["terms"]
+                ],
+            }
+        _dump(shown)
+        argv = (
+            list(args.terms)
+            + (["--books"] + list(args.books) if args.books else [])
+            + (["--exclude"] + list(args.exclude) if args.exclude else [])
+        )
+        return _done(argv, result, exit_code=0 if result.get("ok") else 1)
+
     def _handle_check_quotes(args):
         from tools.canon_paragraphs import check_quotes
 
@@ -4059,6 +4103,30 @@ def _cli() -> int:
     pgp.add_argument("--row-id", type=int, help="Any row id inside the paragraph.")
     pgp.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
     pgp.set_defaults(func=_handle_get_paragraph)
+
+    psc = sub.add_parser(
+        "sweep-canon",
+        help="Complete counts of each term in every canon table, grouped by "
+        "evidence tier, with the word forms matched, stem and vowel-length "
+        "probes, and hints. Run it before any absence or frequency claim.",
+    )
+    psc.add_argument("terms", nargs="+", help="Pāḷi terms or stems (one family).")
+    psc.add_argument(
+        "--books",
+        nargs="*",
+        default=None,
+        help="Table patterns to limit the sweep, e.g. 's*_mul'. Default: every "
+        "table. A limited sweep is not canon-wide and says so.",
+    )
+    psc.add_argument(
+        "--exclude",
+        nargs="*",
+        default=None,
+        help="Drop word forms that begin with any of these prefixes, e.g. "
+        "mogha when sweeping ogha. Dropped forms are listed.",
+    )
+    psc.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
+    psc.set_defaults(func=_handle_sweep_canon)
 
     pcq = sub.add_parser(
         "check-quotes",
