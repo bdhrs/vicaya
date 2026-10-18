@@ -434,7 +434,7 @@ uv run tools/research_sources.py scratch-gate 2 --slug <slug>
 
 **Auto-logging is on as soon as `scratch-init` has run.** The active scratch path
 and phase are persisted to a per-run state file (`data/scratch/.active-<run>.json`)
-keyed to your agent process. Every `search-*`, `sc-*`, `get-ebc-overview`,
+keyed to your opencode session id when `OPENCODE_SESSION_ID` is set, else to your agent process. Every `search-*`, `sc-*`, `get-ebc-overview`,
 `fetch-transcript`, and `cross-check` call appends a full
 JSON-results block to the selected phase. Forgetting to log is structurally
 impossible. Scratch target precedence is: explicit helper argument such as
@@ -443,7 +443,7 @@ override), then the per-run state file. `VICAYA_PHASE` overrides only the phase 
 helper auto-logs.
 
 **Parallel runs are isolated automatically — nothing to pin.** The per-run state
-file is keyed to the agent process that launched the helper calls, so two Vicaya
+file is keyed to the opencode session id (set in every opencode shell), or to the agent process that launched the helper calls, so two Vicaya
 runs live at once (in any combination of agents — Claude, Gemini, opencode, …)
 write to separate state files and cannot hijack each other's auto-log target.
 There is no single shared `.active` pointer to clobber. You do **not** need to

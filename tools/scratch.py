@@ -23,17 +23,24 @@ _AUTO_SKIP_PHASES = ("2.5", "3b")
 def _run_key() -> str:
     """A stable per-run identifier shared by every tool call in one research run.
 
-    Keyed to the agent process — the parent of the POSIX session leader. Every
-    helper subprocess an agent launches in one run resolves to the same key;
-    two parallel runs (whether Claude, Gemini, opencode, or any other agent)
-    have different agent processes and therefore different keys. This is what
-    makes per-run scratch state collision-proof without env vars, exports, or
-    inline pinning: there is no single shared pointer to hijack.
+    Keyed to OPENCODE_SESSION_ID when set: opencode's shell tool exports it per
+    session, and a long-lived `opencode serve` runs every session's shell under
+    one server process, so the process key below would give two parallel runs
+    one shared state file (issue #155). Otherwise keyed to the agent process —
+    the parent of the POSIX session leader. Every helper subprocess an agent
+    launches in one run resolves to the same key; two parallel runs have
+    different agent processes and therefore different keys.
+
+    An opencode sub-agent has its own session id, so it does not see its
+    parent's state until its first step, `scratch-resume <slug>`, writes one.
 
     Set VICAYA_SCRATCH (and VICAYA_PHASE) as a deterministic override: those
     env pins are checked before the state-file is read, so no ps spawn occurs
     on the env-pinned path.
     """
+    session = os.environ.get("OPENCODE_SESSION_ID")
+    if session:
+        return session
     try:
         sid = os.getsid(0)
         out = subprocess.run(

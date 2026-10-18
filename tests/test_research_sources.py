@@ -2324,6 +2324,23 @@ class TestScratchDossier:
         monkeypatch.setattr("tools.scratch._run_key", lambda: "run-B")
         assert _state_file() == tmp_path / ".active-run-B.json"
 
+    def test_opencode_session_id_keys_the_run(self, monkeypatch):
+        # Regression for #155: under one long-lived `opencode serve`, every
+        # session's shell has the same agent process, so the process key gave
+        # two parallel runs one state file.
+        from tools import scratch
+
+        scratch._run_key.cache_clear()
+        monkeypatch.setenv("OPENCODE_SESSION_ID", "ses_AAA")
+        assert scratch._run_key() == "ses_AAA"
+        scratch._run_key.cache_clear()
+        monkeypatch.setenv("OPENCODE_SESSION_ID", "ses_BBB")
+        assert scratch._run_key() == "ses_BBB"
+        scratch._run_key.cache_clear()
+        monkeypatch.delenv("OPENCODE_SESSION_ID")
+        assert scratch._run_key() != "ses_BBB"
+        scratch._run_key.cache_clear()
+
     def test_parallel_runs_do_not_hijack_each_others_pointer(
         self, tmp_path, monkeypatch
     ):
