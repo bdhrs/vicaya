@@ -62,6 +62,27 @@ def test_parse_chain_trims_whitespace(monkeypatch):
 # ---------- cross_check: chain unset / empty ----------
 
 
+def test_cross_check_timeout_scales_with_prompt_size():
+    # Regression for #128: a flat 180 s timed out on ~20 KB drafts.
+    assert rs._cross_check_timeout("x" * 1000) == 180
+    assert rs._cross_check_timeout("x" * 20 * 1024) == 480
+    assert rs._cross_check_timeout("x" * 500 * 1024) == 600
+
+
+def test_cross_check_passes_the_scaled_timeout_to_the_entry(monkeypatch):
+    monkeypatch.setenv("VICAYA_CROSS_CHECK_CHAIN", "pi:zai/glm")
+    seen: list[int] = []
+
+    def fake_pi(prompt, model, timeout):
+        seen.append(timeout)
+        return "review", ""
+
+    monkeypatch.setattr(rs, "_run_pi", fake_pi)
+    rs.cross_check("x" * 20 * 1024)
+    rs.cross_check("x" * 20 * 1024, timeout=77)
+    assert seen == [480, 77]
+
+
 def test_cross_check_self_review_when_chain_unset(monkeypatch):
     monkeypatch.delenv("VICAYA_CROSS_CHECK_CHAIN", raising=False)
     assert rs.cross_check("hi").startswith("# SELF_REVIEW:")

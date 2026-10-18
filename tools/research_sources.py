@@ -2823,7 +2823,23 @@ def check_citation_shape_file(path: Path) -> list[dict]:
     return findings
 
 
-def cross_check(prompt: str, timeout: int = 180) -> str:
+_CROSS_CHECK_BASE_TIMEOUT = 180
+_CROSS_CHECK_MAX_TIMEOUT = 600
+
+
+def _cross_check_timeout(prompt: str) -> int:
+    """Wait time per chain entry, scaled to the prompt size (issue #128).
+
+    A flat 180 s timed out on full drafts (~20 KB) in several runs, while
+    retries at 420-480 s succeeded. 120 s plus 18 s per KB gives 480 s at
+    20 KB; short prompts keep the old 180 s and nothing exceeds 600 s.
+    """
+    kilobytes = len(prompt.encode("utf-8")) / 1024
+    scaled = int(120 + 18 * kilobytes)
+    return max(_CROSS_CHECK_BASE_TIMEOUT, min(scaled, _CROSS_CHECK_MAX_TIMEOUT))
+
+
+def cross_check(prompt: str, timeout: int | None = None) -> str:
     """Cross-check `prompt` via the app/model chain in VICAYA_CROSS_CHECK_CHAIN.
 
     Returns the model's text on success. On any failure (empty chain, every
@@ -2834,7 +2850,11 @@ def cross_check(prompt: str, timeout: int = 180) -> str:
 
     Chain format: pipe-separated `app:model` entries, tried in order.
     Supported apps: `opencode`, `agy`, `pi`.
+
+    `timeout` is per entry; left unset it scales with the prompt size.
     """
+    if timeout is None:
+        timeout = _cross_check_timeout(prompt)
     chain = _parse_cross_check_chain()
     if not chain:
         return _self_review_sentinel(
@@ -3199,7 +3219,7 @@ def _cli() -> int:
 
     def _handle_cross_check(args):
         if args.preflight:
-            result = cross_check_preflight(timeout=args.timeout)
+            result = cross_check_preflight(timeout=args.timeout or 60)
             _dump(result, quiet=args.quiet)
             return _done(
                 ["<stdin>"],
@@ -3695,7 +3715,13 @@ def _cli() -> int:
         "falls back to # SELF_REVIEW: sentinel if unreachable. "
         "Reads prompt from stdin.",
     )
-    pcc.add_argument("--timeout", type=int, default=180)
+    pcc.add_argument(
+        "--timeout",
+        type=int,
+        default=None,
+        help="seconds per chain entry; default scales with prompt size "
+        "(180 s minimum, 600 s maximum). Preflight uses 60 when unset.",
+    )
     pcc.add_argument(
         "--preflight",
         action="store_true",
