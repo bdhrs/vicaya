@@ -3843,7 +3843,9 @@ def _cli() -> int:
         if not path.exists():
             _dump({"ok": False, "error": f"note not found: {path}"})
             return _done(exit_code=2, autolog=False)
-        result = check_quotes(path.read_text(encoding="utf-8"), DEFAULT_CANON_DB)
+        result = check_quotes(
+            path.read_text(encoding="utf-8"), DEFAULT_CANON_DB, DEFAULT_DPD_DB
+        )
         _dump({"note": str(path), **result}, quiet=getattr(args, "quiet", False))
         return _done(exit_code=0 if result.get("ok") else 1, autolog=False)
 
@@ -4424,9 +4426,11 @@ def _cli() -> int:
 
     pcq = sub.add_parser(
         "check-quotes",
-        help="Check each cited Pāḷi blockquote in a note against the paragraph "
-        "its db: citation names. Advisory: reports quotes found in another "
-        "paragraph, not found as written, or citing a missing paragraph.",
+        help="Check each cited Pāḷi quote in a note against the paragraph its "
+        "citation names — both a `>` blockquote with a `db:` footnote and the "
+        "note template's `- Pāḷi:` bullet under a bold label. Advisory: reports "
+        "quotes found in another paragraph, not found as written, or citing a "
+        "missing paragraph.",
     )
     pcq.add_argument("note", help="Note path (absolute, or Vicaya/<file>.md).")
     pcq.add_argument("--quiet", action="store_true", help=_QUIET_HELP)

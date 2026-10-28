@@ -383,6 +383,48 @@ def test_under_quoted_evidence_counts_indented_blockquotes() -> None:
     assert not any(i.code == "under-quoted-evidence" for i in issues)
 
 
+def test_under_quoted_evidence_counts_template_pali_bullets() -> None:
+    # Issue #157: the same blind spot as check-quotes. A note written in the
+    # template format carries its quotes as `- Pāḷi:` bullets, not blockquotes,
+    # so counting only blockquote lines scored a fully-quoted note as
+    # under-quoted (real case: 2026-10-28 udāna note, 13 Pāḷi bullets).
+    text = (
+        _replace_canon_section(
+            valid_note_text(),
+            "## Canon Evidence (T1)\n\n"
+            "- **MN 21 Kakacūpamasuttaṃ para 21**[^1]\n"
+            '  - Pāḷi: "Quote 1"\n'
+            "- **SN 12.15 Kaccānagottasuttaṃ para 15**[^2]\n"
+            '  - Pāḷi: "Quote 2"\n'
+            "- **AN 4.170 Yuganaddhasuttaṃ para 170**[^3]\n"
+            '  - Pāḷi: "Quote 3"\n',
+        )
+        + "\n[^2]: Def 2.\n[^3]: Def 3.\n"
+    )
+    issues = note_checks.validate_note_text(text)
+    assert not any(i.code == "under-quoted-evidence" for i in issues)
+
+
+def test_under_quoted_evidence_still_fires_against_unquoted_bullets() -> None:
+    # The check must stay honest: a bullet that is only a citation, with no
+    # `- Pāḷi:` quote under it, is exactly what the ratio is there to catch.
+    text = (
+        _replace_canon_section(
+            valid_note_text(),
+            "## Canon Evidence (T1)\n\n"
+            "- **MN 21 Kakacūpamasuttaṃ para 21**[^1]\n"
+            '  - Pāḷi: "Quote 1"\n'
+            "- **SN 12.15 Kaccānagottasuttaṃ para 15**[^2]\n"
+            "- **AN 4.170 Yuganaddhasuttaṃ para 170**[^3]\n",
+        )
+        + "\n[^2]: Def 2.\n[^3]: Def 3.\n"
+    )
+    issues = note_checks.validate_note_text(text)
+    assert any(
+        i.code == "under-quoted-evidence" and i.severity == "error" for i in issues
+    )
+
+
 def test_t3_t4_footnotes_do_not_trigger_under_quoted_evidence() -> None:
     # T1 evidence is fully quoted (1 footnote, 1 blockquote); 3 more footnotes
     # cite T3 web sources elsewhere and carry no blockquote, which is correct

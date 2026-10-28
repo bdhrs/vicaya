@@ -61,7 +61,7 @@ def audit_note(
     from tools.research_sources import resolve_citation
 
     findings: list[dict[str, Any]] = []
-    quotes = check_quotes(note_text, canon_db)
+    quotes = check_quotes(note_text, canon_db, dpd_db)
     if not quotes.get("ok", True) and "error" in quotes:
         return {"ok": False, "error": quotes["error"]}
     findings.extend(quotes.get("findings", []))

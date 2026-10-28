@@ -140,6 +140,26 @@ def canon_db(tmp_path: Path) -> Path:
     return path
 
 
+@pytest.fixture
+def dpd_db(tmp_path: Path) -> Path:
+    """Only the slice of `sutta_info` the label resolver reads."""
+    path = tmp_path / "dpd.db"
+    with sqlite3.connect(path) as conn:
+        conn.execute(
+            "CREATE TABLE sutta_info (dpd_code TEXT, sc_code TEXT, "
+            "cst_sutta TEXT, cst_file TEXT, cst_paranum INTEGER)"
+        )
+        conn.executemany(
+            "INSERT INTO sutta_info VALUES (?, ?, ?, ?, ?)",
+            [
+                ("MN56", "MN56", "1. Upālisuttaṃ", "romn/s0202m.mul.xml", 60),
+                ("MN95", "MN95", "2. Caṅkīsuttaṃ", "romn/s0202m.mul.xml", 429),
+                ("DHP212-216", "Dhp212-216", "Piyavaggo", "romn/s0502m.mul.xml", 216),
+            ],
+        )
+    return path
+
+
 @pytest.mark.parametrize(
     ("cell", "numbers"),
     [
@@ -454,3 +474,131 @@ def test_speaker_labels_inside_a_quote_are_ignored(canon_db: Path) -> None:
     )
 
     assert check_quotes(note, canon_db)["findings"] == []
+
+
+# --- issue #157: the note template's own `- Pāḷi:` bullet format ---------------
+#
+# The template writes evidence as a bold label bullet with a nested Pāḷi bullet:
+#   - **MN56 Upālisuttaṃ para 60**
+#     - Pāḷi: "…"
+# `check-quotes` only read `>` blockquotes, so every such quote was never
+# tested. Fixtures below use the real rows the module already carries.
+
+
+def test_template_bullet_quote_is_checked(canon_db: Path, dpd_db: Path) -> None:
+    note = (
+        "- **MN56 Upālisuttaṃ para 60** (T1a)\n"
+        f'  - Pāḷi: "{_CONTINUATION_QUOTE}"\n'
+        '  - English: "Then the householder Upāli said to the Blessed One…"\n'
+    )
+
+    result = check_quotes(note, canon_db, dpd_db)
+
+    assert result["findings"] == []
+    assert (result["bullet_checked"], result["checked"]) == (1, 1)
+
+
+def test_template_bullet_finished_from_memory_is_found(canon_db: Path) -> None:
+    # The real failure mode: a quote that drifts after a correct opening.
+    quote = _PARA_429_QUOTE + ", idaṃ na bhavati kvaci."
+    note = f'- **MN95 Caṅkīsuttaṃ s0202m_mul para 429**\n  - Pāḷi: "{quote}"\n'
+
+    finding = check_quotes(note, canon_db)["findings"][0]
+
+    assert finding["verdict"] == "not-found"
+    assert finding["format"] == "bullet"
+    # The opening is right, so the cited paragraph is still the closest one.
+    assert "closest_paragraph" not in finding
+    assert finding["matched_words"] == "11/15"
+
+
+def test_template_bullet_can_cite_a_table_code(canon_db: Path) -> None:
+    note = (
+        f'- **MN95 Caṅkīsuttaṃ s0202m_mul para 429**\n  - Pāḷi: "{_PARA_429_QUOTE}"\n'
+    )
+
+    result = check_quotes(note, canon_db)
+
+    assert (result["bullet_checked"], result["findings"]) == (1, [])
+
+
+def test_template_bullet_beside_a_blockquote_both_count(
+    canon_db: Path, dpd_db: Path
+) -> None:
+    note = (
+        f"> {_CONTINUATION_QUOTE}[^a]\n\n" + _DEFS + "\n"
+        "- **MN95 Caṅkīsuttaṃ para 429**\n"
+        f'  - Pāḷi: "{_PARA_429_QUOTE}"\n'
+    )
+
+    result = check_quotes(note, canon_db, dpd_db)
+
+    # The footnote still pairs the blockquote; the bullet pairs by its label.
+    assert (result["checked"], result["bullet_checked"]) == (2, 1)
+
+
+def test_template_bullet_without_a_paragraph_is_reported_unpaired(
+    canon_db: Path, dpd_db: Path
+) -> None:
+    # Real form (2026-10-28 udāna note): a label naming the source but no para.
+    note = f'- **MN56 Upālisuttaṃ**\n  - Pāḷi: "{_CONTINUATION_QUOTE}"\n'
+
+    result = check_quotes(note, canon_db, dpd_db)
+
+    assert result["findings"] == []
+    assert result["bullet_checked"] == 0
+    assert result["bullet_unpaired"] == [
+        {
+            "line": 2,
+            "label_line": 1,
+            "reason": "label names s0202m_mul but no paragraph number",
+        }
+    ]
+
+
+def test_template_bullet_label_outside_canon_is_skipped(canon_db: Path) -> None:
+    # A commentary label names no table code, so it is not tested against the
+    # mūla paragraph of the same number (the blockquote path's old trap).
+    note = f'- **Papañcasūdanī on MN 10 §113**\n  - Pāḷi: "{_CONTINUATION_QUOTE}"\n'
+
+    result = check_quotes(note, canon_db)
+
+    assert result["checked"] == 0
+    assert result["findings"] == []
+    assert result["bullet_skipped"] == {"label names no canon table or sutta code": 1}
+
+
+def test_template_bullet_english_text_is_not_a_quote(canon_db: Path) -> None:
+    # Real form: a bullet holding a note-to-self instead of Pāḷi.
+    note = (
+        "- **MN119 Kāyagatāsatisuttaṃ para 154**\n"
+        "  - Pāḷi: (mindfulness of the body, cited as the anchor — see para 154)\n"
+    )
+
+    result = check_quotes(note, canon_db)
+
+    assert result["checked"] == 0
+    assert result["findings"] == []
+    assert result["bullet_skipped"] == {"no Pāḷi text in the bullet": 1}
+
+
+def test_sutta_code_label_resolves_through_the_dpd_db(
+    canon_db: Path, dpd_db: Path
+) -> None:
+    # The template's commonest label names a DPD code, not a CST table
+    # ("MN56 … para 60"); sutta_info.cst_file carries the table.
+    note = f'- **MN56 Upālisuttaṃ para 60**\n  - Pāḷi: "{_CONTINUATION_QUOTE}"\n'
+
+    result = check_quotes(note, canon_db, dpd_db)
+
+    assert (result["bullet_checked"], result["findings"]) == (1, [])
+
+
+def test_dhp_range_code_resolves_to_its_book(dpd_db: Path) -> None:
+    # Dhp labels come as verse ranges ("Dhp212-216"), which sutta_info holds as
+    # one range row rather than one row per verse.
+    from tools.canon_paragraphs import _dpd_code_table
+
+    assert _dpd_code_table("Dhp212-216", dpd_db, {}) == "s0502m_mul"
+    assert _dpd_code_table("MN56", dpd_db, {}) == "s0202m_mul"
+    assert _dpd_code_table("ZZ99", dpd_db, {}) is None

@@ -86,6 +86,11 @@ _QUOTE_LABEL_RE = re.compile(
     r"^(\*\*)?(English|Pāḷi|Pāli|Pali|Sanskrit|Translation)(\*\*)?\s*:", re.IGNORECASE
 )
 _QUOTED_SPAN_RE = re.compile(r"\"[^\"]*\"|“[^”]*”")
+# The template's own evidence bullet: `- Pāḷi: "…"`. It carries one quote, just
+# as a `>` blockquote line does, so the under-quoted ratio must count it — the
+# same blind spot as `check-quotes` (#157), which let a note with 13 Pāḷi
+# bullets look under-quoted-free while nothing was ever tested.
+_QUOTE_BULLET_RE = re.compile(r"^\s*[-*+]\s+\**(?:Pāḷi|Pāli|Pali)\**\s*:", re.I)
 
 
 def _t1_evidence_heading(lines: list[str]) -> str | None:
@@ -309,18 +314,15 @@ def _validate_body(body: str, issues: list[ValidationIssue], frontmatter: str) -
 
     issues.extend(_long_sentence_issues(lines, line_offset))
 
-    evidence_footnote_refs, evidence_blockquote_lines = (
-        _evidence_section_footnote_and_blockquote_counts(lines)
+    evidence_footnote_refs, evidence_quote_lines = (
+        _evidence_section_footnote_and_quote_counts(lines)
     )
-    if (
-        evidence_footnote_refs >= 3
-        and evidence_blockquote_lines < evidence_footnote_refs
-    ):
+    if evidence_footnote_refs >= 3 and evidence_quote_lines < evidence_footnote_refs:
         issues.append(
             ValidationIssue(
                 "under-quoted-evidence",
                 f"T1/T2 evidence sections cite {evidence_footnote_refs} footnotes "
-                f"but contain only {evidence_blockquote_lines} blockquote lines "
+                f"but contain only {evidence_quote_lines} quoted lines "
                 "(under-quoted evidence)",
                 1 + line_offset,
                 "error",
@@ -498,11 +500,17 @@ def _final_footer_index(lines: list[str]) -> int:
     return len(lines)
 
 
-def _evidence_section_footnote_and_blockquote_counts(
+def _evidence_section_footnote_and_quote_counts(
     lines: list[str],
 ) -> tuple[int, int]:
+    """Footnotes cited, and quoted lines, inside the T1/T2 evidence sections.
+
+    A quoted line is a `>` blockquote line or a template `- Pāḷi:` bullet; both
+    carry one quote, and counting only blockquotes scored a fully-quoted
+    template note as under-quoted (issue #157).
+    """
     footnote_refs: set[str] = set()
-    blockquote_lines = 0
+    quote_lines = 0
     in_evidence_section = False
     for line in lines:
         stripped = line.strip()
@@ -511,9 +519,9 @@ def _evidence_section_footnote_and_blockquote_counts(
             continue
         if not in_evidence_section:
             continue
-        if line.lstrip().startswith(">"):
-            blockquote_lines += 1
+        if line.lstrip().startswith(">") or _QUOTE_BULLET_RE.match(line):
+            quote_lines += 1
         footnote_refs.update(
             match.group(1) for match in re.finditer(r"\[\^([^\]]+)\](?!:)", line)
         )
-    return len(footnote_refs), blockquote_lines
+    return len(footnote_refs), quote_lines

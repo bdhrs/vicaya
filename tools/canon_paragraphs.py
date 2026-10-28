@@ -5,8 +5,15 @@ rest have it blank. Agents pulling rows by `id` kept citing the row id as the
 paragraph number, and `WHERE paranum = N` pulls dropped the continuation rows,
 so quotes came out truncated or spliced across two paragraphs (issue #124).
 `get_paragraph` returns every row of a paragraph under its real number;
-`check_quotes` tests each Pāḷi blockquote in a note against the paragraph its
+`check_quotes` tests each Pāḷi quote in a note against the paragraph its
 citation names, which also catches a quote finished from memory (issue #96).
+
+Two note formats carry Pāḷi, and both are checked. The older one is a `>`
+blockquote paired with a `db: <table>, para N` footnote. The note template's
+own format is a `- Pāḷi: "…"` bullet under a bold label
+(`- **MN60 Apaṇṇakasuttaṃ para 97**`), which the blockquote path never saw:
+513 such quotes sat untested across 49 vault notes while `check-quotes`
+reported `checked: 0` (issue #157).
 """
 
 from __future__ import annotations
@@ -43,6 +50,24 @@ _QUOTE_LABEL_RE = re.compile(
 _LABEL_PARA_RE = re.compile(r"^\*\*.*?\bpara\.?\s*(\d+)\b.*\*\*")
 # A quote shorter than this is too generic to place (a stock phrase recurs).
 _MIN_FRAGMENT_WORDS = 4
+
+# --- the note template's bullet format: `- **MN60 … para 97**` + `- Pāḷi: …`
+# The Pāḷi bullet itself. Group 1 is the indent, group 2 the quoted text.
+_BULLET_QUOTE_RE = re.compile(
+    r"^([ \t]*)[-*+][ \t]+\**(?:Pāḷi|Pāli|Pali)\**[ \t]*:[ \t]*(.*)$", re.I
+)
+# A bold bullet is a label when it is the parent of the Pāḷi bullet above it.
+_BULLET_LABEL_RE = re.compile(r"^([ \t]*)[-*+][ \t]+\*\*(.+?)\*\*")
+_HEADING_LINE_RE = re.compile(r"^#{1,6}\s")
+_ANY_BULLET_RE = re.compile(r"^[ \t]*[-*+][ \t]")
+# A CST table code written into the label ("s0203m_mul").
+_LABEL_TABLE_RE = re.compile(r"\b([a-z0-9]+_(?:mul|att|tik|nrf))\b")
+# A DPD/CST sutta code: AN4.184, MN60, SN55.27, Dhp212-216, ITI30.
+_LABEL_CODE_RE = re.compile(r"\b([A-Z][A-Za-z]{1,3}\d+(?:[.\-]\d+)*)\b")
+# The paragraph the label names: "para 97", "paras 265–268", "§113".
+_LABEL_PARA_IN_TEXT_RE = re.compile(r"(?:\bparas?\b|§)\s*(\d+(?:\s*[–-]\s*\d+)?)", re.I)
+_CST_FILE_RE = re.compile(r"(?:.*/)?(.+)\.(mul|att|tik|nrf)\.xml$")
+_DPD_RANGE_RE = re.compile(r"^([A-Z]+)(\d+)-(\d+)$")
 
 
 def clean_text(raw: str | None) -> str:
@@ -338,15 +363,142 @@ def _quote_fragments(text: str) -> list[str]:
     ]
 
 
-def check_quotes(note_text: str, canon_db: Path | None) -> dict:
-    """Test each cited Pāḷi blockquote against the paragraph it cites.
+def _dpd_code_table(code: str, dpd_db: Path | None, cache: dict) -> str | None:
+    """The CST table a DPD sutta code names, via `sutta_info.cst_file`.
 
-    Each quote is paired with the `db: <table>, para N` footnote on it, on its
-    translation (the next block), or on the bold label line above its run.
-    A footnote that cites a row `id` instead of a paragraph is itself a
-    finding. Findings are advisory — the check cannot tell a misquote from a
-    legitimate variant reading — so each says where the text actually is and
-    how much of it matched, for a person to judge.
+    `cst_file` is stored as `romn/s0402m3.mul.xml`; the canon tables drop the
+    path and join type and stem with an underscore (`s0402m3_mul`). A Dhp-style
+    range code (`DHP212-216`) matches the range row that covers its first
+    number, so a verse number still lands in the right book.
+    """
+    if dpd_db is None or not dpd_db.exists():
+        return None
+    wanted = re.sub(r"\s+", "", code).upper()
+    if wanted in cache:
+        return cache[wanted]
+    table = None
+    try:
+        with sqlite3.connect(f"file:{dpd_db}?mode=ro", uri=True) as conn:
+            rows = conn.execute(
+                "SELECT cst_file FROM sutta_info "
+                "WHERE REPLACE(UPPER(dpd_code), ' ', '') = ? LIMIT 1",
+                (wanted,),
+            ).fetchone()
+            if rows is None:
+                span = _DPD_RANGE_RE.match(wanted)
+                if span:
+                    prefix, start = span.group(1), int(span.group(2))
+                    for dpd_code, cst_file in conn.execute(
+                        "SELECT dpd_code, cst_file FROM sutta_info "
+                        "WHERE dpd_code LIKE ?",
+                        (f"{prefix}%",),
+                    ):
+                        r = _DPD_RANGE_RE.match((dpd_code or "").upper())
+                        if (
+                            r
+                            and r.group(1) == prefix
+                            and int(r.group(2)) <= start <= int(r.group(3))
+                        ):
+                            rows = (cst_file,)
+                            break
+    except sqlite3.Error:
+        rows = None
+    if rows:
+        match = _CST_FILE_RE.match(rows[0] or "")
+        if match:
+            table = f"{match.group(1)}_{match.group(2)}"
+    cache[wanted] = table
+    return table
+
+
+def _label_locator(label: str, dpd_db: Path | None, cache: dict) -> dict:
+    """The (table, paragraph numbers) a bold label names, or why it names none.
+
+    An explicit table code wins over a sutta code, so a commentary label that
+    says which aṭṭhakathā table it quotes from is checked against that table
+    rather than skipped. A label that names only a paragraph number, or only a
+    source, cannot be resolved and is reported as unpaired.
+    """
+    numbers_match = _LABEL_PARA_IN_TEXT_RE.search(label)
+    numbers = paranum_numbers(numbers_match.group(1)) if numbers_match else set()
+    table_match = _LABEL_TABLE_RE.search(label)
+    table = table_match.group(1) if table_match else None
+    if table is None and not _COMMENTARY_LABEL_RE.search(label):
+        for code in _LABEL_CODE_RE.findall(label):
+            table = _dpd_code_table(code, dpd_db, cache)
+            if table:
+                break
+    if table is None:
+        reason = (
+            "commentary label names no table code"
+            if _COMMENTARY_LABEL_RE.search(label)
+            else "label names no canon table or sutta code"
+        )
+        return {"table": None, "numbers": numbers, "reason": reason}
+    if not numbers:
+        return {
+            "table": table,
+            "numbers": set(),
+            "reason": f"label names {table} but no paragraph number",
+        }
+    return {"table": table, "numbers": numbers, "reason": None}
+
+
+def _bullet_quotes(lines: list[str]) -> list[dict]:
+    """Each `- Pāḷi:` bullet with the bold label bullet it belongs to.
+
+    The label is the nearest bold bullet above it at the same or a smaller
+    indent, which is how the note template nests them. Blank lines are allowed
+    between the two; a heading, a sibling bullet or a prose line ends the
+    search, so a quote is never paired with a label from another block.
+    """
+    pairs: list[dict] = []
+    for index, line in enumerate(lines):
+        match = _BULLET_QUOTE_RE.match(line)
+        if not match:
+            continue
+        indent = len(match.group(1).expandtabs(4))
+        label: str | None = None
+        label_line: int | None = None
+        for back in range(index - 1, -1, -1):
+            above = lines[back]
+            if not above.strip():
+                continue
+            if _HEADING_LINE_RE.match(above):
+                break
+            label_match = _BULLET_LABEL_RE.match(above)
+            if label_match:
+                if len(label_match.group(1).expandtabs(4)) <= indent:
+                    label = label_match.group(2).strip()
+                    label_line = back + 1
+                break
+            if _ANY_BULLET_RE.match(above):
+                break
+            break
+        pairs.append(
+            {
+                "line": index + 1,
+                "text": match.group(2).strip(),
+                "label": label,
+                "label_line": label_line,
+            }
+        )
+    return pairs
+
+
+def check_quotes(
+    note_text: str, canon_db: Path | None, dpd_db: Path | None = None
+) -> dict:
+    """Test each cited Pāḷi quote against the paragraph it cites.
+
+    A blockquote is paired with the `db: <table>, para N` footnote on it, on its
+    translation (the next block), or on the bold label line above its run. A
+    template bullet (`- Pāḷi:`) is paired with the bold label bullet above it,
+    which names the table (or sutta code) and paragraph. A footnote that cites
+    a row `id` instead of a paragraph is itself a finding. Findings are
+    advisory — the check cannot tell a misquote from a legitimate variant
+    reading — so each says where the text actually is and how much of it
+    matched, for a person to judge.
     """
     if canon_db is None or not canon_db.exists():
         return {"ok": False, "error": "VICAYA_CANON_DB is not set or missing"}
@@ -368,6 +520,10 @@ def check_quotes(note_text: str, canon_db: Path | None) -> dict:
     checked = 0
     unpaired = 0
     cache: dict[str, list[dict]] = {}
+    code_cache: dict = {}
+    bullet_checked = 0
+    bullet_unpaired: list[dict] = []
+    bullet_skipped: dict[str, int] = {}
     with _connect(canon_db) as conn:
 
         def paragraphs_of(table: str) -> list[dict] | None:
@@ -398,6 +554,59 @@ def check_quotes(note_text: str, canon_db: Path | None) -> dict:
                 finding["cite_as"] = f"db: {table}, para {owner}"
             findings.append(finding)
 
+        def judge(fragments: list[str], table: str, numbers: set[int], base: dict):
+            """Test one quote's fragments; append findings, report if it was tested."""
+            paragraphs = paragraphs_of(table)
+            if paragraphs is None:
+                return False
+            low, high = min(numbers), max(numbers)
+            base = {
+                **base,
+                "cites": f"{table} para {low}" + (f"–{high}" if high > low else ""),
+            }
+            cited = [p for p in paragraphs if p["numbers"] & numbers]
+            if not cited:
+                findings.append({**base, "verdict": "no-such-paragraph"})
+                return True
+            cited_text = "".join(p["text"] for p in cited)
+            missing = [f for f in fragments if not _found(f, cited_text)]
+            if not missing:
+                return True
+            homes = [[p for p in paragraphs if _found(f, p["text"])] for f in missing]
+            if all(homes):
+                found_in = sorted({p["paranum"] for home in homes for p in home})
+                findings.append(
+                    {**base, "verdict": "in-other-paragraph", "found_in": found_in}
+                )
+                return True
+            worst_first = min(
+                missing,
+                key=lambda f: _matched_prefix(f, cited_text) / len(f.split()),
+            )
+            # Only the last word differs: a variant ending or sandhi, not a
+            # misquote, and flagging it buries the real findings.
+            if _matched_prefix(worst_first, cited_text) >= len(worst_first.split()) - 1:
+                return True
+            worst = min(
+                missing,
+                key=lambda f: _matched_prefix(f, cited_text) / len(f.split()),
+            )
+            total = len(worst.split())
+            finding = {
+                **base,
+                "verdict": "not-found",
+                "matched_words": f"{_matched_prefix(worst, cited_text)}/{total}",
+            }
+            # Where the quote most likely comes from, so the fix is a lookup
+            # rather than a search: the paragraph matching most of its opening.
+            closest = max(paragraphs, key=lambda p: _matched_prefix(worst, p["text"]))
+            closest_words = _matched_prefix(worst, closest["text"])
+            if closest_words > _matched_prefix(worst, cited_text):
+                finding["closest_paragraph"] = closest["paranum"]
+                finding["closest_matched_words"] = f"{closest_words}/{total}"
+            findings.append(finding)
+            return True
+
         for run in _quote_runs(lines):
             label_marker = _run_label_marker(lines, run, para_defs, known)
             for k, block in enumerate(run):
@@ -418,64 +627,69 @@ def check_quotes(note_text: str, canon_db: Path | None) -> dict:
                 if paragraphs is None:
                     unpaired += 1
                     continue
-                checked += 1
-                low, high = min(numbers), max(numbers)
-                base = {
-                    "line": block["line"] + 1,
-                    "cites": f"{table} para {low}" + (f"–{high}" if high > low else ""),
-                    "quote": _QUOTE_LABEL_RE.sub("", text)[:80],
-                }
-                cited = [p for p in paragraphs if p["numbers"] & numbers]
-                if not cited:
-                    findings.append({**base, "verdict": "no-such-paragraph"})
-                    continue
-                cited_text = "".join(p["text"] for p in cited)
-                missing = [f for f in fragments if not _found(f, cited_text)]
-                if not missing:
-                    continue
-                homes = [
-                    [p for p in paragraphs if _found(f, p["text"])] for f in missing
-                ]
-                if all(homes):
-                    found_in = sorted({p["paranum"] for home in homes for p in home})
-                    findings.append(
-                        {**base, "verdict": "in-other-paragraph", "found_in": found_in}
-                    )
-                    continue
-                worst_first = min(
-                    missing,
-                    key=lambda f: _matched_prefix(f, cited_text) / len(f.split()),
-                )
-                # Only the last word differs: a variant ending or sandhi, not a
-                # misquote, and flagging it buries the real findings.
-                if (
-                    _matched_prefix(worst_first, cited_text)
-                    >= len(worst_first.split()) - 1
+                if judge(
+                    fragments,
+                    table,
+                    numbers,
+                    {
+                        "line": block["line"] + 1,
+                        "quote": _QUOTE_LABEL_RE.sub("", text)[:80],
+                    },
                 ):
-                    continue
-                worst = min(
-                    missing,
-                    key=lambda f: _matched_prefix(f, cited_text) / len(f.split()),
+                    checked += 1
+
+        # The note template's own format: `- **MN60 … para 97**` + `- Pāḷi: …`.
+        # Issue #157: this path did not exist, so these quotes were never seen.
+        for bullet in _bullet_quotes(lines):
+            text = bullet["text"]
+
+            def skip(reason: str) -> None:
+                bullet_skipped[reason] = bullet_skipped.get(reason, 0) + 1
+
+            if text.lstrip("*_ (").startswith("(") or not _is_pali(text):
+                skip("no Pāḷi text in the bullet")
+                continue
+            fragments = _quote_fragments(text)
+            if not fragments:
+                skip("quote too short to place")
+                continue
+            if not bullet["label"]:
+                skip("no bold label above the bullet")
+                continue
+            locator = _label_locator(bullet["label"], dpd_db, code_cache)
+            if locator["table"] is None:
+                skip(locator["reason"])
+                continue
+            if not locator["numbers"]:
+                bullet_unpaired.append(
+                    {
+                        "line": bullet["line"],
+                        "label_line": bullet["label_line"],
+                        "reason": locator["reason"],
+                    }
                 )
-                total = len(worst.split())
-                finding = {
-                    **base,
-                    "verdict": "not-found",
-                    "matched_words": f"{_matched_prefix(worst, cited_text)}/{total}",
-                }
-                # Where the quote most likely comes from, so the fix is a lookup
-                # rather than a search: the paragraph matching most of its opening.
-                closest = max(
-                    paragraphs, key=lambda p: _matched_prefix(worst, p["text"])
+                continue
+            base = {
+                "line": bullet["line"],
+                "format": "bullet",
+                "quote": _QUOTE_LABEL_RE.sub("", text)[:80],
+            }
+            if judge(fragments, locator["table"], locator["numbers"], base):
+                bullet_checked += 1
+            else:
+                bullet_unpaired.append(
+                    {
+                        "line": bullet["line"],
+                        "label_line": bullet["label_line"],
+                        "reason": f"no canon table {locator['table']}",
+                    }
                 )
-                closest_words = _matched_prefix(worst, closest["text"])
-                if closest_words > _matched_prefix(worst, cited_text):
-                    finding["closest_paragraph"] = closest["paranum"]
-                    finding["closest_matched_words"] = f"{closest_words}/{total}"
-                findings.append(finding)
     return {
         "ok": not findings,
-        "checked": checked,
+        "checked": checked + bullet_checked,
         "unpaired": unpaired,
         "findings": findings,
+        "bullet_checked": bullet_checked,
+        "bullet_unpaired": bullet_unpaired,
+        "bullet_skipped": bullet_skipped,
     }
