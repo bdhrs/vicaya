@@ -3,7 +3,9 @@
 This file replaces the run-by-run reflection backlog. Processed reflections
 live in `runs/processed/`.
 
-Last triage: 2026-10-17 (second pass, 2 runs: 20261017-054516, 20261017-140000 — both committed before every fix of that day). Result: 1 REGRESSION (#155, fixed 2026-10-18: two runs on one `opencode serve` share one state file, so one run's helper calls land in the other's dossier — confirmed on disk), #129 bumped to 8 runs, 4 single sightings parked, 3 POSITIVEs merged into Working well, no channel tuning.
+Last triage: 2026-10-28 (7 run files = 6 runs: 20261018-161500, 20261019-093720 and its duplicate 20261019-093751, 20261019-113000, 20261020-101500, 20261022-033438, 20261028-022154). Result: 1 new issue (#157, `check-quotes` cannot see the template's `- Pāḷi:` bullet form — 2 independent runs, and a vault census found 513 bullet quotes in 49 notes of which 0 are tested today), 16 single sightings parked, 4 findings dropped as already-Done, no regressions, no channel-tuning actions. Two claims were verified live before parking: `verify-citation "Vinaya 01 §459"` does return `rejected` for a correct ref that `resolve-citation` resolves, and the udāna note's 12 bullet quotes really do pass `check-quotes` with `checked: 2`.
+
+Prior triage: 2026-10-17 (second pass, 2 runs: 20261017-054516, 20261017-140000 — both committed before every fix of that day). Result: 1 REGRESSION (#155, fixed 2026-10-18: two runs on one `opencode serve` share one state file, so one run's helper calls land in the other's dossier — confirmed on disk), #129 bumped to 8 runs, 4 single sightings parked, 3 POSITIVEs merged into Working well, no channel tuning.
 
 Prior triage: 2026-10-17, covering 98 runs from 2026-08-15 to 2026-10-16 (349 global findings, extracted by 7 parallel batch agents and clustered by hand by mechanism, not wording — the user asked for this explicitly, since separate agents describe one cause in different words). Result: 28 new issues (#124–#151), 2 REGRESSIONS (#54 placeholder detector, #90 sub-agent summary drift), 10 parked items revived on fresh evidence (#96, #97, #100, #109, #111, #112, #118, #121; #123 merged into #126), #89/#113/#116 moved up, ~60 single sightings parked as one-liners, 3 stale findings dropped (library index rebuild and pre-commit hook, both fixed 2026-09-03). The cycle is dominated by **wrong locators**: library books cited by an unstable or wrong id (#113, 24 runs), row ids cited as paragraph numbers (#124, 16), resolver mislabels in restarting books (#125, 9), CST-vs-SuttaCentral numbering (#112, 9). The second theme is **prose rules that did not hold**: the absence rule (#116, landed 09-20, six later failures), quotes from memory (#96, 11 runs), carried-over claims in enrichment runs (#127, 9). Every one of those has a structural fix proposed by the runs themselves — a helper or validator check rather than more prose. Channel tuning: five content-farm channels excluded (20261009-150500); every promotion the runs requested was already applied.
 
@@ -225,6 +227,8 @@ the premise behind dropped #5.
 ## Remaining — prioritized
 
 ### High severity
+
+- **#157 `check-quotes` cannot see the template's `- Pāḷi: "…"` bullet form, so the prescribed note format gets a clean bill of health.** The Phase 7 template puts each quote under a bold ref as `- Pāḷi: "…"` / `- English: "…"`, but `check_quotes` reads only `>` blockquotes (`_quote_runs`), so a bullet-format note reports `checked: 0` and `ok: true`. 20261019 got `checked:0` on its whole Canon Evidence section; 20261028 got `checked: 2` on a note with 12 Pāḷi quotations. Vault census 2026-10-28: 49 of 308 notes use the bullet form, holding 513 quotes, none ever tested; 290 of those 513 are resolvable to a table+paranum from the label alone (a DPD code such as `AN9.36` plus `para 36`, via `sutta_info.cst_file`). The same format also bypasses the validator's `under-quoted-evidence` check, which needs ≥3 footnote refs in a T1/T2 section and counts only blockquote lines — the udāna note validates `PASS` with 12 unchecked quotes. Fix: pair bullet quotes the way blockquotes are paired, and report the bullet population so `ok` can no longer hide it. (seen in 2 runs: 20261019-093720, 20261028-022154)
 
 _(2026-08-14 single-sighting rule, per user: an issue reported by one run is
 not an issue yet — it parks until a second run reports it. Parked from this
@@ -570,7 +574,27 @@ list at original severity on a fresh report.
 - A count that reaches the note must name its basis — rows, occurrences, or paragraphs ("exactly ten times" was ten rows, eighteen occurrences) (20261017-054516).
 - A journal article blocked at a third-party host (academia.edu 403) was open access at the publisher's own site — try the publisher before recording it as unobtainable (20261017-054516).
 - `scratch-check-coverage` has no token to accept a reviewed, consolidated tail row, so it keeps reporting the tail as unaccounted. By design since Done #77 (a reviewed nonzero residual is an acceptable advisory outcome), and the run predates the #89 ranking; the ask is an `ack` / `Calibre #set:` marker (20261017-054516).
-- The vault-index check and the coverage check report findings that belong to a different run's note; say in Phase 7 that those are not this run's to fix, or scope the checks to the run (20261017-054516).
+- The vault-index check and the coverage check report findings that belong to a different run's note; say in Phase 7 that those are not this run's to fix, or scope the checks to the run (20261017-054516). Re-reported 2026-10-22, where `check_vault_indexes.py` listed a pre-existing uncatalogued note and a stale count that the run then fixed by hand (20261022-033438).
+
+**Single-sighting (parked 2026-10-28, triage of 6 runs 20261018→20261028 — one line each, revive on a second report):**
+
+- Phase 0 can anchor on a misremembered locus: run one quoted-phrase library search before `scratch-init` when the question paraphrases a named scholarly claim (Dhp 278–279 was really 195/196) (20261018-161500).
+- A Phase 0 Target named from memory should be `resolve-citation`-checked before it is written (the "seven ordinations" passage is seven rebirths) (20261019-093720).
+- Vinaya citations should name the khanda as well as §N; §184/§185 blend between Khandhakas (20261019-093720).
+- `verify-citation "Vinaya 01 §459"` returns `rejected` for a correct ref while `resolve-citation vin01m_mul 459` resolves it — verified live 2026-10-28; document the resolve-citation route for Vinaya paragraphs (20261022-033438).
+- `subagent` single-mode dispatch failed twice with "Invalid parameters. Provide exactly one mode."; the one-task tasks-array form worked (20261019-113000).
+- DPD `construction` labels sandhi forms (`saddamakattha`, `kalamakasi`) as unaugmented — read the top forms before quoting an automatic augment figure (20261020-101500).
+- The skill's sync steps assume `git push`; a standing global rule forbids git without an explicit request. State the precedence where sync is described (20261020-101500).
+- `scratch-check-coverage` cannot accept an id range (`#29903-#29906`) (20261020-101500).
+- A helper that strips variant readings before any count over the canon tables (overlaps #156(d)) (20261020-101500).
+- `structure-census BOOK`: per-paranum prose/verse row and character counts plus vagga/uddāna boundaries — any genre or layering question needs it and the forward-fill SQL is easy to get wrong (20261028-022154).
+- `paranum` is empty on `gatha` rows and a lexicographic `MAX()` forward-fill fails on multi-digit numbers; use a correlated subquery (20261028-022154).
+- Snapshot the draft as `<slug>.phase5-draft-v1.md` before applying review corrections so a verification pass can diff revisions (#76 covers the pre-Phase-6 draft, not the pre-edit copy) (20261022-033438).
+- After integrating a review correction, re-read the whole source paragraph that generated it — the verification pass found seven errors introduced by the first round (20261022-033438).
+- State what a list is for before citing it as the answer (the four supports are the minimal supports plus extra gains, not what a bhikkhu may accept) (20261022-033438).
+- Devil's Advocate should require the thesis restated in the collection's own unit terms — the user's "verses vs stories" framing imported a false dichotomy (20261028-022154).
+- `sc-parallels` on a range uid (`pdhp358-375`) needs the range's own text read to locate which mapped paragraph is missing — the absent mapping row is the finding (20261018-161500).
+- Verify whether `scratch-check-coverage --note` really runs before the Devil's Advocate answers, or only before Phase 6 (SKILL.md:1886) (20261028-022154).
 
 **Older dormant items:**
 
@@ -693,6 +717,18 @@ list at original severity on a fresh report.
   frequent; foregrounding it re-spined both notes for the better. Read a
   user's "frequently mentioned" as a claim about the family.
   (20260812-093512, 20260812-095506; see #116)
+
+- **Exact-phrase library search re-anchors a mis-stated claim**: a Phase 0 that assumed Dhp 278–279 was corrected within minutes when one quoted-phrase library search surfaced Palihawadana on Dhp 195/196 — the run's subject changed before any gather. Worth doing before `scratch-init` whenever the question paraphrases a named scholarly claim. (20261018-161500)
+
+- **Measure the collection as data before searching for opinions**: a scripted probe of all 80 Udāna utterance texts against 217 mūla tables produced the verse-recurrence baseline in one pass, and a per-unit prose/verse length census gave the frame/utterance ratio that carried the note's argument. (20261028-022154)
+
+- **Vinaya-table-first for institutional questions**: the disrobing procedure in Pārājika 1 was found on the second search because the run went to the Vinaya tables instead of the suttas. Institutional questions (ordination, offerings, monastery procedure) land there. (20261019-093720)
+
+- **Infer the rare Pāḷi compound for a vague user lead**: a half-remembered sutta was located in three queries once `tiṇatthika` was tried — `search-canon` on that one stem found SN 42.10 immediately. Search the rare compound, not the concept. (20261022-033438)
+
+- **Parallel-wave gather with a sequential retry pass**: three heavy phases ran concurrently, and the phases killed by a rate limit succeeded on a second sequential pass; per-phase agents bounded context. (20261019-113000)
+
+- **A reviewer that finds errors introduced by the corrections**: the second, source-armed pass found seven new mistakes created by integrating the first round of findings. Budget for the verification pass to contradict the integration, not just to confirm it. (20261022-033438; see also the two-reviewer entry)
 
 - **Name the positions before searching**: a three-position frame
   (cardio/cephalo/non-local) carried a whole cross-tradition synthesis, and a
@@ -1210,3 +1246,22 @@ list at original severity on a fresh report.
 29. Triage 2026-10-17 (second pass, 2 runs): one finding outweighs the rest. **#155 is a regression of the oldest fixed bug in this file** (.active hijacking): the per-run key assumes one agent process per run, and `opencode serve` breaks that — every session on the server shares one state file. The run's report was a hypothesis until the state file on disk was checked; it is keyed to the server's pid and names the other run's dossier. Before writing a prose pin rule, probe for a per-session id in opencode's environment (the global "claiming something is impossible" rule). Next by frequency stays #116 (absence sweep, 12); #155 ranks above it on severity.
 30. Session 2026-10-17/18 (sixth pick, user: "highest count is next"): **#116 closed with #121** — a tool, not another rule: `sweep-canon`. Two lessons. First, the prose rule had landed and failed six more times, so the fix put the evidence in the dossier instead of asking agents to run a sweep. Second, a mutation check lied: restoring a file within the same second, with the same byte count, left Python running the mutated bytecode, so a test failed on clean code and a hang read like a failure. Clear `tools/__pycache__` before and after every mutation, and give each mutation a timeout. The first reviewer's report was lost with the session; its three unfixed defects were found again in this one's context and fixed, the rest are #156. Next by frequency: #125 (resolver mislabels in restarting books, 9); #155 closed (state file now keyed to the opencode session id).
 31. Session 2026-10-18 (twelve issues closed: #155, #129, #128, #130, #125, #132, #112, #127, #109, #54, #131, #133/#134/#135/#118, #97). Two lessons. First, measure before building: the proposed fix for #127 (verify every `canon_refs` entry) found 79 "errors" over 300 notes and every one was a commentary code the lookup cannot read, so the audit tests footnote labels and quotes instead; #109 was not about dossier size on disk (66 ms per append) but about `cat`-ing it into context; #125 had two causes, not one; #131's block was intermittent, so a helper with a fallback beat both "document it" and "drop it". Second, structure over prose held again: `apply-edits`, `scratch-digest`, `audit-note`, `check-bibliography`, `fetch-wisdomlib` each replace a rule that agents were already failing. Not verified live, check on the next runs: opencode really exports a session id to every shell (#155, read from the binary, not run); a full-draft cross-check at the scaled timeout (#128); a run that reads `scratch-digest` instead of the dossier (#109); `check-bibliography` flags on a fresh note (#97). Open residue: scholars named in prose with no source (no tool), claim-level errors in old notes (#127), repairing the 22 notes with wrong footnote labels (vault edit, user's go-ahead; see #152, #154).
+32. Triage 2026-10-28 (6 runs, 20261018→20261028): the cycle's one real issue is
+    a checker blind spot, and it is the same blind spot twice — `check-quotes`
+    reads only `>` blockquotes, so the note template's `- Pāḷi: "…"` form is
+    never tested. The 2026-10-19 run called it a documentation problem
+    ("document that the bullet format is not quote-checkable"); the 2026-10-28
+    run called it a checker bug. It is the checker: the template is the
+    prescribed default, and a vault census (49 notes, 513 bullet quotes, 0
+    tested; 290 resolvable from the label alone) rules out "rare edge case".
+    Two claims were verified live rather than taken from the retrospectives:
+    `verify-citation "Vinaya 01 §459"` really does reject a correct ref, and
+    the udāna note really does pass with `checked: 2` of 12. Everything else
+    this cycle is a single sighting and parked — the largest cluster is
+    Phase 0/pre-draft verification discipline (target from memory, claim
+    anchoring, draft snapshot), which will become a real issue only if a second
+    run reports it. Next ranked issue after #157: #90 (3 runs). Noticed while
+    triaging, not yet an issue: `validate_note.py`'s `under-quoted-evidence`
+    check shares #157's blind spot (it counts blockquote lines and needs ≥3
+    footnote refs), so the udāna note validates PASS — the #157 fix should
+    cover both halves.
