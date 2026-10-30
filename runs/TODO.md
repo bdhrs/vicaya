@@ -442,6 +442,18 @@ list at original severity on a fresh report.
 
 **Single-sighting (parked 2026-08-14):**
 
+- **Agent reached for raw search engines instead of the skill's own channels.**
+  On a non-sutta question (a Thai chant identification, `/vicaya-quick`,
+  2026-10-30) the agent scraped DuckDuckGo and Bing SERPs before opening a
+  dossier, and the user corrected it: "use the vicaya skill". The prescribed
+  route exists — Phase 4a web search, `skill/vicaya/SKILL.md` line ~1144 pins the
+  pi-host fallback (`curl` for server-rendered pages, `fetch-wisdomlib`, no
+  WebSearch) — but line 1144 sits in the *pi-host limits* block, far from the
+  gather phases, so it is easy to miss when the question is not sutta-anchored.
+  Revive if a second run does the same; the fix direction is placement (state
+  the channel order at the top of Phase 4a and in `vicaya-quick` Step 2), not
+  another paragraph in the limits block.
+
 - **#106 Gather dispatch prompts should name the hypothesis to test, not only
   the search terms.** A Phase 2 agent given the explicit proposition to check
   ("whether paṭigha ceasing at the anāgāmī stage implies domanassa ends before
