@@ -3,7 +3,9 @@
 This file replaces the run-by-run reflection backlog. Processed reflections
 live in `runs/processed/`.
 
-Last triage: 2026-10-28 (7 run files = 6 runs: 20261018-161500, 20261019-093720 and its duplicate 20261019-093751, 20261019-113000, 20261020-101500, 20261022-033438, 20261028-022154). Result: 1 new issue (#157, `check-quotes` cannot see the template's `- Pāḷi:` bullet form — 2 independent runs, and a vault census found 513 bullet quotes in 49 notes of which 0 are tested today), 16 single sightings parked, 4 findings dropped as already-Done, no regressions, no channel-tuning actions. Two claims were verified live before parking: `verify-citation "Vinaya 01 §459"` does return `rejected` for a correct ref that `resolve-citation` resolves, and the udāna note's 12 bullet quotes really do pass `check-quotes` with `checked: 2`.
+Last triage: 2026-11-04 (5 runs: 20261028-114136, 20261030-050713, 20261101-095657, 20261102-021026, 20261103-024959). Result: no new ranked issues, no regressions, no channel-tuning actions — every surviving new finding is a single sighting and is parked (13 lines). Two merges instead of new issues: 20261030-050713's control-query rule joins #114 (now 4 runs), and two *verified* check-quotes defects join #154's blind-spot list (a bold label carrying its table code outside the bold span is skipped silently; a quote that joins two utterances across a dropped quotative *ti* false-flags at the seam — reproduced live 2026-11-04 on MN44 §462 at 11/34 words, after the run's own diagnosis was disproved: the checker already does substring containment, so the proposed fix was already in place). Also verified live: the e08* grammar tables exist in the canon db (e0801n_nrf…e0813n_nrf) and the TPR db is present. One finding dropped as already-Done (scratch-which inside a compound command → #79 documents `--slug`).
+
+Prior triage: 2026-10-28 (7 run files = 6 runs: 20261018-161500, 20261019-093720 and its duplicate 20261019-093751, 20261019-113000, 20261020-101500, 20261022-033438, 20261028-022154). Result: 1 new issue (#157, `check-quotes` cannot see the template's `- Pāḷi:` bullet form — 2 independent runs, and a vault census found 513 bullet quotes in 49 notes of which 0 are tested today), 16 single sightings parked, 4 findings dropped as already-Done, no regressions, no channel-tuning actions. Two claims were verified live before parking: `verify-citation "Vinaya 01 §459"` does return `rejected` for a correct ref that `resolve-citation` resolves, and the udāna note's 12 bullet quotes really do pass `check-quotes` with `checked: 2`.
 
 Prior triage: 2026-10-17 (second pass, 2 runs: 20261017-054516, 20261017-140000 — both committed before every fix of that day). Result: 1 REGRESSION (#155, fixed 2026-10-18: two runs on one `opencode serve` share one state file, so one run's helper calls land in the other's dossier — confirmed on disk), #129 bumped to 8 runs, 4 single sightings parked, 3 POSITIVEs merged into Working well, no channel tuning.
 
@@ -252,7 +254,7 @@ _(#93 moved to Done — every dispatch prompt, standard or custom, now carries a
 hard-stop SCOPE block; shared fan-out tooling is durable data under
 data/scratch/, and the Phase 7 cleanup sweep is orchestrator-only, 2026-08-14)_
 
-- **#154 Quote-check findings already in the vault, and the check's known blind spots (residue of #124/#96).** Measured 2026-10-17 over 300 notes: 208 findings in 80 notes — 45 quotes cited to the wrong paragraph, 134 not found as written, 29 footnotes citing a row `id` — and in a hand sample 7 of 10 were real errors. Repairing them edits the vault, so it waits for the user's go-ahead, like #152. Known false negatives, from the 2026-10-17 Sonnet review: 2,141 Pāḷi quotes carry no `db:` footnote and are not tested (the skill now asks for one on every Pāḷi blockquote; #157 closed the same gap for template bullets, so the residue is only quotes with no resolvable label at all — `bullet_skipped` on the 2026-10-28 vault run reports them by reason); in books whose paragraph numbers restart (99 of 217 tables), a quote passes if it matches any occurrence of the number; fragments under 4 words and quotes with fewer than 3 Pāḷi diacritics are skipped; a changed last word is ignored by design. Elided forms (`pan'imassa` for `pana imassa`) still cause false flags. (evidence: measurement and review 2026-10-17; underlying runs as #124 and #96)
+- **#154 Quote-check findings already in the vault, and the check's known blind spots (residue of #124/#96).** Measured 2026-10-17 over 300 notes: 208 findings in 80 notes — 45 quotes cited to the wrong paragraph, 134 not found as written, 29 footnotes citing a row `id` — and in a hand sample 7 of 10 were real errors. Repairing them edits the vault, so it waits for the user's go-ahead, like #152. Known false negatives, from the 2026-10-17 Sonnet review: 2,141 Pāḷi quotes carry no `db:` footnote and are not tested (the skill now asks for one on every Pāḷi blockquote; #157 closed the same gap for template bullets, so the residue is only quotes with no resolvable label at all — `bullet_skipped` on the 2026-10-28 vault run reports them by reason); in books whose paragraph numbers restart (99 of 217 tables), a quote passes if it matches any occurrence of the number; fragments under 4 words and quotes with fewer than 3 Pāḷi diacritics are skipped; a changed last word is ignored by design. Elided forms (`pan'imassa` for `pana imassa`) still cause false flags. Two further checker defects were verified live 2026-11-04 and are not vault errors: a template bullet whose bold label carries its CST table code outside the bold span (`- **Commentary para 15** (db: s0305a_att)`) is skipped silently into `bullet_skipped`, so the quote is never tested; and a quote that joins two utterances of a dialogue across a dropped quotative *ti* false-flags at the seam (MN44 §462, `matched_words: 11/34` — the db reads `samādhibhāvanā’’ti?` and the note's model is `…samādhibhāvanā?`), where the honest fix is either a `…` at the seam or splitting the quote at an utterance boundary. (evidence: measurement and review 2026-10-17; underlying runs as #124 and #96; checker checks 2026-11-04 from 20261028-114136 and 20261101-095657)
 
 - **#152 Finished vault notes cite library books by the wrong number (residue of #113).** The #113 fix stops new mistakes, but notes already published still carry them. Measured 2026-10-17 by running the new checker over the 73 dossiers written since the 2026-09-03 index rebuild (with the hit parser later found to skip 22% of logged books — see Done #89 — so this undercounts): 45 citations in finished notes use a book's Calibre folder number, which names a different document in the index (bhavaṅga note: Anālayo's *Luminous Mind* cited as Calibre #8904, which is a Piya Tan essay; madhupindaka note: Ñāṇananda cited as #696, which is an Ajahn Sumedho anthology). The checker's `cited_not_gathered` list adds more suspects (a Nyanatiloka *Buddhist Dictionary* citation whose number names an Anālayo paper). Whole-vault scan the same day (every `Calibre #N` / `calibre-N` mention, title on the citation line compared with the index title for N): 2,687 mentions name the right book; a strict match (citation line names the title, exactly one document has folder number N and that title) finds **945 fixable mentions in 123 notes**, 15/15 random samples correct (e.g. Gombrich *Theravada Buddhism* 923 → 10253, Sujato *Mystique of the Abhidhamma* 904 → 2560); a looser match (2,332) had false positives in long prose lines, so use the strict one; ~3,200 mentions in 198 notes cannot be matched by machine — mostly pre-rebuild index ids (no copy of the old index survives) and bare id lists in rejection tables. So most older notes cited the folder number, not the index number — the de facto vault convention until now. **User decision 2026-10-17: leave the vault for now.** When picked: apply the strict set only, keep each note's numbers consistent (footnote markers, frontmatter `library_refs`), skip a note where N also correctly names another book, regenerate those notes' PDFs, show the changed-notes list before syncing. The new `cited_not_gathered` list flags old numbers whenever a run reworks a note in the meantime. (evidence: measurements 2026-10-17; underlying runs as #113)
 
@@ -373,7 +375,7 @@ in Phase 4a: DSAL 404 + Wiktionary proxy, csl-orig SLP1 transliteration,
   clusters where many articles are stubs or redirects (Buddhist manuscript
   finds), cite the one comprehensive article and log the stubs in Sources
   Investigated, Not Used. Fix: both as a short recipe in the Phase 4a / pi
-  fallback guidance. A third run (pi, no WebSearch) hit Brave rate limits after ~5 queries and DuckDuckGo challenge pages, and fell back to the Wikipedia REST/action API with a UA — same recipe. (seen in 3 runs: 20260814-052550, 20260813-081200, 20260911-103350)
+  fallback guidance. A third run (pi, no WebSearch) hit Brave rate limits after ~5 queries and DuckDuckGo challenge pages, and fell back to the Wikipedia REST/action API with a UA — same recipe. A fourth run hit the same wall from the other end: a sudden run of zero-hit queries (DuckDuckGo returning nothing for queries that worked minutes earlier, Bing returning unrelated results for Thai) is a tool failure, not absence, so every batch needs one known-good control query that warns when it regresses. (seen in 4 runs: 20260814-052550, 20260813-081200, 20260911-103350, 20261030-050713)
 
 - **#115 Thematic non-doctrinal notes: T1-section handling is allowed but
   undocumented.** A pure archaeology/epigraphy run renamed `## Canon
@@ -609,6 +611,22 @@ list at original severity on a fresh report.
 - `sc-parallels` on a range uid (`pdhp358-375`) needs the range's own text read to locate which mapped paragraph is missing — the absent mapping row is the finding (20261018-161500).
 - Verify whether `scratch-check-coverage --note` really runs before the Devil's Advocate answers, or only before Phase 6 (SKILL.md:1886) (20261028-022154).
 
+**Single-sighting (parked 2026-11-04, triage of 5 runs 20261028→20261103 — one line each, revive on a second report):**
+
+- check-quotes silently skips a template bullet whose bold label carries its CST table code outside the bold span, counting it in `bullet_skipped` rather than testing it (verified in `_BULLET_LABEL_RE`; #157 does not cover it) (20261028-114136).
+- pi has no `--agent` flag; the Phase 6 reviewer is reached through the `subagent` tool or the `pi -p --tools …` fallback, and SKILL.md never says the flag does not exist (20261028-114136).
+- A reviewer's *count* claim (precepts, occurrences) is a lead, not a finding — re-derive it with `get-paragraph` or `sweep-canon` before accepting or rejecting (20261028-114136).
+- Pull the paragraph before treating a compound's surface as an idiom (`attānaṃ upasaṃharitvā` is manifesting a body, not comparing with oneself) (20261028-114136).
+- Each Phase 7 self-audit answer should name the single artefact it is about; one run attributed a fact-check to the reviewer that the reviewer never made (20261030-050713).
+- Phase 6 placement: on pi the practical route is inline source-armed checks, and the doc buries that under three harness paragraphs (20261030-050713).
+- A `check-attestation` helper taking a romanised token list and reporting per-token DPD `lookup` attestation, so a pseudo-Pāḷi count is reproducible (20261030-050713).
+- check-quotes false-flags a quote that joins two utterances across a dropped quotative *ti* (verified live 2026-11-04, MN44 §462 at 11/34; also listed under #154) (20261101-095657).
+- The canon db holds the grammar texts (`e0801n_nrf`…`e0813n_nrf`) and the book-code map does not mention them; Saddanīti's Suttamālā is in the TPR db (`books.id annya_sadda_09`), not the canon db (20261102-021026).
+- `cross-check` passes its prompt on argv, so a 179 KB draft fails with "Argument list too long"; strip appendices from the review copy (ceiling ≈128 KB) (20261102-021026).
+- `dpd_headwords.compound_type` (47,428 classified rows) and `compound_construction`, with the `> bahubbīhi` layering convention, are undocumented and are the fastest route for a compound question (20261102-021026).
+- Read the whole commentary paragraph before inferring a term's scope from one sentence of it (a ṭīkā's three factors defined the pācittiya, not permission) (20261103-024959).
+- Quote the rule sentence, not the origin story, when describing a Vinaya rule (the Cullavagga rule barring monks from the nuns' quarters is absolute; the story is not) (20261103-024959).
+
 **Older dormant items:**
 
 - **#10 residue: optional `vault-write` wrapper** — disk fallback and
@@ -697,6 +715,40 @@ list at original severity on a fresh report.
   terms**: a Phase 2 agent asked to check a specific proposition searched the
   fetter/citta classification rather than thematic stems and produced the run's
   cleanest structural argument. (20260730-060651; see #106)
+
+- **Sweep the whole term family before any absence claim.** One run ran
+  `attūpanāyik`, `attūpam`, `sukhakām`, `attarakkhit`, `attagutt`, `attadatth`,
+  `attano nāth`, `sakhiṃ katv`, `rakkhanto`, `vambhet`, `tasanti` as a single
+  family sweep before saying anything was absent, and it found loci stem
+  searching would have missed — AN 7.64's *attūpamā* (the only T1a occurrence)
+  and the Netti's *attūpanāyikā/parūpanāyikā* pair. (20261028-114136)
+
+- **Run check-quotes on the draft before the Phase 5 gate, not only at
+  Phase 7.** It caught a real harmonisation error — the Visuddhimagga's
+  *dukkhapaṭṭikkūlo* had been written with the sutta spelling — because
+  drafting from adjacent quotations silently copies the neighbour's form.
+  (20261028-114136)
+
+- **Search the opening syllables of an unidentified text, not its supposed
+  title.** For a Thai chant whose title nobody could place, searching its first
+  line surfaced the monastery's own post carrying the full text, which turned
+  "what is this" into a comparison question in one fetch. The matching
+  quantitative move: romanise the whole text and count per-token DPD `lookup`
+  attestation (172 tokens here), which settles "is it a language" with a number
+  rather than an impression. (20261030-050713)
+
+- **The canon db is also a grammar library.** Kaccāyana, Padarūpasiddhi,
+  Saddanīti, Moggallāna, Bālāvatāra and Payogasiddhi sit in the `e08*_nrf`
+  tables with real paragraph numbers, so every sūtra and example in a grammar
+  question can be quoted verbatim; `dpd_headwords.compound_type` (47,428
+  classified headwords) makes a searchable compound index one script away.
+  (20261102-021026; the book-code map gap is parked)
+
+- **Make the source-armed reviewer mandatory on Vinaya runs.** The two-stage
+  review caught a transplanted non-offence clause and a misdescribed Khandhaka
+  rule that the first draft had, and the second pass reshaped the conclusion
+  (the commentary's decisive "except for the ovāda, any other dhamma is a
+  dukkaṭa" at §149 was found only there). (20261103-024959)
 
 - **Treat sub-agent completion reports as leads, not results**: re-reading a
   sutta's second half, chasing an under-harvested passage, and pulling a
@@ -1277,3 +1329,21 @@ list at original severity on a fresh report.
     half of #157 shipped with it — `under-quoted-evidence` now counts `- Pāḷi:`
     bullets as quoted lines, so a fully-bulleted T1 section no longer passes on
     an empty blockquote count.
+
+27. Triage 2026-11-04 (5 runs, 10-28→11-03): the quietest cycle yet — nothing
+    reached a second sighting, so nothing was ranked, and the two items that
+    did move were merges, not new issues. The notable finding is a *process*
+    one: a run's own diagnosis was wrong in a way worth remembering. The
+    satipaṭṭhāna run reported check-quotes "computing an overlap ratio against
+    the whole paragraph", and a substring fix was its proposal — but `_found`
+    already does substring containment, and the live rerun put the break at
+    `…samādhibhāvanā | yā kho`, one dropped quotative *ti* at an utterance
+    seam. Read the failing comparison before accepting a run's stated cause.
+    Both check-quotes facts (this and the out-of-bold table code) are recorded
+    under #154 so the next checker session has them. Two things verified live
+    and parked rather than assumed: the `e08*` grammar tables exist in the
+    canon db, and a bold-label table code outside the bold span really is
+    invisible to `_BULLET_LABEL_RE`. #114 grew to 4 runs with the control-query
+    rule. No channel tuning: all five runs said none, and the new probationary
+    channels (BUBS, a Thai monastery channel, two grammar-lecture series) have
+    one sighting each.
