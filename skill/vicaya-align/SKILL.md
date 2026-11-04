@@ -11,6 +11,16 @@ different translators render *that* word or phrase. Nothing more.
 This works standalone (the only thing a session needs) or as a block inside a
 larger Vicaya note — it just prints a Markdown table.
 
+## Preflight — pull both repos
+
+Before anything else, run:
+
+```bash
+uv run scripts/sync_repos.py
+```
+
+Best effort: it reads `VICAYA_VAULT_PATH` from `.env`, pulls this repo and `$VICAYA_VAULT_PATH/Vicaya/`, skips missing/non-git/mid-merge/detached/no-remote directories, and prints a `warning:` instead of failing when offline — relay that line to the user. Canonical description: `skill/vicaya/SKILL.md` → *Preflight — pull both repos*.
+
 ## Procedure
 
 1. **Run the tool** with the user's Pāḷi phrase (exact, with diacritics):

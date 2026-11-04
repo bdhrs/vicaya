@@ -7,6 +7,16 @@ description: Audit and repair the Vicaya PDF tree so every note has exactly one 
 
 Keep the vault's PDFs an exact mirror of its notes. One note, one PDF, nothing else.
 
+## Preflight — pull both repos
+
+Before anything else, run:
+
+```bash
+uv run scripts/sync_repos.py
+```
+
+Best effort: it reads `VICAYA_VAULT_PATH` from `.env`, pulls this repo and `$VICAYA_VAULT_PATH/Vicaya/`, skips missing/non-git/mid-merge/detached/no-remote directories, and prints a `warning:` instead of failing when offline — relay that line to the user. Canonical description: `skill/vicaya/SKILL.md` → *Preflight — pull both repos*.
+
 ## The folder standard
 
 Every PDF lives under the single `Vicaya/PDF/` tree, whose subfolders mirror the notes' own subfolders. A PDF is never written beside its note.

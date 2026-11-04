@@ -7,6 +7,16 @@ description: Search existing Obsidian vault notes to check if any already answer
 
 Quick scan of the user's Obsidian vault for notes that already partially or fully address the research question. Routes to `/vicaya-quick` or `/vicaya` depending on question depth, prior coverage, and whether the answer warrants a permanent vault note.
 
+## Preflight — pull both repos
+
+Before anything else, run:
+
+```bash
+uv run scripts/sync_repos.py
+```
+
+Best effort: it reads `VICAYA_VAULT_PATH` from `.env`, pulls this repo and `$VICAYA_VAULT_PATH/Vicaya/`, skips missing/non-git/mid-merge/detached/no-remote directories, and prints a `warning:` instead of failing when offline — relay that line to the user. Canonical description: `skill/vicaya/SKILL.md` → *Preflight — pull both repos*.
+
 ## Input
 
 The research question, topic, or audience/constraint description — passed as the argument after `/vicaya-pre`.
