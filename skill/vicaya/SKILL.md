@@ -75,6 +75,16 @@ Hard-coded for this machine. If a path is missing or a tool isn't installed, sto
 
 All user-specific paths come from the project's `.env` file (see `.env.example` at the repo root). The helper module resolves them on import. Agents do not hard-code paths; use the helpers and CLI.
 
+### Preflight — pull both repos
+
+Run once at the very start of the session, before Phase 0:
+
+```bash
+uv run scripts/sync_repos.py
+```
+
+It reads `VICAYA_VAULT_PATH` from `.env` (so no path is hard-coded per machine) and runs a best-effort `git pull --rebase --autostash` in this repo and in `$VICAYA_VAULT_PATH/Vicaya/`. It skips any directory that is missing, not a git repo, mid-merge/rebase, on a detached HEAD, or without an upstream/origin remote, and it prints a `warning:` and continues when a pull fails (offline, auth, divergence) — a failed pull never blocks the run. Relay any `warning:` line to the user. Do not run `git pull` by hand on these two repos: this script is the single path, so every machine and every skill behaves the same way.
+
 **Python env is a precondition, not a mid-run activity.** The project `.venv` must already be in sync with `uv.lock` (`uv sync`, run once per machine) before a research run starts. On a synced env `uv run` never needs uv's global cache — the lockfile has no git or local dependencies — which matters on macOS, where the sandbox denies `~/.cache/uv`. If a cache permission error appears mid-run, see **When something fails**.
 
 **⚠️ `$VICAYA_*` variables are NOT set in your shell.** They are `.env` keys, loaded only by the Python helpers — every Bash call starts a fresh shell where `$VICAYA_DPD_DB` etc. expand to empty strings, and a `~` read out of `.env` by hand is never tilde-expanded. Before any **direct** shell command that uses them (`sqlite3`, `grep`, `ls`, `cp`, `rg` on those paths), put this prefix in the same Bash call:
@@ -643,7 +653,7 @@ line. Footnote definitions (`[^id]: ...`) follow the footer, as now.
 
 ## Research phases (Phase 0 through 7)
 
-Run these in order. Print a one-line status update before each phase so the user can follow along in their terminal.
+Run these in order. Print a one-line status update before each phase so the user can follow along in their terminal. First run the preflight pull (Setup → **Preflight — pull both repos**) once, before Phase 0.
 
 **Skipping a phase:** Any phase that has no meaningful bearing on the question may be skipped (e.g. Phase 2 canon search for a secular topic, Phase 4b YouTube for a narrow Abhidhamma classification question). When you skip a phase: (1) print a one-line terminal note stating which phase and why, and (2) add a row to the `## Angles Not Pursued` table in the vault note with the phase name and reason.
 
