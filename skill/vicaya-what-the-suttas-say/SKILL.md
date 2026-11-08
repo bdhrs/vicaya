@@ -7,6 +7,16 @@ description: Run the full /vicaya workflow with the fixed "What the suttas say a
 
 A thin wrapper around the canonical `/vicaya` workflow. This file defines only the series conventions; every research mechanic — phases, gates, scratchpad, helpers, evidence tiers, validation, PDF, sync, run reflection — comes from `skill/vicaya/SKILL.md` in this repo and is deliberately not duplicated here.
 
+## Preflight — pull both repos
+
+Before anything else, run:
+
+```bash
+uv run scripts/sync_repos.py
+```
+
+Best effort: it reads `VICAYA_VAULT_PATH` from `.env`, pulls this repo and `$VICAYA_VAULT_PATH/Vicaya/`, skips missing/non-git/mid-merge/detached/no-remote directories, and prints a `warning:` instead of failing when offline — relay that line to the user. Canonical description: `skill/vicaya/SKILL.md` → *Preflight — pull both repos*.
+
 ## How to run
 
 1. **X** = the user's topic, exactly as given (keep Pāḷi diacritics).

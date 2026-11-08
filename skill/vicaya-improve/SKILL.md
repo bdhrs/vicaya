@@ -12,6 +12,16 @@ into `runs/TODO.md`, archives them, and hands the user a ranked shortlist.
 All paths are relative to the vicaya project root (the directory containing
 `runs/` and `skill/`).
 
+## Preflight — pull both repos
+
+Before anything else, run:
+
+```bash
+uv run scripts/sync_repos.py
+```
+
+Best effort: it reads `VICAYA_VAULT_PATH` from `.env`, pulls this repo and `$VICAYA_VAULT_PATH/Vicaya/`, skips missing/non-git/mid-merge/detached/no-remote directories, and prints a `warning:` instead of failing when offline — relay that line to the user. Canonical description: `skill/vicaya/SKILL.md` → *Preflight — pull both repos*.
+
 ## Phase 1 — Inventory
 
 List unprocessed runs: every `runs/*.md` except `TODO.md`. If there are none,

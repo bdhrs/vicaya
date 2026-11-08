@@ -15,6 +15,16 @@ wants the shape of a topic before deciding whether to go deeper — not a
 citation-complete research note. For that, use `/vicaya` or `/vicaya-quick`
 instead (see **Relationship to vicaya** below).
 
+## Preflight — pull both repos
+
+Before anything else, run:
+
+```bash
+uv run scripts/sync_repos.py
+```
+
+Best effort: it reads `VICAYA_VAULT_PATH` from `.env`, pulls this repo and `$VICAYA_VAULT_PATH/Vicaya/`, skips missing/non-git/mid-merge/detached/no-remote directories, and prints a `warning:` instead of failing when offline — relay that line to the user. Canonical description: `skill/vicaya/SKILL.md` → *Preflight — pull both repos*.
+
 ## What this skill does NOT do
 
 No phase gates, no dossier, no cross-check model pass, no

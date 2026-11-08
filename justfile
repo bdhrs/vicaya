@@ -83,7 +83,7 @@ sync:
         "$HOME/.qwen/skills"
         "$HOME/.cline/skills"
     )
-    oc_commands="$HOME/.config/opencode/command"
+    oc_commands="$HOME/.config/opencode/commands"
 
     linked=()
     for d in "${skills_dirs[@]}"; do
