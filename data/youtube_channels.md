@@ -68,6 +68,7 @@ Prune dead links periodically.
 - Karmapa
 - Root Institute for Wisdom Culture
 - Tushita Meditation Centre
+- Hillside Hermitage
 
 ## probationary
 - Pure Land Buddhism
@@ -96,7 +97,6 @@ Prune dead links periodically.
 - Buddhism Podcast
 - Dalai Lama & Laurence Freeman dialogues
 - Patisota
-- Hillside Hermitage
 - Anukampa Bhikkhuni Project
 - Aggacara Intl College, Edu and Meditation Ctr
 - WBCS Pali Optional
