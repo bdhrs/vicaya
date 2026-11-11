@@ -39,8 +39,26 @@ def test_one_missing_target_writes_nothing(tmp_path):
         ],
     )
     assert not result["ok"] and not result["written"]
-    assert [e["status"] for e in result["edits"]] == ["applied", "not-found"]
+    assert [e["status"] for e in result["edits"]] == ["matched", "not-found"]
     assert path.read_bytes() == text.encode("utf-8")
+
+
+def test_rolled_back_batch_never_says_applied(tmp_path):
+    path = _note(tmp_path, "a b c\n")
+    result = apply_edits(
+        path,
+        [{"old": "a", "new": "1"}, {"old": "b", "new": "2"}, {"old": "zz", "new": "3"}],
+    )
+    assert [e["status"] for e in result["edits"]] == ["matched", "matched", "not-found"]
+    assert all(e["old_remaining"] is None for e in result["edits"])
+    assert list(result)[:3] == ["ok", "written", "error"]
+
+
+def test_written_batch_says_applied_for_every_edit(tmp_path):
+    path = _note(tmp_path, "a b\n")
+    result = apply_edits(path, [{"old": "a", "new": "1"}, {"old": "b", "new": "2"}])
+    assert result["written"]
+    assert [e["status"] for e in result["edits"]] == ["applied", "applied"]
 
 
 def test_ambiguous_target_is_refused_unless_all(tmp_path):

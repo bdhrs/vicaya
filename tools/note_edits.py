@@ -58,7 +58,10 @@ def apply_edits(path: Path, edits: Any) -> dict[str, Any]:
         elif count > 1 and not replace_all:
             status = "ambiguous"
         else:
-            status = "applied"
+            # Only "matched" here: the batch can still roll back, and an agent
+            # that sees "applied" on a rolled-back edit builds on text that
+            # never landed.
+            status = "matched"
             text = text.replace(old, new)
         report.append(
             {
@@ -68,22 +71,24 @@ def apply_edits(path: Path, edits: Any) -> dict[str, Any]:
                 "old": old[:60],
                 # A leftover copy of the old text means the claim is still
                 # stated somewhere the edit did not reach.
-                "old_remaining": text.count(old) if status == "applied" else None,
+                "old_remaining": text.count(old) if status == "matched" else None,
             }
         )
-    failed = [r for r in report if r["status"] != "applied"]
-    result: dict[str, Any] = {
-        "ok": not failed,
-        "path": str(path),
-        "edits": report,
-        "written": False,
-    }
+    failed = [r for r in report if r["status"] != "matched"]
+    result: dict[str, Any] = {"ok": not failed, "written": False}
     if failed:
         result["error"] = (
             f"{len(failed)} of {len(report)} edits did not apply; "
             "the file was not changed"
         )
+        for r in report:
+            # Counted on the staged text, which is never written on rollback.
+            r["old_remaining"] = None
+        result.update(path=str(path), edits=report)
         return result
+    for r in report:
+        r["status"] = "applied"
+    result.update(path=str(path), edits=report)
     if text != original:
         fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
         try:
