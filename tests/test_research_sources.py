@@ -700,17 +700,11 @@ def cbeta_root(tmp_path):
 
 
 class TestSearchChinese:
-    def test_returns_empty_when_unconfigured(self, tmp_path):
+    def test_raises_when_unconfigured(self, tmp_path):
         from tools.research_sources import search_chinese
 
-        result = search_chinese("涅槃", path=tmp_path / "nonexistent")
-        assert result == {
-            "query": "涅槃",
-            "total_hits": 0,
-            "total_texts": 0,
-            "by_text": [],
-            "hits": [],
-        }
+        with pytest.raises(ValueError, match="VICAYA_CBETA_PATH"):
+            search_chinese("涅槃", path=tmp_path / "nonexistent")
 
     def test_phrase_across_line_break_reports_start_line(self, cbeta_root):
         from tools.research_sources import search_chinese
@@ -841,6 +835,33 @@ class TestSearchChinese:
         assert result["total_hits"] == 5
 
 
+@pytest.mark.parametrize(
+    ("command", "env_var"),
+    [("search-chinese", "VICAYA_CBETA_PATH"), ("search-84000", "VICAYA_84000_PATH")],
+)
+def test_unconfigured_corpus_cli_exits_1_with_error(tmp_path, command, env_var):
+    # The path an agent actually takes: no clone on this machine must be an
+    # error, not a zero-hit result that gets logged as an absence.
+    import json
+    import subprocess
+    import sys
+
+    run = subprocess.run(
+        [sys.executable, "tools/research_sources.py", command, "x"],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        env={
+            "VICAYA_SCRATCH": "/dev/null/none",
+            "PATH": "/usr/bin:/bin",
+            env_var: str(tmp_path / "missing"),
+        },
+    )
+    assert run.returncode == 1
+    assert "not configured" in json.loads(run.stdout)["error"]
+    assert env_var in run.stderr
+
+
 # ---------- search_84000 ----------
 
 
@@ -933,17 +954,11 @@ class TestSearch84000:
         with pytest.raises(ValueError):
             search_84000("   ", path=e84000_root)
 
-    def test_returns_empty_when_unconfigured(self, tmp_path):
+    def test_raises_when_unconfigured(self, tmp_path):
         from tools.research_sources import search_84000
 
-        result = search_84000("x", path=tmp_path / "nonexistent")
-        assert result == {
-            "query": "x",
-            "total_hits": 0,
-            "total_texts": 0,
-            "by_text": [],
-            "hits": [],
-        }
+        with pytest.raises(ValueError, match="VICAYA_84000_PATH"):
+            search_84000("x", path=tmp_path / "nonexistent")
 
     def test_counts_paragraphs_skips_notes_and_placeholders(self, e84000_root):
         from tools.research_sources import search_84000

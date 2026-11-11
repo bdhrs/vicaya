@@ -1667,22 +1667,18 @@ def search_chinese(
     the flattened text has none. Returns {query, total_hits, total_texts,
     by_text, hits}: `by_text` lists the `_BY_TEXT_MAX` texts with most matches,
     `total_texts` counts all of them, and `hits` holds up to `limit` snippets
-    with the volume and line each match starts on. Returns the empty shape when
-    no CBETA clone is configured; raises ValueError for an empty query, an
-    unknown collection or a text id that matches no file — never a
-    zero-hit result that looks like a genuine absence.
+    with the volume and line each match starts on. Raises ValueError when no
+    CBETA clone is configured, for an empty query, an unknown collection or a
+    text id that matches no file — never a zero-hit result that looks like a
+    genuine absence.
     """
     query = _WS_RE.sub("", query or "")
-    empty: dict = {
-        "query": query,
-        "total_hits": 0,
-        "total_texts": 0,
-        "by_text": [],
-        "hits": [],
-    }
     root = path or DEFAULT_CBETA_PATH
     if root is None or not root.exists():
-        return empty
+        raise ValueError(
+            "CBETA corpus not configured: set VICAYA_CBETA_PATH to a clone of "
+            "cbeta-org/xml-p5. This is not a zero-hit result."
+        )
     if not query:
         raise ValueError("empty query")
     known = _cbeta_collections(root)
@@ -1805,20 +1801,17 @@ def search_84000(
     paragraphs with toh, title, translator, `section` ('front' = the
     translator's summary/introduction, 'body' = the translation, 'back' = the
     translator's glossary and bibliography), a snippet
-    around the match and the 84000 reader URL. Returns the empty shape when no
-    84000 clone is configured; raises ValueError for an empty query.
+    around the match and the 84000 reader URL. Raises ValueError when no 84000
+    clone is configured or the query is empty — never a zero-hit result that
+    looks like a genuine absence.
     """
     query = _WS_RE.sub(" ", query or "").strip()
-    empty: dict = {
-        "query": query,
-        "total_hits": 0,
-        "total_texts": 0,
-        "by_text": [],
-        "hits": [],
-    }
     root = path or DEFAULT_84000_PATH
     if root is None or not root.exists():
-        return empty
+        raise ValueError(
+            "84000 corpus not configured: set VICAYA_84000_PATH to a clone of "
+            "84000/data-tei. This is not a zero-hit result."
+        )
     if not query:
         raise ValueError("empty query")
     if toh:
