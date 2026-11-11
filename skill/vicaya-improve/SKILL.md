@@ -188,6 +188,10 @@ run any git commands — the user commits):
 1. **Commit message** — one short GitHub-friendly subject line,
    conventional-commit style (`fix:`/`feat:`/`docs:` …, ≤72 chars,
    imperative mood). Use the same subject recorded in the Done table.
+   **Never write a `#` followed by a number** in the subject or the
+   description: GitHub turns `#158` into a link to issue 158 or pull request
+   158. Leave the number out, or write `issue 158`. The same goes for the
+   subject text recorded in the Done table.
 2. **Commit description** — bullet points, as many as needed. Each bullet
    ≤72 characters so it never wraps, one clause only — no "and"-chains,
    semicolons, or parentheticals. Go down the page, not across it. Include
