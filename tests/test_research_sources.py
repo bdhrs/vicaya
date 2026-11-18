@@ -2552,6 +2552,30 @@ class TestScratchDossier:
             "rejected_unread": [935],
         }
 
+    def test_unread_library_citations_stops_library_refs_at_frontmatter_end(self):
+        from tools.scratch import unread_library_citations
+
+        # library_refs is the last key; the body list after `---` is not refs.
+        note = '---\nlibrary_refs:\n  - "322: X"\n---\n- 935: a body list item\n'
+
+        result = unread_library_citations(note, self._library_dossier(read_ids=(322,)))
+
+        assert result["cited_not_read"] == []
+
+    def test_unread_library_citations_tolerates_not_used_heading_variants(self):
+        from tools.scratch import unread_library_citations
+
+        # Trailing space and CRLF must still mark the table, so its ids are
+        # not counted as citations.
+        note = (
+            "Body.\r\n### Sources Investigated, Not Used \r\n"
+            "| Bodhi (Calibre #935) | T3 | off-topic after reading |\r\n"
+        )
+
+        result = unread_library_citations(note, self._library_dossier())
+
+        assert result["cited_not_read"] == []
+
     def test_unread_library_citations_flags_unmounted_claim_in_not_used_table(
         self,
     ):

@@ -1724,17 +1724,40 @@ READ_MAX_CHARS = 20000
 _READ_MAX_MATCH_OFFSETS = 20
 
 
-def _fold_char(ch: str) -> str:
-    """One char -> one char, lowercased, diacritics dropped.
+# Spacing macrons some PDF extractors emit in place of a combining one.
+_SPACING_ACCENTS = frozenset("\u00af\u02c9")
 
-    Strictly 1:1 so a match position in the folded text is the same position
-    in the original text.
+
+def _fold_char(ch: str) -> str:
+    """One char -> at most one char, lowercased, diacritics dropped.
+
+    A precomposed letter ("ā") folds to its base letter; a standalone accent
+    mark (combining U+0304, or a spacing macron) folds to nothing, so text
+    stored as "a" + U+0304 matches "a" too.
     """
+    if unicodedata.combining(ch) or ch in _SPACING_ACCENTS:
+        return ""
     return unicodedata.normalize("NFD", ch)[0].lower()[:1] or ch
 
 
 def _fold(text: str) -> str:
     return "".join(_fold_char(ch) for ch in text)
+
+
+def _fold_with_positions(text: str) -> tuple[str, list[int]]:
+    """Folded text plus, for each folded char, its index in `text`.
+
+    Dropped accent marks make the folded text shorter, so match positions
+    must be mapped back through this list before they index `text`.
+    """
+    chars: list[str] = []
+    positions: list[int] = []
+    for i, ch in enumerate(text):
+        folded = _fold_char(ch)
+        if folded:
+            chars.append(folded)
+            positions.append(i)
+    return "".join(chars), positions
 
 
 def read_document(
@@ -1750,7 +1773,7 @@ def read_document(
     Reads only the text stored in the index, never the source file, so it works
     the same whether or not the source volume is reachable. `around` centres the
     window on the first match of a phrase (case-, diacritic- and
-    whitespace-insensitive) and lists every match offset so a later call can jump
+    whitespace-insensitive) and lists the first 20 match offsets so a later call can jump
     to another one with `offset`. With neither, the window starts at offset 0.
     The Calibre metadata line prepended at index time counts toward offsets.
     """
@@ -1796,9 +1819,9 @@ def read_document(
         words = _fold(around).split()
         if not words:
             return {"ok": False, **result, "error": "--around phrase is empty"}
-        folded_text = _fold(text)
+        folded_text, positions = _fold_with_positions(text)
         pattern = re.compile(r"\s+".join(re.escape(w) for w in words))
-        offsets = [m.start() for m in pattern.finditer(folded_text)]
+        offsets = [positions[m.start()] for m in pattern.finditer(folded_text)]
         result["around"] = around
         result["match_count"] = len(offsets)
         result["match_offsets"] = offsets[:_READ_MAX_MATCH_OFFSETS]
@@ -1814,6 +1837,13 @@ def read_document(
             }
         start = max(0, offsets[0] - chars // 2)
     if offset is not None:
-        start = max(0, min(int(offset), len(text)))
+        start = max(0, int(offset))
+        if start >= len(text):
+            return {
+                "ok": False,
+                **result,
+                "error": f"offset {start} is at or past the end of the text "
+                f"(text_length {len(text)})",
+            }
     end = min(len(text), start + chars)
     return {"ok": True, **result, "offset": start, "end": end, "text": text[start:end]}

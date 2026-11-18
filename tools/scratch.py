@@ -975,7 +975,7 @@ def _note_library_ref_ids(note_text: str) -> set[int]:
             in_refs = True
             continue
         if in_refs:
-            if not line.startswith((" ", "-")):
+            if line.rstrip() == "---" or not line.startswith((" ", "-")):
                 break
             match = _LIBRARY_REF_ID_RE.match(line)
             if match:
@@ -983,8 +983,11 @@ def _note_library_ref_ids(note_text: str) -> set[int]:
     return ids
 
 
+# Any heading level, trailing whitespace and CRLF: a missed match would count
+# every rejected hit in the table as a citation and refuse the gate en masse.
 _NOT_USED_SECTION_RE = _re.compile(
-    r"^## Sources Investigated, Not Used\n.*?(?=^## |\Z)", _re.M | _re.S
+    r"^#{2,4} Sources Investigated, Not Used[ \t]*\r?\n.*?(?=^#{1,2} |\Z)",
+    _re.M | _re.S | _re.I,
 )
 
 

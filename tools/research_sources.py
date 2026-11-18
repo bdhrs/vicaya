@@ -4177,7 +4177,8 @@ def _cli() -> int:
         "read-library",
         help="Read a passage of one library document's full extracted text "
         "from the index (works with the source volume unmounted). --around "
-        "centres on a phrase and lists every match offset; --offset jumps to one.",
+        "centres on a phrase and lists the first 20 match offsets; --offset jumps "
+        "to one.",
     )
     prl.add_argument("document_id", type=int, help="document_id from a library hit.")
     prl.add_argument("--around", default=None, help="Phrase to centre the window on.")
