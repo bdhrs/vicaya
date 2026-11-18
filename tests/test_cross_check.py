@@ -150,11 +150,12 @@ def test_cross_check_pi_thinking_suffix_passes_through(monkeypatch):
 
 def test_run_pi_command_shape(monkeypatch):
     """The pi builder must pin --no-tools/--no-session (a pure model call,
-    no agent machinery) and pass the prompt as the trailing argv element."""
+    no agent machinery) and pass the prompt as an attached file."""
     seen = {}
 
     def fake_status(cmd, timeout):
         seen["cmd"] = cmd
+        seen["attached"] = Path(cmd[-2][1:]).read_text(encoding="utf-8")
         return ("ok", "")
 
     monkeypatch.setattr(rs, "_run_chain_subprocess_status", fake_status)
@@ -173,7 +174,47 @@ def test_run_pi_command_shape(monkeypatch):
         "--no-context-files",
     ):
         assert flag in cmd
-    assert cmd[-1] == "prompt text"
+    assert cmd[-2].startswith("@")
+    assert seen["attached"] == "prompt text"
+    assert not Path(cmd[-2][1:]).exists()
+
+
+def test_run_pi_sends_a_prompt_over_the_argument_limit_as_a_file(monkeypatch):
+    # Issue 160: a 150 KB draft failed to start with "Argument list too long".
+    seen = {}
+
+    def fake_status(cmd, timeout):
+        seen["size"] = len(cmd[-2]) + len(cmd[-1])
+        seen["attached"] = len(Path(cmd[-2][1:]).read_text(encoding="utf-8"))
+        return ("ok", "")
+
+    monkeypatch.setattr(rs, "_run_chain_subprocess_status", fake_status)
+    text, _ = rs._run_pi("x" * 200_000, "zai/glm-5.3", 10)
+
+    assert text == "ok"
+    assert seen["attached"] == 200_000
+    assert seen["size"] < 1_000
+
+
+def test_opencode_and_agy_refuse_a_prompt_over_the_argument_limit(monkeypatch):
+    def never_runs(cmd, timeout):
+        raise AssertionError("the command must not start")
+
+    monkeypatch.setattr(rs, "_run_chain_subprocess_status", never_runs)
+    prompt = "x" * 150_000
+
+    for run in (rs._run_opencode, rs._run_agy):
+        text, reason = run(prompt, "m", 10)
+        assert text is None
+        assert "146 KB" in reason and "Findings and evidence" in reason
+
+
+def test_a_prompt_under_the_limit_still_reaches_opencode(monkeypatch):
+    monkeypatch.setattr(
+        rs, "_run_chain_subprocess_status", lambda cmd, timeout: ("ok", "")
+    )
+
+    assert rs._run_opencode("x" * 100_000, "m", 10) == ("ok", "")
 
 
 # ---------- cross_check: fallthrough ----------

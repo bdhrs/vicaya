@@ -2502,35 +2502,63 @@ def _run_chain_subprocess(cmd: list[str], timeout: int) -> str | None:
     return text
 
 
+# Linux caps one argument string at 128 KiB (MAX_ARG_STRLEN); a longer draft
+# fails to start with "Argument list too long" (issue 160).
+_MAX_ARGUMENT_BYTES = 120_000
+
+
+def _argument_too_long(app: str, prompt: str) -> str | None:
+    size = len(prompt.encode("utf-8"))
+    if size <= _MAX_ARGUMENT_BYTES:
+        return None
+    return (
+        f"the prompt is {size // 1024} KB, over the {_MAX_ARGUMENT_BYTES // 1000} KB "
+        f"limit for one {app} command-line argument — send the Findings and "
+        "evidence headings only"
+    )
+
+
 def _run_opencode(prompt: str, model: str, timeout: int) -> tuple[str | None, str]:
+    if too_long := _argument_too_long("opencode", prompt):
+        return None, too_long
     return _run_chain_subprocess_status(
         ["opencode", "run", "-m", model, prompt], timeout
     )
 
 
 def _run_agy(prompt: str, model: str, timeout: int) -> tuple[str | None, str]:
+    if too_long := _argument_too_long("agy", prompt):
+        return None, too_long
     return _run_chain_subprocess_status(
         ["agy", "--print", prompt, "--model", model], timeout
     )
 
 
 def _run_pi(prompt: str, model: str, timeout: int) -> tuple[str | None, str]:
-    return _run_chain_subprocess_status(
-        [
-            "pi",
-            "-p",
-            "--model",
-            model,
-            "--no-tools",
-            "--no-session",
-            "--no-extensions",
-            "--no-skills",
-            "--offline",
-            "--no-context-files",
-            prompt,
-        ],
-        timeout,
-    )
+    # The prompt travels as an attached file: pi has no command-line size limit
+    # for `@file`, and a 200 KB prompt came back answered (issue 160).
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="vicaya-cross-check-") as folder:
+        prompt_file = Path(folder) / "prompt.md"
+        prompt_file.write_text(prompt, encoding="utf-8")
+        return _run_chain_subprocess_status(
+            [
+                "pi",
+                "-p",
+                "--model",
+                model,
+                "--no-tools",
+                "--no-session",
+                "--no-extensions",
+                "--no-skills",
+                "--offline",
+                "--no-context-files",
+                f"@{prompt_file}",
+                "Follow the instructions in the attached file.",
+            ],
+            timeout,
+        )
 
 
 _SELF_REVIEW_CHECKLIST = """Run the Phase 6 checklist on your own synthesis before writing the note.
