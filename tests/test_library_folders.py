@@ -1985,6 +1985,74 @@ def test_read_document_matches_text_with_separate_accent_marks(tmp_path):
     assert stored[start:].startswith("nibbāna")
 
 
+def _one_doc_index(tmp_path, text):
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "doc.txt").write_text(text, encoding="utf-8")
+    index = tmp_path / "f.sqlite"
+    config = LibraryFoldersConfig(roots=[root], index=index)
+    refresh(config)
+    with sqlite3.connect(index) as conn:
+        (doc_id,) = conn.execute("SELECT id FROM documents").fetchone()
+        (stored,) = conn.execute(
+            "SELECT text FROM document_fts WHERE rowid = ?", (doc_id,)
+        ).fetchone()
+    return config, doc_id, stored
+
+
+def test_read_document_offsets_index_raw_text_with_upper_and_marks(tmp_path):
+    config, doc_id, stored = _one_doc_index(
+        tmp_path, "Intro. NIBBĀNA here; then nibbāna again and Nibbāna."
+    )
+
+    result = read_document(doc_id, config, around="nibbana", chars=40)
+
+    assert result["match_count"] == 3
+    found = [stored[o : o + 8].lower() for o in result["match_offsets"]]
+    assert found == ["nibbāna ", "nibbāna ", "nibbāna"]
+
+
+def test_read_document_phrase_spans_stray_mark_between_words(tmp_path):
+    config, doc_id, stored = _one_doc_index(
+        tmp_path, "Lead in. A change ̄of mind here; changeof mind not."
+    )
+
+    result = read_document(doc_id, config, around="change of mind")
+
+    assert result["match_count"] == 1
+    assert stored[result["match_offsets"][0] :].startswith("change ̄of")
+
+
+def test_read_document_keeps_hangul_syllables_distinct(tmp_path):
+    # NFD gives both syllables the same first jamo; folding to it alone made
+    # a search for one find the other.
+    config, doc_id, _ = _one_doc_index(tmp_path, "Lead in. 가 only here.")
+
+    result = read_document(doc_id, config, around="거")
+
+    assert result["ok"] is False and result["match_count"] == 0
+    assert read_document(doc_id, config, around="가")["match_count"] == 1
+
+
+def test_read_document_rejects_chars_below_one(tmp_path):
+    config, ids = _read_fixture(tmp_path)
+
+    result = read_document(ids["book.txt"], config, chars=0)
+
+    assert result["ok"] is False and "--chars" in result["error"]
+
+
+def test_read_document_reports_unreadable_index_instead_of_raising(tmp_path):
+    index = tmp_path / "broken.sqlite"
+    index.write_bytes(b"this is not a sqlite database" * 100)
+    config = LibraryFoldersConfig(roots=[tmp_path], index=index)
+
+    result = read_document(1, config)
+
+    assert result["ok"] is False
+    assert "could not be read" in result["error"]
+
+
 def test_read_document_offset_at_end_is_not_a_read(tmp_path):
     config, ids = _read_fixture(tmp_path)
     length = read_document(ids["book.txt"], config, chars=1)["text_length"]

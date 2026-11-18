@@ -4186,7 +4186,7 @@ def _cli() -> int:
     prl.add_argument(
         "--chars", type=int, default=4000, help="Window size (default 4000, max 20000)."
     )
-    prl.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
+    prl.add_argument("--quiet", action="store_true", help=_QUIET_NOOP_HELP)
     prl.set_defaults(func=_handle_read_library)
 
     pfd = sub.add_parser(

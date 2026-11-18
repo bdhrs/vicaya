@@ -2576,6 +2576,31 @@ class TestScratchDossier:
 
         assert result["cited_not_read"] == []
 
+    def test_unread_library_citations_checks_same_level_section_after_not_used(
+        self,
+    ):
+        from tools.scratch import unread_library_citations
+
+        # A `###` Not Used section must end at the next `###`, or the section
+        # after it escapes the citation check; a deeper heading stays inside.
+        note = (
+            "### Sources Investigated, Not Used\n"
+            "| Bodhi (Calibre #935) | T3 | off-topic after reading |\n"
+            "#### Sub-table\n| Other (Calibre #935) | T3 | dup |\n"
+            "### Findings\nAnālayo (Calibre #322) argues X.\n"
+        )
+
+        result = unread_library_citations(note, self._library_dossier())
+        tabbed = unread_library_citations(
+            note.replace("### Findings", "###\tFindings").replace(
+                "### Sources", "###\tSources"
+            ),
+            self._library_dossier(),
+        )
+
+        assert result["cited_not_read"] == [322]
+        assert tabbed["cited_not_read"] == [322]
+
     def test_unread_library_citations_flags_unmounted_claim_in_not_used_table(
         self,
     ):
