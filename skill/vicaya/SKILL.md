@@ -2445,7 +2445,7 @@ uv run scripts/validate_note.py "Vicaya/${TODAY} - ${SLUG}.md"
 ```
 
 **Read the validator's output, including warnings and errors.** An `error`-severity line
-(e.g. `under-quoted-evidence` or `missing-canon-ref`) fails the command. A `warning` still
+(e.g. `under-quoted-evidence`, `missing-canon-ref` or `undefined-footnote`) fails the command. `undefined-footnote` means a `[^id]` marker in the body has no `[^id]:` definition line, so the reader sees raw text and loses the citation: add the definition or remove the marker (issue 136). A `warning` still
 names a real defect in the note you just wrote. A `long-sentence` warning means a sentence of explanatory prose runs past 45 words: split it into one idea per sentence (Style notes), never just shave words to get under the limit. Before continuing: edit the note to fix
 every issue the validator reports, then re-run `validate_note.py` to confirm the output is
 clean. Only once it prints no warnings or errors, proceed:

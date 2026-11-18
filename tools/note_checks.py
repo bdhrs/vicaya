@@ -254,6 +254,46 @@ def _validate_frontmatter(frontmatter: str, issues: list[ValidationIssue]) -> No
             )
 
 
+_FOOTNOTE_DEFINITION_RE = re.compile(r"^\[\^([^\]]+)\]:")
+_FOOTNOTE_MARKER_RE = re.compile(r"\[\^([^\]]+)\]")
+_INLINE_CODE_RE = re.compile(r"`[^`]*`")
+
+
+def _undefined_footnote_issues(
+    lines: list[str], line_offset: int
+) -> list[ValidationIssue]:
+    """A `[^id]` marker with no `[^id]:` line shows as raw text, losing the citation."""
+    defined: set[str] = set()
+    uses: list[tuple[int, str]] = []
+    in_fence = False
+    for index, line in enumerate(lines):
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        definition = _FOOTNOTE_DEFINITION_RE.match(line)
+        if definition:
+            defined.add(definition.group(1))
+            continue
+        for marker in _FOOTNOTE_MARKER_RE.findall(_INLINE_CODE_RE.sub("", line)):
+            uses.append((index + 1 + line_offset, marker))
+    issues: list[ValidationIssue] = []
+    reported: set[str] = set()
+    for line_number, marker in uses:
+        if marker in defined or marker in reported:
+            continue
+        reported.add(marker)
+        issues.append(
+            ValidationIssue(
+                "undefined-footnote",
+                f"footnote [^{marker}] is used but never defined",
+                line_number,
+            )
+        )
+    return issues
+
+
 def _validate_body(body: str, issues: list[ValidationIssue], frontmatter: str) -> None:
     lines = body.splitlines()
     line_offset = len(frontmatter.splitlines()) + 2 if frontmatter else 0
@@ -312,6 +352,7 @@ def _validate_body(body: str, issues: list[ValidationIssue], frontmatter: str) -
                 )
             )
 
+    issues.extend(_undefined_footnote_issues(lines, line_offset))
     issues.extend(_long_sentence_issues(lines, line_offset))
 
     evidence_footnote_refs, evidence_quote_lines = (

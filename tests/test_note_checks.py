@@ -577,3 +577,56 @@ def test_code_fences_and_subsections_of_reference_sections_are_skipped() -> None
     )
 
     assert _long_sentences(text) == []
+
+
+def _with_footnote_findings(findings: str) -> str:
+    return valid_note_text().replace(
+        "The evidence supports a cautious answer.", findings
+    )
+
+
+def test_undefined_footnote_is_an_error() -> None:
+    # Issue 136: `[^web-8?]` and other stray markers showed up as raw text.
+    text = _with_footnote_findings(
+        "The evidence supports it.[^1] A second claim.[^web-8?]"
+    )
+
+    issues = [
+        i
+        for i in note_checks.validate_note_text(text)
+        if i.code == "undefined-footnote"
+    ]
+
+    assert [(i.severity, i.message) for i in issues] == [
+        ("error", "footnote [^web-8?] is used but never defined")
+    ]
+
+
+def test_defined_footnotes_raise_no_undefined_footnote_error() -> None:
+    text = _with_footnote_findings("The evidence supports it.[^1]")
+
+    assert not any(
+        i.code == "undefined-footnote" for i in note_checks.validate_note_text(text)
+    )
+
+
+def test_footnote_marker_inside_code_is_not_a_use() -> None:
+    text = _with_footnote_findings(
+        "Write the marker as `[^id]` in the draft.\n\n```\n[^other]\n```"
+    )
+
+    assert not any(
+        i.code == "undefined-footnote" for i in note_checks.validate_note_text(text)
+    )
+
+
+def test_each_undefined_footnote_is_reported_once_at_its_first_use() -> None:
+    text = _with_footnote_findings("One.[^x]\n\nTwo.[^x]")
+
+    (issue,) = [
+        i
+        for i in note_checks.validate_note_text(text)
+        if i.code == "undefined-footnote"
+    ]
+
+    assert issue.line == text.splitlines().index("One.[^x]") + 1
