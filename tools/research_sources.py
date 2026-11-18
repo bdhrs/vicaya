@@ -1358,15 +1358,35 @@ def get_agama_texts(
             "parallels_missing": [],
             "error": "EBC vault not configured",
         }
+    # An Āgama code asked for directly (MA211) names a text on disk of its own;
+    # its overview note only lists that text's parallels, so reading the
+    # overview alone returned nothing while the file existed.
+    own_code = _normalise_sutta_code(sutta_code)
+    own_path, own_translator = _find_agama_path(own_code, vault)
+    found: list[dict] = []
+    if own_path is not None:
+        found.append(
+            {
+                "code": own_code,
+                "path": str(own_path),
+                "translator": own_translator,
+                "text": own_path.read_text(encoding="utf-8"),
+            }
+        )
     overview = get_ebc_overview(sutta_code, vault=vault)
     if overview is None:
+        if found:
+            return {
+                "sutta_code": own_code,
+                "parallels_found": found,
+                "parallels_missing": [],
+            }
         return {
             "sutta_code": sutta_code,
             "parallels_found": [],
             "parallels_missing": [],
             "error": f"no EBC overview for {sutta_code!r}",
         }
-    found: list[dict] = []
     missing: list[str] = []
     for code in (overview.parallels_agama or [])[:max_parallels]:
         path, translator = _find_agama_path(code, vault)

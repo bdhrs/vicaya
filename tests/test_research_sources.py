@@ -1116,6 +1116,40 @@ class TestGetAgama:
         result = get_agama_texts("XX999")
         assert "error" in result
 
+    def test_agama_code_returns_its_own_text(self, tmp_path):
+        # 20260730-060651: `get-agama MA211` returned found: [] while the BDK
+        # file was on disk, because only the code's parallels were looked up.
+        from tools.research_sources import get_agama_texts
+
+        folder = tmp_path / "+Suttas" / "Sutta Texts" / "Agamas BDK" / "ma-bdk"
+        folder.mkdir(parents=True)
+        (folder / "ma211-bdk.md").write_text("MA 211 text", encoding="utf-8")
+        overviews = tmp_path / "+Suttas" / "Overviews Suttas" / "MA"
+        overviews.mkdir(parents=True)
+        (overviews / "MA211.md").write_text(
+            "---\nparallels_agama: SA251\n---\n", encoding="utf-8"
+        )
+
+        result = get_agama_texts("ma 211", vault=tmp_path)
+
+        assert [(f["code"], f["translator"]) for f in result["parallels_found"]] == [
+            ("MA211", "BDK")
+        ]
+        assert result["parallels_found"][0]["text"] == "MA 211 text"
+        assert result["parallels_missing"] == ["SA251"]
+
+    def test_agama_code_without_overview_still_returns_its_text(self, tmp_path):
+        from tools.research_sources import get_agama_texts
+
+        folder = tmp_path / "+Suttas" / "Sutta Texts" / "Agamas BDK" / "ma-bdk"
+        folder.mkdir(parents=True)
+        (folder / "ma211-bdk.md").write_text("MA 211 text", encoding="utf-8")
+
+        result = get_agama_texts("MA211", vault=tmp_path)
+
+        assert "error" not in result
+        assert result["parallels_found"][0]["code"] == "MA211"
+
     @ebc_available
     def test_mn10_returns_agama_texts(self):
         from tools.research_sources import get_agama_texts
