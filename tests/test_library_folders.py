@@ -29,6 +29,7 @@ from tools.library_folders import (
     default_config,
     duplicates,
     initialize_schema,
+    read_document,
     refresh,
     search,
 )
@@ -487,7 +488,9 @@ def test_search_is_diacritic_insensitive_both_directions(tmp_path):
     assert diacritic_query_paths == {"ascii.txt", "diacritic.txt"}
 
 
-def test_search_marks_unavailable_source_from_existing_index(tmp_path):
+def test_search_marks_source_unknown_when_whole_root_is_gone(tmp_path):
+    # A vanished root is an unmounted volume or a moved folder, not a deleted
+    # library: presence is unknown, and the index text is still readable.
     root = tmp_path / "root"
     root.mkdir()
     (root / "offline.txt").write_text("offline nibbana target", encoding="utf-8")
@@ -495,6 +498,22 @@ def test_search_marks_unavailable_source_from_existing_index(tmp_path):
     config = LibraryFoldersConfig(roots=[root], index=index)
     refresh(config)
     root.rename(tmp_path / "offline-root")
+
+    hits = search("nibbana", config)
+
+    assert hits
+    assert hits[0]["source_available"] is None
+    assert hits[0]["text_available"] is True
+
+
+def test_search_marks_file_missing_when_root_exists(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "deleted.txt").write_text("deleted nibbana target", encoding="utf-8")
+    index = tmp_path / "folder.sqlite"
+    config = LibraryFoldersConfig(roots=[root], index=index)
+    refresh(config)
+    (root / "deleted.txt").unlink()
 
     hits = search("nibbana", config)
 
@@ -1833,3 +1852,164 @@ def test_stopping_a_refresh_kills_the_ocr_child(tmp_path, sig):
     if not _wait_until_dead(grandchild, 15):
         os.kill(grandchild, signal.SIGKILL)  # do not leak it out of the test run
         pytest.fail(f"ocr child {grandchild} survived {signal.Signals(sig).name}")
+
+
+def _read_fixture(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "book.txt").write_text(
+        "Opening words. The changing nature of feelings need not\n"
+        "necessarily be experienced as suffering. Paṭiccasamuppāda here. "
+        "Later, feelings again.",
+        encoding="utf-8",
+    )
+    (root / "blank.txt").write_text("   ", encoding="utf-8")
+    index = tmp_path / "folder.sqlite"
+    config = LibraryFoldersConfig(roots=[root], index=index)
+    refresh(config)
+    with sqlite3.connect(index) as conn:
+        ids = dict(conn.execute("SELECT filename, id FROM documents"))
+    return config, ids
+
+
+def test_check_index_usable_when_source_root_unreachable(tmp_path):
+    config, _ = _read_fixture(tmp_path)
+    shutil.rmtree(config.roots[0])
+
+    report = check(config)
+
+    assert report["status"] == "ok"
+    assert report["index_status"] == "ok"
+    assert report["source_status"] == "unavailable"
+    assert "read-library" in report["note"]
+
+
+def test_check_has_no_note_when_sources_reachable(tmp_path):
+    config, _ = _read_fixture(tmp_path)
+
+    report = check(config)
+
+    assert report["source_status"] == "ok"
+    assert "note" not in report
+
+
+def test_search_hits_report_text_available(tmp_path):
+    config, _ = _read_fixture(tmp_path)
+
+    hits = search("feelings", config)
+
+    assert hits and all(hit["text_available"] is True for hit in hits)
+
+
+def test_read_document_around_phrase_folds_case_diacritics_and_whitespace(tmp_path):
+    config, ids = _read_fixture(tmp_path)
+
+    result = read_document(
+        ids["book.txt"], config, around="need NOT necessarily", chars=40
+    )
+
+    assert result["ok"] is True
+    assert result["match_count"] == 1
+    assert "necessarily" in result["text"]
+    assert len(result["text"]) <= 40
+    assert result["indexed_at"]
+    assert result["text_available"] is True
+
+    folded = read_document(ids["book.txt"], config, around="paticcasamuppada")
+    assert folded["ok"] is True and "Paṭiccasamuppāda" in folded["text"]
+
+
+def test_read_document_reports_every_match_offset(tmp_path):
+    config, ids = _read_fixture(tmp_path)
+
+    result = read_document(ids["book.txt"], config, around="feelings", chars=20)
+
+    assert result["match_count"] == 2
+    second = result["match_offsets"][1]
+    jumped = read_document(ids["book.txt"], config, offset=second, chars=8)
+    assert jumped["text"] == "feelings"
+
+
+def test_read_document_offset_reads_from_start(tmp_path):
+    config, ids = _read_fixture(tmp_path)
+
+    result = read_document(ids["book.txt"], config, offset=0, chars=13)
+
+    assert result["text"] == "Opening words"
+    assert result["offset"] == 0 and result["end"] == 13
+
+
+def test_read_document_phrase_not_found(tmp_path):
+    config, ids = _read_fixture(tmp_path)
+
+    result = read_document(ids["book.txt"], config, around="absent phrase")
+
+    assert result["ok"] is False
+    assert result["match_count"] == 0
+    assert result["text_length"] > 0
+
+
+def test_read_document_phrase_not_found_counts_each_word_and_hints(tmp_path):
+    config, ids = _read_fixture(tmp_path)
+
+    result = read_document(ids["book.txt"], config, around="Feelings absentword")
+
+    assert result["ok"] is False
+    assert result["word_matches"] == {"feelings": 2, "absentword": 0}
+    assert "literal" in result["hint"] and "--offset 0" in result["hint"]
+
+
+def test_read_document_matches_text_with_separate_accent_marks(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    # "nibbāna" stored as a + U+0304 and "Paṭi" as t + U+0323, as some PDFs do.
+    (root / "decomposed.txt").write_text(
+        "Lead in. The nibbāna of Paṭicca here.", encoding="utf-8"
+    )
+    index = tmp_path / "f.sqlite"
+    config = LibraryFoldersConfig(roots=[root], index=index)
+    refresh(config)
+    with sqlite3.connect(index) as conn:
+        (doc_id,) = conn.execute("SELECT id FROM documents").fetchone()
+    with sqlite3.connect(index) as conn:
+        (stored,) = conn.execute(
+            "SELECT text FROM document_fts WHERE rowid = ?", (doc_id,)
+        ).fetchone()
+    assert "̄" in stored  # the index keeps the separate mark
+
+    plain = read_document(doc_id, config, around="nibbana", chars=11)
+    accented = read_document(doc_id, config, around="nibbāna of paticca")
+
+    assert plain["ok"] is True and accented["ok"] is True
+    start = plain["match_offsets"][0]
+    assert stored[start:].startswith("nibbāna")
+
+
+def test_read_document_offset_at_end_is_not_a_read(tmp_path):
+    config, ids = _read_fixture(tmp_path)
+    length = read_document(ids["book.txt"], config, chars=1)["text_length"]
+
+    at_end = read_document(ids["book.txt"], config, offset=length)
+    last = read_document(ids["book.txt"], config, offset=length - 1)
+
+    assert at_end["ok"] is False and "text" not in at_end
+    assert last["ok"] is True and len(last["text"]) == 1
+
+
+def test_read_document_failed_extraction_has_no_text(tmp_path):
+    config, ids = _read_fixture(tmp_path)
+
+    result = read_document(ids["blank.txt"], config)
+
+    assert result["ok"] is False
+    assert result["text_available"] is False
+    assert result["extraction_status"] == "empty"
+
+
+def test_read_document_unknown_id(tmp_path):
+    config, _ = _read_fixture(tmp_path)
+
+    result = read_document(999999, config)
+
+    assert result["ok"] is False
+    assert "999999" in result["error"]

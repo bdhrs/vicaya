@@ -7,6 +7,7 @@ suite stays green on a machine that doesn't have everything wired up yet.
 
 from __future__ import annotations
 
+import json
 import shutil
 import sqlite3
 import subprocess
@@ -1454,6 +1455,43 @@ class TestLookupToolsQuietFlag:
         assert rs._cli() == 0
         assert "ok" in capsys.readouterr().out
 
+    def test_read_library_prints_full_passage_and_autologs(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        import tools.research_sources as rs
+        from tools.research_sources import scratch_init
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("read-library-log")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        monkeypatch.setenv("VICAYA_PHASE", "3")
+        passage = "x" * 600
+        read = MagicMock(return_value={"ok": True, "document_id": 322, "text": passage})
+        monkeypatch.setattr(
+            rs,
+            "_load_library_folders_module",
+            lambda: MagicMock(read_document=read),
+        )
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "research_sources.py",
+                "read-library",
+                "322",
+                "--around",
+                "fn 11",
+                "--quiet",
+            ],
+        )
+
+        assert rs._cli() == 0
+        assert passage in capsys.readouterr().out
+        read.assert_called_once_with(322, around="fn 11", offset=None, chars=4000)
+        logged = path.read_text(encoding="utf-8")
+        assert "· read-library" in logged
+        assert '- args: `322 --around "fn 11" --chars 4000`' in logged
+
     def test_lookup_book_accepts_quiet_flag(self, monkeypatch, capsys):
         import tools.research_sources as rs
 
@@ -2398,6 +2436,207 @@ class TestScratchDossier:
         assert result["ok"] is False
         assert "[REJECTED]" in result["reason"] or "REJECTED" in result["reason"]
         assert result["offending_lines"]
+
+    @staticmethod
+    def _library_dossier(*, read_ids=(), statuses=None) -> str:
+        statuses = statuses or {322: "ok", 935: "ok", 77: "empty"}
+        hits = [
+            {"document_id": d, "title": f"doc{d}", "extraction_status": s}
+            for d, s in statuses.items()
+        ]
+        text = (
+            "### 2026-11-18T10:00:00 · search-library-folders\n- args: `x`\n"
+            f"- results:\n```json\n{json.dumps(hits)}\n```\n"
+        )
+        for d in read_ids:
+            payload = {"ok": True, "document_id": d, "extraction_status": "ok"}
+            text += (
+                "### 2026-11-18T10:01:00 · read-library\n- args: `%d`\n"
+                "- results:\n```json\n%s\n```\n" % (d, json.dumps(payload))
+            )
+        return text
+
+    def test_unread_library_citations_flags_cited_unread_docs(self):
+        from tools.scratch import unread_library_citations
+
+        note = (
+            '---\nlibrary_refs:\n  - "322: Satipaṭṭhāna — Anālayo"\n'
+            "web_refs:\n  - https://x\n---\nBodhi (Calibre #935) agrees.\n"
+        )
+
+        result = unread_library_citations(note, self._library_dossier())
+
+        assert result == {
+            "cited_not_read": [322, 935],
+            "flagged_unread_but_readable": [],
+            "rejected_unread": [],
+        }
+
+    def test_unread_library_citations_clears_after_read_library(self):
+        from tools.scratch import unread_library_citations
+
+        note = '---\nlibrary_refs:\n  - "322: Satipaṭṭhāna"\n---\nCalibre #935.\n'
+
+        result = unread_library_citations(
+            note, self._library_dossier(read_ids=(322, 935))
+        )
+
+        assert result == {
+            "cited_not_read": [],
+            "flagged_unread_but_readable": [],
+            "rejected_unread": [],
+        }
+
+    def test_unread_library_citations_flags_snippet_only_gap_line(self):
+        from tools.scratch import unread_library_citations
+
+        note = (
+            "## Critical Gaps\n- Anālayo fn 11 (Calibre #322) snippet-only; "
+            "volume unmounted.\n"
+        )
+
+        result = unread_library_citations(note, self._library_dossier(read_ids=(322,)))
+
+        assert result["flagged_unread_but_readable"] == [322]
+
+    def test_unread_library_citations_exempts_failed_and_ungathered_docs(self):
+        from tools.scratch import unread_library_citations
+
+        note = "Scan (Calibre #77) is unread; memory cite Calibre #5555.\n"
+
+        result = unread_library_citations(note, self._library_dossier())
+
+        assert result == {
+            "cited_not_read": [],
+            "flagged_unread_but_readable": [],
+            "rejected_unread": [],
+        }
+
+    def test_unread_library_citations_snippet_rejection_needs_one_read(self):
+        from tools.scratch import unread_library_citations
+
+        note = (
+            "## Sources Investigated, Not Used\n"
+            "| Bodhi (Calibre #935) | T3 | tangential; snippet only |\n"
+            "| Anālayo (Calibre #322) | T3 | read; off-topic |\n"
+            "## Critical Gaps\n- none\n"
+        )
+
+        before = unread_library_citations(note, self._library_dossier())
+        after = unread_library_citations(note, self._library_dossier(read_ids=(935,)))
+
+        assert before == {
+            "cited_not_read": [],
+            "flagged_unread_but_readable": [],
+            "rejected_unread": [935],
+        }
+        assert after["rejected_unread"] == []
+
+    def test_unread_library_citations_any_snippet_rejection_needs_one_read(self):
+        from tools.scratch import unread_library_citations
+
+        # Reworded rejection from the 2026-11-18 brahma run; the same word in
+        # the body is not a rejection and stays unflagged.
+        note = (
+            "The snippet for Anālayo (Calibre #322) led to MN49.\n"
+            "## Sources Investigated, Not Used\n"
+            "| Bodhi (Calibre #935) | T3 | Seen only as passing mentions in "
+            "snippets |\n"
+        )
+
+        result = unread_library_citations(note, self._library_dossier(read_ids=(322,)))
+
+        assert result == {
+            "cited_not_read": [],
+            "flagged_unread_but_readable": [],
+            "rejected_unread": [935],
+        }
+
+    def test_unread_library_citations_stops_library_refs_at_frontmatter_end(self):
+        from tools.scratch import unread_library_citations
+
+        # library_refs is the last key; the body list after `---` is not refs.
+        note = '---\nlibrary_refs:\n  - "322: X"\n---\n- 935: a body list item\n'
+
+        result = unread_library_citations(note, self._library_dossier(read_ids=(322,)))
+
+        assert result["cited_not_read"] == []
+
+    def test_unread_library_citations_tolerates_not_used_heading_variants(self):
+        from tools.scratch import unread_library_citations
+
+        # Trailing space and CRLF must still mark the table, so its ids are
+        # not counted as citations.
+        note = (
+            "Body.\r\n### Sources Investigated, Not Used \r\n"
+            "| Bodhi (Calibre #935) | T3 | off-topic after reading |\r\n"
+        )
+
+        result = unread_library_citations(note, self._library_dossier())
+
+        assert result["cited_not_read"] == []
+
+    def test_unread_library_citations_flags_unmounted_claim_in_not_used_table(
+        self,
+    ):
+        from tools.scratch import unread_library_citations
+
+        # The real 2026-11-18 line that motivated the gate.
+        note = (
+            "## Sources Investigated, Not Used\n"
+            "| Anālayo (library #322) | T3 | Index snippets only (volumes "
+            "unmounted); see Critical Gaps |\n"
+        )
+
+        result = unread_library_citations(note, self._library_dossier())
+
+        assert result["flagged_unread_but_readable"] == [322]
+        assert result["cited_not_read"] == []
+
+    def test_unread_library_citations_noop_without_library_hits(self):
+        from tools.scratch import unread_library_citations
+
+        note = '---\nlibrary_refs:\n  - "322: X"\n---\nCalibre #322 unread.\n'
+
+        result = unread_library_citations(note, "## Phase 3 — Library\n")
+
+        assert result == {
+            "cited_not_read": [],
+            "flagged_unread_but_readable": [],
+            "rejected_unread": [],
+        }
+
+    def test_phase_7_gate_refuses_cited_library_doc_never_read(
+        self, tmp_path, monkeypatch
+    ):
+        from tools.research_sources import (
+            scratch_gate,
+            scratch_init,
+            scratch_log,
+            scratch_self_audit,
+        )
+
+        monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
+        path = scratch_init("test-unread-library-gate")
+        vault = tmp_path / "note.md"
+        vault.write_text("# Note\n\nAnālayo (Calibre #322) argues.\n", encoding="utf-8")
+        text = path.read_text(encoding="utf-8").replace(
+            "**Vault note:** <set at Phase 7>", f"**Vault note:** {vault}"
+        )
+        path.write_text(text + self._library_dossier(), encoding="utf-8")
+        monkeypatch.setenv("VICAYA_SCRATCH", str(path))
+        _cp = ("1", "2", "2.5", "3", "3b", "4", "4b", "4c", "6")
+        for phase in ("0", "1", "2", "2.5", "3", "3b", "4", "4b", "4c", "5", "6"):
+            if phase in _cp:
+                scratch_log(phase, "search-canon", summary=f"hit in {phase}")
+            assert scratch_gate(phase)["ok"], phase
+        assert scratch_self_audit(answers=["none"] * 6)["ok"]
+
+        result = scratch_gate("7")
+
+        assert result["ok"] is False
+        assert result["cited_not_read"] == [322]
+        assert "read-library" in result["message"]
 
     def test_thematic_run_auto_skips_2_5_and_3b(self, tmp_path, monkeypatch):
         from tools.research_sources import (

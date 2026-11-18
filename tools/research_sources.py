@@ -3526,6 +3526,22 @@ def _cli() -> int:
         _dump(result, quiet=getattr(args, "quiet", False))
         return _done(argv, result)
 
+    def _handle_read_library(args):
+        library_folders = _load_library_folders_module()
+        result = library_folders.read_document(
+            args.document_id, around=args.around, offset=args.offset, chars=args.chars
+        )
+        # Never compacted, like get-paragraph: the passage is what this command
+        # is for. --quiet is accepted only so a uniform call template works.
+        _dump(result)
+        argv = [str(args.document_id)]
+        if args.around is not None:
+            argv += ["--around", json.dumps(args.around, ensure_ascii=False)]
+        if args.offset is not None:
+            argv += ["--offset", str(args.offset)]
+        argv += ["--chars", str(args.chars)]
+        return _done(argv, result, exit_code=0 if result.get("ok") else 1)
+
     def _handle_library_folders_duplicates(args):
         library_folders = _load_library_folders_module()
         result = library_folders.duplicates(samples=args.samples)
@@ -4156,6 +4172,22 @@ def _cli() -> int:
         "prints a clear error instead of hanging.",
     )
     psfc.set_defaults(func=_handle_search_library_folders)
+
+    prl = sub.add_parser(
+        "read-library",
+        help="Read a passage of one library document's full extracted text "
+        "from the index (works with the source volume unmounted). --around "
+        "centres on a phrase and lists the first 20 match offsets; --offset jumps "
+        "to one.",
+    )
+    prl.add_argument("document_id", type=int, help="document_id from a library hit.")
+    prl.add_argument("--around", default=None, help="Phrase to centre the window on.")
+    prl.add_argument("--offset", type=int, default=None, help="Start offset.")
+    prl.add_argument(
+        "--chars", type=int, default=4000, help="Window size (default 4000, max 20000)."
+    )
+    prl.add_argument("--quiet", action="store_true", help=_QUIET_HELP)
+    prl.set_defaults(func=_handle_read_library)
 
     pfd = sub.add_parser(
         "library-folders-duplicates",
