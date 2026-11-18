@@ -393,6 +393,40 @@ def test_prose_footnote_above_a_quote_is_not_borrowed(canon_db: Path) -> None:
     assert (result["checked"], result["unpaired"], result["findings"]) == (0, 1, [])
 
 
+def test_unpaired_quote_says_the_footnote_is_on_the_line_above(canon_db: Path) -> None:
+    # Issue 161: every sibling vault note puts the marker on the lead-in
+    # sentence, so the quote went untested and the count alone said nothing.
+    note = f"The Buddha said as much elsewhere.[^a]\n\n> {_PARA_429_QUOTE}\n\n" + _DEFS
+
+    entry = check_quotes(note, canon_db)["unpaired_quotes"][0]
+
+    assert entry["line"] == 3
+    assert entry["quote"].startswith("Saddhā cepi")
+    assert "on the line above" in entry["reason"]
+    assert "end of the quote itself" in entry["reason"]
+
+
+def test_unpaired_quote_without_any_footnote_says_to_add_one(canon_db: Path) -> None:
+    note = f"**MN95 Caṅkīsuttaṃ**\n\n> {_PARA_429_QUOTE}\n\n" + _DEFS
+
+    entry = check_quotes(note, canon_db)["unpaired_quotes"][0]
+
+    assert "add [^id]" in entry["reason"]
+    assert "line above the quote" not in entry["reason"]
+
+
+def test_marker_on_the_quote_itself_leaves_nothing_unpaired(canon_db: Path) -> None:
+    note = f"The Buddha said as much elsewhere.\n\n> {_PARA_429_QUOTE}[^b]\n\n" + _DEFS
+
+    result = check_quotes(note, canon_db)
+
+    assert (result["checked"], result["unpaired"], result["unpaired_quotes"]) == (
+        1,
+        0,
+        [],
+    )
+
+
 def test_commentary_label_does_not_pair_with_the_mula_number(canon_db: Path) -> None:
     # Review finding: "Khuddakapāṭha-aṭṭhakathā on para 15" paired commentary
     # text with mūla paragraph 15 (real case: 2026-06-14 note).

@@ -306,6 +306,29 @@ def _run_label_marker(
     return None
 
 
+def _unpaired_hint(lines: list[str], run: list[dict], known: set[str]) -> str:
+    """Why a quote went untested, so the author can fix it where it stands.
+
+    The line above a run is never borrowed as a pairing, because it may cite a
+    different passage (a DN16 quote once took the MN136 footnote of the sentence
+    above it). Saying where the marker sits is the safe way to make the quote
+    testable.
+    """
+    index = run[0]["line"] - 1
+    while index >= 0 and not lines[index].strip():
+        index -= 1
+    above = lines[index] if index >= 0 else ""
+    if any(m in known for m in _FOOTNOTE_REF_RE.findall(above)):
+        return (
+            "the db: footnote is on the line above the quote, which is not "
+            "borrowed; put the marker at the end of the quote itself"
+        )
+    return (
+        "no db: footnote on the quote, its translation, or the bold label "
+        "line above it; add [^id] at the end of the quote"
+    )
+
+
 def _block_marker(run: list[dict], k: int, known: set[str]) -> str | None:
     """A quote's own footnote, else its translation twin's (the next block)."""
     candidates = [run[k]]
@@ -518,12 +541,22 @@ def check_quotes(
     known = set(para_defs) | set(id_defs)
     findings: list[dict] = []
     checked = 0
-    unpaired = 0
+    unpaired_quotes: list[dict] = []
     cache: dict[str, list[dict]] = {}
     code_cache: dict = {}
     bullet_checked = 0
     bullet_unpaired: list[dict] = []
     bullet_skipped: dict[str, int] = {}
+
+    def note_unpaired(block: dict, reason: str) -> None:
+        unpaired_quotes.append(
+            {
+                "line": block["line"] + 1,
+                "quote": _QUOTE_LABEL_RE.sub("", block["text"])[:80],
+                "reason": reason,
+            }
+        )
+
     with _connect(canon_db) as conn:
 
         def paragraphs_of(table: str) -> list[dict] | None:
@@ -618,14 +651,14 @@ def check_quotes(
                     continue
                 marker = _block_marker(run, k, known) or label_marker
                 if marker is None:
-                    unpaired += 1
+                    note_unpaired(block, _unpaired_hint(lines, run, known))
                     continue
                 if marker in id_defs:
                     continue
                 table, numbers = para_defs[marker]
                 paragraphs = paragraphs_of(table)
                 if paragraphs is None:
-                    unpaired += 1
+                    note_unpaired(block, f"no canon table {table}")
                     continue
                 if judge(
                     fragments,
@@ -687,7 +720,8 @@ def check_quotes(
     return {
         "ok": not findings,
         "checked": checked + bullet_checked,
-        "unpaired": unpaired,
+        "unpaired": len(unpaired_quotes),
+        "unpaired_quotes": unpaired_quotes,
         "findings": findings,
         "bullet_checked": bullet_checked,
         "bullet_unpaired": bullet_unpaired,
