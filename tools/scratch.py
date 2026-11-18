@@ -691,6 +691,28 @@ def scratch_gate(phase: str, scratch: Path | None = None) -> dict:
                                 "the inline tags before gating."
                             ),
                         }
+                    unread = unread_library_citations(note_text, text)
+                    if any(unread.values()):
+                        return {
+                            "ok": False,
+                            "phase": "7",
+                            "reason": "library documents cited, flagged or rejected unread "
+                            "without a read-library entry",
+                            "vault_note": str(vault_path),
+                            **unread,
+                            "message": (
+                                "Phase 7 gate refused: the index holds the full "
+                                "text of these documents, mounted volume or not. "
+                                'Run `read-library <id> --around "<phrase>"` '
+                                "for each id in cited_not_read, and replace every "
+                                "'unread / snippet-only' line naming an id in "
+                                "flagged_unread_but_readable with what the "
+                                "document actually says. For each id in "
+                                "rejected_unread, read it once (`--chars 1500` "
+                                "is enough), then give the rejection a real "
+                                "reason or use the source."
+                            ),
+                        }
     # For gather phases and the Phase 6 cross-check, require at least one real
     # logged entry before gating. Phase 0 uses header fields (no tool logs);
     # phases 5 and 7 hold draft/finalization content — those are exempt.
@@ -922,6 +944,111 @@ def _library_hit_stats(text: str) -> dict[int, tuple[int, int]]:
             queries.setdefault(doc_id, set()).add(query)
             best[doc_id] = min(best.get(doc_id, rank), rank)
     return {d: (len(q), best[d]) for d, q in queries.items()}
+
+
+_READ_LIBRARY_BLOCK_RE = _re.compile(
+    r"^### \S+ · read-library\n(.*?)(?=^### |\Z)", _re.M | _re.S
+)
+_NOTE_DOC_ID_RE = _re.compile(
+    r"(?:calibre[\s#-]*|(?<![\w&])#|\bdoc(?:ument)?\s*#?\s*)(\d+)(?!\d)", _re.I
+)
+_LIBRARY_REF_ID_RE = _re.compile(r'^\s*-\s*"?(\d+)\s*:')
+_UNREAD_FLAG_RE = _re.compile(
+    r"snippet[- ]only|snippets? only|\bunread\b|\bnot (?:yet )?read\b|"
+    r"could not (?:be )?(?:read|opened)",
+    _re.I,
+)
+# In the Not Used table any snippet mention marks a snippet-based rejection
+# ("seen only as passing mentions in snippets", "Snippet showed ..."); in the
+# body the word is ordinary narration and stays unflagged.
+_REJECT_FLAG_RE = _re.compile(_UNREAD_FLAG_RE.pattern + r"|\bsnippets?\b", _re.I)
+# Blaming the mount is a false claim about the text wherever it appears.
+_MOUNT_FLAG_RE = _re.compile(r"\bunmounted\b|\bnot mounted\b", _re.I)
+
+
+def _note_library_ref_ids(note_text: str) -> set[int]:
+    """Ids listed under `library_refs:` in the note's frontmatter."""
+    ids: set[int] = set()
+    in_refs = False
+    for line in note_text.splitlines():
+        if line.startswith("library_refs:"):
+            in_refs = True
+            continue
+        if in_refs:
+            if not line.startswith((" ", "-")):
+                break
+            match = _LIBRARY_REF_ID_RE.match(line)
+            if match:
+                ids.add(int(match.group(1)))
+    return ids
+
+
+_NOT_USED_SECTION_RE = _re.compile(
+    r"^## Sources Investigated, Not Used\n.*?(?=^## |\Z)", _re.M | _re.S
+)
+
+
+def unread_library_citations(note_text: str, dossier_text: str) -> dict:
+    """Library documents the note cites, or calls unreadable, without reading them.
+
+    Only documents the dossier shows with successfully extracted text count:
+    their full text is in the index whether or not the source volume is
+    mounted, so `read-library` can always read them. A document whose
+    extraction failed is exempt (its gap is real), and a run with no library
+    hits logged checks nothing.
+
+    The "Sources Investigated, Not Used" table is skipped for citations and
+    snippet-only flags: it tags every rejected hit with its id
+    (scratch-check-coverage asks for that), and rejecting a tangential hit on
+    its snippet is triage, not a citation. Over 8 real runs that table held
+    9-55 ids each, against 2-4 `library_refs`. A line there that blames an
+    unmounted volume is still flagged — that is the false claim this catches.
+    A row there that rejects a readable document as not read or on its
+    snippet (any mention of "snippet") is reported under `rejected_unread`
+    until one successful `read-library` call has looked at it: a rejection
+    needs one look, not a full reading (0-5 such rows in most of 57 real runs,
+    up to 26 in one).
+    """
+    not_used = "\n".join(m.group(0) for m in _NOT_USED_SECTION_RE.finditer(note_text))
+    mount_flagged = {
+        int(n)
+        for line in note_text.splitlines()
+        if _MOUNT_FLAG_RE.search(line)
+        for n in _NOTE_DOC_ID_RE.findall(line)
+    }
+    note_text = _NOT_USED_SECTION_RE.sub("", note_text)
+    from tools.library_folders import extraction_succeeded
+
+    readable = {
+        hit["document_id"]
+        for hit in _logged_library_hits(dossier_text)
+        if extraction_succeeded(str(hit.get("extraction_status") or ""))
+    }
+    read: set[int] = set()
+    for block in _READ_LIBRARY_BLOCK_RE.finditer(dossier_text):
+        for hit in _logged_library_hits(block.group(1)):
+            if hit.get("ok") is True:
+                read.add(hit["document_id"])
+    cited = _note_library_ref_ids(note_text) | {
+        int(n) for n in _NOTE_DOC_ID_RE.findall(note_text)
+    }
+    flagged = mount_flagged | {
+        int(n)
+        for line in note_text.splitlines()
+        if _UNREAD_FLAG_RE.search(line)
+        for n in _NOTE_DOC_ID_RE.findall(line)
+    }
+    rejected = {
+        int(n)
+        for line in not_used.splitlines()
+        if _REJECT_FLAG_RE.search(line)
+        for n in _NOTE_DOC_ID_RE.findall(line)
+    }
+    return {
+        "cited_not_read": sorted((cited & readable) - read),
+        "flagged_unread_but_readable": sorted(flagged & readable),
+        "rejected_unread": sorted((rejected & readable) - read),
+    }
 
 
 def scratch_check_coverage(

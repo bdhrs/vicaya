@@ -166,7 +166,9 @@ to each book's FTS text, so tag/author searches work through the unified index.
 
 Normal research search uses only the SQLite index. Source files are touched
 during `library-folders-refresh` or later manual inspection, not during
-`search-library-folders`.
+`search-library-folders`. The index stores each document's full extracted
+text, so `read-library` reads whole passages even when the source folders are
+on a volume that is not mounted; mounting is needed only to refresh.
 
 Build and verify the index after setting `.env`:
 
@@ -175,6 +177,7 @@ uv run tools/research_sources.py library-folders-check
 uv run tools/research_sources.py library-folders-refresh
 uv run tools/research_sources.py library-folders-refresh --retry-failed
 uv run tools/research_sources.py search-library-folders "dhamma" --limit 5
+uv run tools/research_sources.py read-library 322 --around "dhamma" --chars 2000
 uv run tools/research_sources.py library-folders-duplicates --samples 10
 ```
 

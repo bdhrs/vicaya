@@ -306,8 +306,15 @@ def check(config: LibraryFoldersConfig | None = None) -> dict[str, Any]:
     index_error = None
     if index_exists and index is not None:
         index_available, document_count, index_error = _document_count(index)
-    return {
-        "status": "ok" if config.available and any_root_available else "unavailable",
+    # Search and read-library use only the index; the source folders matter
+    # only to library-folders-refresh. `status` therefore follows the index, so
+    # an unmounted volume is not reported as an unusable library.
+    index_status = "ok" if index_available else "unavailable"
+    source_status = "ok" if any_root_available else "unavailable"
+    report: dict[str, Any] = {
+        "status": index_status,
+        "index_status": index_status,
+        "source_status": source_status,
         "source_roots": roots_info,
         "index_path": str(index) if index is not None else None,
         "missing": list(config.missing),
@@ -318,6 +325,13 @@ def check(config: LibraryFoldersConfig | None = None) -> dict[str, Any]:
         "exclude_paths": [str(path) for path in config.exclude],
         "document_count": document_count,
     }
+    if index_status == "ok" and source_status != "ok":
+        report["note"] = (
+            "source folders unreachable: the index holds each document's full "
+            "extracted text, so search-library-folders and read-library work "
+            "as normal; mounting is needed only for library-folders-refresh"
+        )
+    return report
 
 
 def _accepted_file(path: Path) -> bool:
@@ -1628,6 +1642,11 @@ def _hit_source_available(
 ) -> bool | None:
     """Is this hit's file on disk? None when its volume can't be reached.
 
+    A missing source root also gives None, not False: a whole library root
+    vanishing means an unmounted volume or a moved folder (an empty mount
+    point leaves the parent directory behind), not that every book in it was
+    deleted. Only a file missing under a root that exists is reported False.
+
     The per-hit stat is bounded too, not just the root probe: a mount that
     answered a moment ago can drop mid-loop, which would otherwise put us back
     to blocking once per hit. A hit whose own stat times out demotes its root
@@ -1635,11 +1654,8 @@ def _hit_source_available(
     rather than one per row.
     """
     root = str(row["source_root"])
-    reachable = root_reachable.get(root)
-    if reachable is None:
+    if not root_reachable.get(root):
         return None
-    if reachable is False:
-        return False
     available = _exists_probe(Path(str(row["source_path"])), timeout)
     if available is None:
         root_reachable[root] = None
@@ -1689,6 +1705,7 @@ def search(
                 "extension": row["extension"],
                 "snippet": row["snippet"],
                 "extraction_status": row["extraction_status"],
+                "text_available": extraction_succeeded(row["extraction_status"]),
                 "duplicate_count": len(duplicate_members) if duplicate_members else 1,
                 "duplicate_paths": [rel for _, _src, rel in duplicate_members],
                 "possible_duplicate_of": weak_hints.get(int(row["id"]), []),
@@ -1700,3 +1717,103 @@ def search(
         if len(hits) >= limit:
             break
     return hits
+
+
+READ_DEFAULT_CHARS = 4000
+READ_MAX_CHARS = 20000
+_READ_MAX_MATCH_OFFSETS = 20
+
+
+def _fold_char(ch: str) -> str:
+    """One char -> one char, lowercased, diacritics dropped.
+
+    Strictly 1:1 so a match position in the folded text is the same position
+    in the original text.
+    """
+    return unicodedata.normalize("NFD", ch)[0].lower()[:1] or ch
+
+
+def _fold(text: str) -> str:
+    return "".join(_fold_char(ch) for ch in text)
+
+
+def read_document(
+    document_id: int,
+    config: LibraryFoldersConfig | None = None,
+    *,
+    around: str | None = None,
+    offset: int | None = None,
+    chars: int = READ_DEFAULT_CHARS,
+) -> dict[str, Any]:
+    """Return a passage of one document's extracted text, read from the index.
+
+    Reads only the text stored in the index, never the source file, so it works
+    the same whether or not the source volume is reachable. `around` centres the
+    window on the first match of a phrase (case-, diacritic- and
+    whitespace-insensitive) and lists every match offset so a later call can jump
+    to another one with `offset`. With neither, the window starts at offset 0.
+    The Calibre metadata line prepended at index time counts toward offsets.
+    """
+    config = config or default_config()
+    if config.index is None or not config.index.exists():
+        return {"ok": False, "error": "library folders index is not available"}
+    chars = max(1, min(int(chars), READ_MAX_CHARS))
+    with _connect_readonly(config.index) as conn:
+        doc = conn.execute(
+            "SELECT filename, rel_path, extraction_status, indexed_at "
+            "FROM documents WHERE id = ?",
+            (document_id,),
+        ).fetchone()
+        if doc is None:
+            return {
+                "ok": False,
+                "error": f"no document with id {document_id} in the index",
+            }
+        text_row = conn.execute(
+            "SELECT text FROM document_fts WHERE rowid = ?", (document_id,)
+        ).fetchone()
+    filename, rel_path, status, indexed_at = doc
+    text = text_row[0] if text_row else ""
+    result: dict[str, Any] = {
+        "document_id": document_id,
+        "title": filename,
+        "relative_path": rel_path,
+        "extraction_status": status,
+        "text_available": extraction_succeeded(status) and bool(text),
+        "indexed_at": indexed_at,
+        "text_length": len(text),
+    }
+    if not result["text_available"]:
+        return {
+            "ok": False,
+            **result,
+            "error": f"no extracted text (extraction_status: {status}); the "
+            "document needs re-extraction with library-folders-refresh "
+            "--retry-failed, which requires the source volume",
+        }
+    start = 0
+    if around is not None:
+        words = _fold(around).split()
+        if not words:
+            return {"ok": False, **result, "error": "--around phrase is empty"}
+        folded_text = _fold(text)
+        pattern = re.compile(r"\s+".join(re.escape(w) for w in words))
+        offsets = [m.start() for m in pattern.finditer(folded_text)]
+        result["around"] = around
+        result["match_count"] = len(offsets)
+        result["match_offsets"] = offsets[:_READ_MAX_MATCH_OFFSETS]
+        if not offsets:
+            return {
+                "ok": False,
+                **result,
+                "word_matches": {w: folded_text.count(w) for w in words},
+                "hint": "--around must be literal text from the book, not a "
+                "paraphrase; retry with one distinctive word that word_matches "
+                "shows in the text, or read from the start with --offset 0",
+                "error": f"phrase not found: {around!r}",
+            }
+        start = max(0, offsets[0] - chars // 2)
+    if offset is not None:
+        start = max(0, min(int(offset), len(text)))
+    end = min(len(text), start + chars)
+    return {"ok": True, **result, "offset": start, "end": end, "text": text[start:end]}
