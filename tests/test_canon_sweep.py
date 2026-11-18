@@ -406,3 +406,30 @@ def test_complete_is_false_for_a_limited_sweep(canon_db: Path) -> None:
     assert sweep_canon(["ogha"], canon_db=canon_db)["complete"] is True
     limited = sweep_canon(["ogha"], books=["s*_mul"], canon_db=canon_db)
     assert limited["complete"] is False
+
+
+def test_repeated_exclude_and_books_flags_keep_every_value(
+    canon_db: Path, monkeypatch, capsys
+) -> None:
+    # 20261110-025010: `--exclude a --exclude b` kept only "b", so a clean-looking
+    # count still held the noise the first prefix was meant to drop.
+    import json
+    import sys
+
+    import tools.research_sources as rs
+
+    monkeypatch.setattr(rs, "DEFAULT_CANON_DB", canon_db)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["research_sources.py", "sweep-canon", "ogha"]
+        + ["--exclude", "mogha", "--exclude", "oghami"]
+        + ["--books", "s0201m_mul", "--books", "s0516m_mul"],
+    )
+
+    rs._cli()
+
+    result, _ = json.JSONDecoder().raw_decode(capsys.readouterr().out)
+    entry = _term(result)
+    assert sorted(g["prefix"] for g in entry["excluded"]) == ["mogha", "oghami"]
+    assert result["tables_searched"] == 2

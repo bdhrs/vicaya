@@ -4403,6 +4403,7 @@ def _cli() -> int:
     psc.add_argument(
         "--books",
         nargs="*",
+        action="extend",
         default=None,
         help="Table patterns to limit the sweep, e.g. 's*_mul'. Default: every "
         "table. A limited sweep is not canon-wide and says so.",
@@ -4410,6 +4411,7 @@ def _cli() -> int:
     psc.add_argument(
         "--exclude",
         nargs="*",
+        action="extend",
         default=None,
         help="Drop word forms that begin with any of these prefixes, e.g. "
         "mogha when sweeping ogha. Dropped forms are listed.",

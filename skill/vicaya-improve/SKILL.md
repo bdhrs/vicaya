@@ -163,7 +163,22 @@ diagnosis. Before writing the fix:
    "just document it" without first checking whether the mechanism is
    actually ours to fix.
 
+4. Read the existing tests of the function you plan to change, not only its code. A test named for a past failure records a decision. Issue 161 proposed borrowing a footnote from the line above a quote; a test already existed for the case where that paired a DN16 quote with an MN136 footnote. A proposal that reverses such a test goes to the user as a conflict, before the "yes/no" question states what the change will do.
+
 Then work on the chosen issue in the normal way.
+
+## Phase 6b — Test the fix with other models (after the unit tests pass)
+
+Unit tests show the code works. They do not show that an agent following the skill text uses it correctly. Before the completion report, run the change past other models on a small task where the changed behaviour matters.
+
+1. Build a fixture in the session scratchpad, never in the repo. Copy real data into it (real canon paragraphs, real tool output), not invented text. Run the real tool on it once and keep the output.
+2. Write one prompt file per arm. Arm A holds the old skill text and old tool output. Arm B holds the new text and new output. If the old behaviour cannot be rebuilt, run only arm B and say so. Each prompt ends with a task whose answer is a file or a command, and says "return only the corrected text".
+3. Run each prompt on three models, at least three runs each for the pi ones: `pi -p --mode json --provider deepseek --model deepseek-flash --thinking off --tools read -nc -ne -ns --no-session @prompt.txt "<one line>" < /dev/null`, the same with `--provider zai --model glm-5.3-flash`, and one Claude Haiku subagent through the Agent tool. Start from the scratchpad, not the repo. Give the models no shell tool: they return text and you run it. Wrap every pi call in `timeout`.
+4. Tell every subagent: no git, no writes outside its one output file, never open a `.env`, run no shell command. Afterwards list the project folder for stray files.
+5. Score by running the real tool on what each model returned. Report counts per model and arm with n. Three runs cannot show a small difference, so say "no difference detectable" when that is the case. Read every output that went wrong: a model that attaches the wrong footnote is a finding about the design, not noise.
+6. Record the result in the Done row for the issue.
+
+Skip this phase when the change is a pure refactor or cannot affect how an agent reads the skill or the tool output.
 
 ## Phase 7 — Close the loop (automatic, do not wait to be asked)
 
