@@ -985,8 +985,11 @@ def _note_library_ref_ids(note_text: str) -> set[int]:
 
 # Any heading level, trailing whitespace and CRLF: a missed match would count
 # every rejected hit in the table as a citation and refuse the gate en masse.
+# The section ends at the next heading of its own level or higher, so a
+# `### Findings` after a `### ...Not Used` is still checked for citations.
 _NOT_USED_SECTION_RE = _re.compile(
-    r"^#{2,4} Sources Investigated, Not Used[ \t]*\r?\n.*?(?=^#{1,2} |\Z)",
+    r"^(#{2,4})[ \t]+Sources Investigated, Not Used[ \t]*\r?\n.*?"
+    r"(?=^(?!\1#)#+[ \t]|\Z)",
     _re.M | _re.S | _re.I,
 )
 

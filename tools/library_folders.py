@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import bz2
 import contextlib
+import functools
 import hashlib
 import io
 import os
@@ -1733,31 +1734,62 @@ def _fold_char(ch: str) -> str:
 
     A precomposed letter ("ā") folds to its base letter; a standalone accent
     mark (combining U+0304, or a spacing macron) folds to nothing, so text
-    stored as "a" + U+0304 matches "a" too.
+    stored as "a" + U+0304 matches "a" too. A char that decomposes into more
+    than one base char (a Hangul syllable) stays whole: keeping only its first
+    jamo made distinct syllables match each other.
     """
     if unicodedata.combining(ch) or ch in _SPACING_ACCENTS:
         return ""
-    return unicodedata.normalize("NFD", ch)[0].lower()[:1] or ch
+    base = "".join(
+        c for c in unicodedata.normalize("NFD", ch) if not unicodedata.combining(c)
+    )
+    return (base if len(base) == 1 else ch).lower()[:1] or ch
 
 
 def _fold(text: str) -> str:
     return "".join(_fold_char(ch) for ch in text)
 
 
-def _fold_with_positions(text: str) -> tuple[str, list[int]]:
-    """Folded text plus, for each folded char, its index in `text`.
+@functools.lru_cache(maxsize=1)
+def _fold_classes() -> tuple[dict[str, str], str]:
+    """Regex classes that let a folded phrase match the raw, unfolded text.
 
-    Dropped accent marks make the folded text shorter, so match positions
-    must be mapped back through this list before they index `text`.
+    Folding a whole book char by char took 18 s and 8.6 GB on an 87M-char
+    document. Matching the raw text with one class per folded letter (every
+    BMP char that folds to it) plus optional accent marks after it gives the
+    same matches in C, with offsets that already index the raw text.
     """
-    chars: list[str] = []
-    positions: list[int] = []
-    for i, ch in enumerate(text):
+    variants: dict[str, set[str]] = {}
+    marks: list[str] = []
+    for cp in range(0x10000):
+        if 0xD800 <= cp <= 0xDFFF:
+            continue
+        ch = chr(cp)
         folded = _fold_char(ch)
-        if folded:
-            chars.append(folded)
-            positions.append(i)
-    return "".join(chars), positions
+        if not folded:
+            marks.append(ch)
+        elif folded != ch:
+            variants.setdefault(folded, set()).add(ch)
+    classes = {
+        letter: "[" + "".join(re.escape(c) for c in sorted({letter, *chs})) + "]"
+        for letter, chs in variants.items()
+    }
+    return classes, "[" + "".join(re.escape(c) for c in marks) + "]"
+
+
+def _phrase_pattern(words: list[str]) -> re.Pattern[str]:
+    """Pattern for folded `words` over raw text, any whitespace between them.
+
+    A stray accent mark may sit among the whitespace, as folding dropped it
+    there too; at least one whitespace char still separates the words.
+    """
+    classes, mark = _fold_classes()
+    return re.compile(
+        rf"\s(?:\s|{mark})*".join(
+            "".join(classes.get(c, re.escape(c)) + mark + "*" for c in word)
+            for word in words
+        )
+    )
 
 
 def read_document(
@@ -1780,21 +1812,29 @@ def read_document(
     config = config or default_config()
     if config.index is None or not config.index.exists():
         return {"ok": False, "error": "library folders index is not available"}
-    chars = max(1, min(int(chars), READ_MAX_CHARS))
-    with _connect_readonly(config.index) as conn:
-        doc = conn.execute(
-            "SELECT filename, rel_path, extraction_status, indexed_at "
-            "FROM documents WHERE id = ?",
-            (document_id,),
-        ).fetchone()
-        if doc is None:
-            return {
-                "ok": False,
-                "error": f"no document with id {document_id} in the index",
-            }
-        text_row = conn.execute(
-            "SELECT text FROM document_fts WHERE rowid = ?", (document_id,)
-        ).fetchone()
+    if int(chars) < 1:
+        return {"ok": False, "error": f"--chars must be at least 1, got {chars}"}
+    chars = min(int(chars), READ_MAX_CHARS)
+    try:
+        with _connect_readonly(config.index) as conn:
+            doc = conn.execute(
+                "SELECT filename, rel_path, extraction_status, indexed_at "
+                "FROM documents WHERE id = ?",
+                (document_id,),
+            ).fetchone()
+            if doc is None:
+                return {
+                    "ok": False,
+                    "error": f"no document with id {document_id} in the index",
+                }
+            text_row = conn.execute(
+                "SELECT text FROM document_fts WHERE rowid = ?", (document_id,)
+            ).fetchone()
+    except sqlite3.Error as exc:
+        return {
+            "ok": False,
+            "error": f"library folders index could not be read: {exc}",
+        }
     filename, rel_path, status, indexed_at = doc
     text = text_row[0] if text_row else ""
     result: dict[str, Any] = {
@@ -1819,9 +1859,7 @@ def read_document(
         words = _fold(around).split()
         if not words:
             return {"ok": False, **result, "error": "--around phrase is empty"}
-        folded_text, positions = _fold_with_positions(text)
-        pattern = re.compile(r"\s+".join(re.escape(w) for w in words))
-        offsets = [positions[m.start()] for m in pattern.finditer(folded_text)]
+        offsets = [m.start() for m in _phrase_pattern(words).finditer(text)]
         result["around"] = around
         result["match_count"] = len(offsets)
         result["match_offsets"] = offsets[:_READ_MAX_MATCH_OFFSETS]
@@ -1829,7 +1867,10 @@ def read_document(
             return {
                 "ok": False,
                 **result,
-                "word_matches": {w: folded_text.count(w) for w in words},
+                "word_matches": {
+                    w: sum(1 for _ in _phrase_pattern([w]).finditer(text))
+                    for w in words
+                },
                 "hint": "--around must be literal text from the book, not a "
                 "paraphrase; retry with one distinctive word that word_matches "
                 "shows in the text, or read from the start with --offset 0",
