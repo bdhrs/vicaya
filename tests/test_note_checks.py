@@ -630,3 +630,86 @@ def test_each_undefined_footnote_is_reported_once_at_its_first_use() -> None:
     ]
 
     assert issue.line == text.splitlines().index("One.[^x]") + 1
+
+
+# Real lines from vault notes (2026-11-19).
+_LIBRARY_NUMBER_LINES = [
+    "[^calibre-10081]: [[King Asoka and Buddhism]] — Richard Gombrich "
+    "(Calibre #10242, doc 10081)",
+    "- [[Awareness Alone Is Not Enough]] — Ashin Tejaniya (library index #3660)",
+    "Some claim.[^calibre-10081]",
+    '[^lib-1]: Calibre-free, document id 35290, "Madhupindika Sutta - Majjhima '
+    'Nikaya.txt."',
+]
+
+
+@pytest.mark.parametrize("line", _LIBRARY_NUMBER_LINES)
+def test_a_library_number_in_the_body_is_reported(line: str) -> None:
+    text = valid_note_text().replace(
+        "The evidence supports a cautious answer.", f"The evidence.\n\n{line}"
+    )
+
+    issues = [
+        i for i in note_checks.validate_note_text(text) if i.code == "library-number"
+    ]
+
+    assert len(issues) == 1
+    assert issues[0].severity == "error"
+    assert text.splitlines()[issues[0].line - 1] == line
+
+
+def test_a_body_example_of_library_refs_is_not_checked_as_refs() -> None:
+    text = valid_note_text().replace(
+        "The evidence supports a cautious answer.",
+        "Old notes wrote:\n\nlibrary_refs:\n  - 2025: Results\n",
+    )
+
+    assert "library-number" not in issue_codes(text)
+
+
+def test_a_numeric_ref_after_a_blank_line_is_reported() -> None:
+    text = valid_note_text().replace('  - "Author: Title"', '\n  - "6165"')
+
+    assert "library-number" in issue_codes(text)
+
+
+def test_a_library_ref_holding_only_a_number_is_reported() -> None:
+    text = valid_note_text().replace('  - "Author: Title"', '  - "6165"')
+
+    assert "library-number" in issue_codes(text)
+
+
+def test_a_numbered_library_ref_is_reported() -> None:
+    text = valid_note_text().replace(
+        '  - "Author: Title"',
+        '  - "6165: In the Company of Friends: Exploring Faith and Understanding '
+        'with Buddhists and Christians — John Ross Carter"',
+    )
+
+    assert "library-number" in issue_codes(text)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        'Rhys Davids, T. W., trans. "Milindapañha, Chapter 2." *Wisdom Library*. '
+        "Accessed July 30, 2026. https://www.wisdomlib.org/buddhism/book/"
+        "milindapanha-questions-of-king-milinda/d/doc1460771.html",
+        "- [Milindapañha Ch. 2 §4, trans. Rhys Davids](https://www.wisdomlib.org/"
+        "buddhism/book/milindapanha-questions-of-king-milinda/d/doc1460771.html) "
+        "— retrieved 2026-07-30.",
+        "Buddhism drops black (#1) and supremely white (#6) from the "
+        "classification system.",
+        "[^lib-1]: [[King Asoka and Buddhism]] — Richard Gombrich",
+        "| Stanford HAI AI Index 2025 | T3 Web | URL redirect failure |",
+        "Plato. *Republic*. Loeb Classical Library 237.",
+        "The Damascus Document 4Q266 preserves the penal code.",
+    ],
+)
+def test_urls_numbered_lists_and_title_citations_pass(line: str) -> None:
+    text = valid_note_text().replace(
+        "The evidence supports a cautious answer.",
+        f"The evidence.[^lib-1]\n\n{line}\n\n[^lib-1]: [[A Title]] — An Author",
+    )
+
+    assert "library-number" not in issue_codes(text)

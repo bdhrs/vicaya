@@ -151,6 +151,7 @@ print(r.status, len(r.text))  # expect: ok <nonzero>
 - Obsidian CLI requires the desktop app to be open; skill launches it automatically.
 - Library folders indexes must live outside the repo. Searches must not walk or read the source tree; only refresh and manual inspection touch source files.
 - Exact byte/text duplicates are collapsed by default in library-folders search, while filename-only matches remain `possible_duplicate_of` hints.
+- *2026-11-19:* a library index `document_id` is not a book's identity. It is an `INTEGER PRIMARY KEY` handed out in walk order, keyed by absolute `source_path`, so a rebuild, a schema bump, a moved or renamed file (Calibre renames a folder when a title or author is edited) or another person's library renumbers it. Notes cite books by title and author (`cite_as`); the coverage check, the Phase 7 gate and `check-bibliography` match by title; `validate_note.py` rejects library numbers. The id is only a `read-library` handle inside one run. Calibre titles and authors live in the `calibre_books` table (created with `CREATE TABLE IF NOT EXISTS`, rewritten on each refresh; no `SCHEMA_VERSION` bump, since a bump drops every table and forces a full OCR rebuild).
 - `yt-dlp` 2024.04.09 cannot fetch captions; `youtube-transcript-api` is used instead.
 - No vector RAG. Local corpora are structured enough that SQL + tag search + vault search
   is more precise than embeddings.

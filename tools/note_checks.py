@@ -197,6 +197,66 @@ def validate_note_text(text: str) -> list[ValidationIssue]:
     else:
         _validate_frontmatter(frontmatter, issues)
     _validate_body(body, issues, frontmatter)
+    issues.extend(_library_number_issues(text))
+    return issues
+
+
+_URL_RE = re.compile(r"https?://\S+|<[^>\s]+>|\]\([^)]*\)")
+_LIBRARY_NUMBER_RES = (
+    re.compile(r"^\s*-\s*[\"']?\d+\s*(?::|[\"']?\s*$)"),
+    re.compile(r"calibre\s*#\s*\d+", re.I),
+    re.compile(r"\[\^calibre-", re.I),
+    # "document 4635", "doc #876", "library id 14956", "Library #1647"; a
+    # bare "library" needs an id marker ("Loeb Classical Library 153"), and a
+    # number running into letters is no id ("Damascus Document 4Q266").
+    re.compile(r"\bdoc(?:ument)?\s*(?:id\s*)?#?\s*\d+(?![A-Za-z\d])", re.I),
+    re.compile(r"\blibrary\s*(?:id\s*|#\s*)\d+", re.I),
+    # "library index #3660"; a bare "index" takes a "#", or "AI Index 2025" fails.
+    re.compile(r"\bindex\s*#\s*\d+", re.I),
+)
+
+
+def _library_number_issues(text: str) -> list[ValidationIssue]:
+    """A library book cited by a number instead of its title and author.
+
+    Index ids are row numbers handed out in walk order: a rebuild, a moved
+    file or another library renumbers them, so a number in a note names
+    another book or none (2,058 old entries audited on 2026-11-19: 29% still
+    right). Calibre's own folder number names nothing outside one library.
+    URLs are skipped: WisdomLib pages end in `/d/doc1460771.html`.
+    """
+    issues: list[ValidationIssue] = []
+    in_front = False
+    in_refs = False
+    in_fence = False
+    for number, line in enumerate(text.splitlines(), start=1):
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if number == 1 and line.rstrip() == "---":
+            in_front = True
+            continue
+        if in_front and line.rstrip() == "---":
+            in_front = in_refs = False
+            continue
+        if in_front and line.startswith("library_refs:"):
+            in_refs = True
+            continue
+        if in_refs and line.strip() and not line.startswith((" ", "-")):
+            in_refs = False
+        scanned = _URL_RE.sub(" ", line)
+        patterns = _LIBRARY_NUMBER_RES if in_refs else _LIBRARY_NUMBER_RES[1:]
+        if any(p.search(scanned) for p in patterns):
+            issues.append(
+                ValidationIssue(
+                    "library-number",
+                    "library book cited by number: cite it by title and author "
+                    "(index numbers change on every rebuild)",
+                    number,
+                )
+            )
     return issues
 
 

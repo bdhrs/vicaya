@@ -450,6 +450,244 @@ def test_refresh_unavailable_root_mutates_nothing(tmp_path):
     assert rows == [("keep.txt",)]
 
 
+# Table definitions copied from a real Calibre metadata.db (opened read-only).
+_CALIBRE_DDL = """
+CREATE TABLE books ( id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                             title     TEXT NOT NULL DEFAULT 'Unknown' COLLATE NOCASE,
+                             sort      TEXT COLLATE NOCASE,
+                             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                             pubdate   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                             series_index REAL NOT NULL DEFAULT 1.0,
+                             author_sort TEXT COLLATE NOCASE,
+                             path TEXT NOT NULL DEFAULT "",
+                             uuid TEXT,
+                             has_cover BOOL DEFAULT 0,
+                             last_modified TIMESTAMP NOT NULL DEFAULT "2000-01-01 00:00:00+00:00");
+CREATE TABLE authors ( id   INTEGER PRIMARY KEY,
+                              name TEXT NOT NULL COLLATE NOCASE,
+                              sort TEXT COLLATE NOCASE,
+                              link TEXT NOT NULL DEFAULT "",
+                              UNIQUE(name)
+                             );
+CREATE TABLE books_authors_link ( id INTEGER PRIMARY KEY,
+                                          book INTEGER NOT NULL,
+                                          author INTEGER NOT NULL,
+                                          UNIQUE(book, author)
+                                        );
+CREATE TABLE data ( id     INTEGER PRIMARY KEY,
+                            book   INTEGER NON NULL,
+                            format TEXT NON NULL COLLATE NOCASE,
+                            uncompressed_size INTEGER NON NULL,
+                            name TEXT NON NULL,
+                            UNIQUE(book, format)
+);
+CREATE TABLE tags ( id   INTEGER PRIMARY KEY,
+                            name TEXT NOT NULL COLLATE NOCASE, link TEXT NOT NULL DEFAULT '',
+                            UNIQUE (name)
+                             );
+CREATE TABLE books_tags_link ( id INTEGER PRIMARY KEY,
+                                          book INTEGER NOT NULL,
+                                          tag INTEGER NOT NULL,
+                                          UNIQUE(book, tag)
+                                        );
+"""
+
+# (Calibre id, title, folder, file name, authors in order, tags, body text).
+# The folder names are what Calibre writes: accents dropped, id appended.
+_CALIBRE_BOOKS = [
+    (
+        8904,
+        "Mūlapaṇṇāsa-Aṭṭhakathā",
+        "Buddhaghosa/Mulapannasa-Atthakatha (8904)",
+        "Mulapannasa-Atthakatha - Buddhaghosa",
+        ["Buddhaghosa"],
+        ["Pali"],
+        "commentary on the root fifty discourses",
+    ),
+    (
+        212,
+        "Maha Satipatthana Sutta",
+        "Sayadaw U Jotika/Maha Satipatthana Sutta (212)",
+        "Maha Satipatthana Sutta - Sayadaw U Jotika",
+        ["Sayadaw U Jotika", "U Dhamminda"],
+        [],
+        "the great discourse on satipatthana",
+    ),
+]
+
+
+def _calibre_library(library: Path, books=_CALIBRE_BOOKS) -> None:
+    library.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(library / "metadata.db") as conn:
+        conn.executescript(_CALIBRE_DDL)
+        author_ids: dict[str, int] = {}
+        tag_ids: dict[str, int] = {}
+        for book_id, title, folder, name, authors, tags, text in books:
+            conn.execute(
+                "INSERT INTO books(id, title, path) VALUES (?, ?, ?)",
+                (book_id, title, folder),
+            )
+            conn.execute(
+                "INSERT INTO data(book, format, uncompressed_size, name) "
+                "VALUES (?, 'TXT', ?, ?)",
+                (book_id, len(text), name),
+            )
+            for author in authors:
+                author_id = author_ids.setdefault(author, len(author_ids) + 1)
+                conn.execute(
+                    "INSERT OR IGNORE INTO authors(id, name) VALUES (?, ?)",
+                    (author_id, author),
+                )
+                conn.execute(
+                    "INSERT INTO books_authors_link(book, author) VALUES (?, ?)",
+                    (book_id, author_id),
+                )
+            for tag in tags:
+                tag_id = tag_ids.setdefault(tag, len(tag_ids) + 1)
+                conn.execute(
+                    "INSERT OR IGNORE INTO tags(id, name) VALUES (?, ?)", (tag_id, tag)
+                )
+                conn.execute(
+                    "INSERT INTO books_tags_link(book, tag) VALUES (?, ?)",
+                    (book_id, tag_id),
+                )
+            book_dir = library / folder
+            book_dir.mkdir(parents=True)
+            (book_dir / f"{name}.txt").write_text(text, encoding="utf-8")
+
+
+def _calibre_root(tmp_path: Path) -> tuple[Path, LibraryFoldersConfig]:
+    """A source root holding one Calibre library one folder below it."""
+    root = tmp_path / "root"
+    _calibre_library(root / "Bodhirasa eBook Library")
+    (root / "loose notes.txt").write_text("satipatthana loose notes", encoding="utf-8")
+    return root, LibraryFoldersConfig(roots=[root], index=tmp_path / "folder.sqlite")
+
+
+def test_refresh_stores_calibre_titles_from_a_library_one_folder_down(tmp_path):
+    _root, config = _calibre_root(tmp_path)
+
+    refresh(config)
+
+    assert config.index is not None
+    with sqlite3.connect(config.index) as conn:
+        rows = dict(
+            (title, authors)
+            for title, authors in conn.execute(
+                "SELECT title, authors FROM calibre_books"
+            ).fetchall()
+        )
+    assert rows == {
+        "Mūlapaṇṇāsa-Aṭṭhakathā": "Buddhaghosa",
+        "Maha Satipatthana Sutta": "Sayadaw U Jotika, U Dhamminda",
+    }
+
+
+def test_calibre_prefix_keeps_authors_and_tags_but_no_calibre_number(tmp_path):
+    _root, config = _calibre_root(tmp_path)
+
+    refresh(config)
+
+    assert config.index is not None
+    with sqlite3.connect(config.index) as conn:
+        text = conn.execute(
+            "SELECT f.text FROM document_fts f JOIN documents d ON d.id = f.rowid "
+            "WHERE d.filename = 'Mulapannasa-Atthakatha - Buddhaghosa.txt'"
+        ).fetchone()[0]
+    assert text.startswith("[Authors: Buddhaghosa | Tags: Pali]\n\n")
+    assert "Calibre #" not in text
+    assert "8904" not in text
+
+
+def test_refresh_rewrites_calibre_titles_and_keeps_unreached_roots(tmp_path):
+    root, config = _calibre_root(tmp_path)
+    other = tmp_path / "other"
+    _calibre_library(other / "Second Library", _CALIBRE_BOOKS[:1])
+    refresh(LibraryFoldersConfig(roots=[root, other], index=config.index))
+    library = root / "Bodhirasa eBook Library"
+    with sqlite3.connect(library / "metadata.db") as conn:
+        conn.execute("UPDATE books SET title = 'Renamed' WHERE id = 212")
+
+    refresh(config)
+
+    assert config.index is not None
+    with sqlite3.connect(config.index) as conn:
+        rows = sorted(
+            (Path(path).relative_to(tmp_path).parts[0], title)
+            for path, title in conn.execute(
+                "SELECT source_path, title FROM calibre_books"
+            ).fetchall()
+        )
+    assert rows == [
+        ("other", "Mūlapaṇṇāsa-Aṭṭhakathā"),
+        ("root", "Mūlapaṇṇāsa-Aṭṭhakathā"),
+        ("root", "Renamed"),
+    ]
+
+
+def _cites(hits: list[dict]) -> dict[str, str]:
+    return {Path(hit["relative_path"]).name: hit["cite_as"] for hit in hits}
+
+
+def test_search_hits_cite_calibre_title_and_authors_or_the_file_name(tmp_path):
+    _root, config = _calibre_root(tmp_path)
+    refresh(config)
+
+    cites = _cites(search("satipatthana OR commentary", config))
+
+    assert cites == {
+        "Mulapannasa-Atthakatha - Buddhaghosa.txt": "Mūlapaṇṇāsa-Aṭṭhakathā — Buddhaghosa",
+        "Maha Satipatthana Sutta - Sayadaw U Jotika.txt": (
+            "Maha Satipatthana Sutta — Sayadaw U Jotika, U Dhamminda"
+        ),
+        "loose notes.txt": "loose notes",
+    }
+
+
+def test_read_library_cites_calibre_title_and_authors_or_the_file_name(tmp_path):
+    _root, config = _calibre_root(tmp_path)
+    refresh(config)
+    ids = {
+        Path(hit["relative_path"]).name: hit["document_id"]
+        for hit in search("satipatthana OR commentary", config)
+    }
+
+    calibre = read_document(ids["Mulapannasa-Atthakatha - Buddhaghosa.txt"], config)
+    loose = read_document(ids["loose notes.txt"], config)
+
+    assert (
+        calibre["ok"] and calibre["cite_as"] == "Mūlapaṇṇāsa-Aṭṭhakathā — Buddhaghosa"
+    )
+    assert loose["ok"] and loose["cite_as"] == "loose notes"
+
+
+def test_calibre_citation_survives_an_unmounted_source_root(tmp_path):
+    root, config = _calibre_root(tmp_path)
+    refresh(config)
+    root.rename(tmp_path / "unmounted")
+
+    hits = search("commentary", config)
+    read = read_document(hits[0]["document_id"], config)
+
+    assert hits[0]["source_available"] is None
+    assert hits[0]["cite_as"] == "Mūlapaṇṇāsa-Aṭṭhakathā — Buddhaghosa"
+    assert read["cite_as"] == "Mūlapaṇṇāsa-Aṭṭhakathā — Buddhaghosa"
+
+
+def test_index_refreshed_before_the_title_table_still_searches(tmp_path):
+    _root, config = _calibre_root(tmp_path)
+    refresh(config)
+    assert config.index is not None
+    with sqlite3.connect(config.index) as conn:
+        conn.execute("DROP TABLE calibre_books")
+
+    hits = search("commentary", config)
+    read = read_document(hits[0]["document_id"], config)
+
+    assert hits[0]["cite_as"] == "Mulapannasa-Atthakatha - Buddhaghosa"
+    assert read["ok"] and read["cite_as"] == "Mulapannasa-Atthakatha - Buddhaghosa"
+
+
 def test_search_returns_text_hits_and_html_snippets_without_tags(tmp_path):
     root = tmp_path / "root"
     root.mkdir()
@@ -2081,3 +2319,16 @@ def test_read_document_unknown_id(tmp_path):
 
     assert result["ok"] is False
     assert "999999" in result["error"]
+
+
+def test_an_unreadable_catalogue_keeps_the_stored_titles(tmp_path):
+    root, config = _calibre_root(tmp_path)
+    refresh(config)
+    (root / "Bodhirasa eBook Library" / "metadata.db").write_bytes(b"not a database")
+
+    refresh(config)
+
+    assert config.index is not None
+    with sqlite3.connect(config.index) as conn:
+        titles = sorted(t for (t,) in conn.execute("SELECT title FROM calibre_books"))
+    assert titles == ["Maha Satipatthana Sutta", "Mūlapaṇṇāsa-Aṭṭhakathā"]

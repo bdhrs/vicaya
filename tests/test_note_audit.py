@@ -142,13 +142,20 @@ def test_bibliography_entries_the_run_never_saw_are_flagged():
     assert result["ok"] is False
 
 
-def test_a_calibre_id_a_library_title_or_a_fetched_url_counts_as_evidence():
-    # Karunadasa is traced by its Calibre number, Nyanaponika by the library
-    # title in a logged hit, the dhammatalks page by the fetched URL.
+def test_a_library_author_and_title_or_a_fetched_url_counts_as_evidence():
+    # Karunadasa and Nyanaponika are traced by author and title words in
+    # logged hits, the dhammatalks page by the fetched URL.
     flagged = {
         f["entry"][:10] for f in check_bibliography(BIBLIOGRAPHY, DOSSIER)["findings"]
     }
     assert flagged == {"Lusthaus, "}
+
+
+def test_a_calibre_number_alone_is_not_evidence():
+    # The number changes on every index rebuild, so it names no book.
+    dossier = 'Calibre book 9995 "document_id": 9995'
+    (finding,) = check_bibliography(BIBLIOGRAPHY, dossier + DOSSIER)["findings"]
+    assert finding["entry"].startswith("Lusthaus, Dan.")
 
 
 def test_primary_sources_are_not_checked():

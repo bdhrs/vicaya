@@ -2437,13 +2437,39 @@ class TestScratchDossier:
         assert "[REJECTED]" in result["reason"] or "REJECTED" in result["reason"]
         assert result["offending_lines"]
 
-    @staticmethod
-    def _library_dossier(*, read_ids=(), statuses=None) -> str:
-        statuses = statuses or {322: "ok", 935: "ok", 77: "empty"}
+    # Real logged paths: two readable Calibre books and one whose text
+    # extraction failed.
+    _SATIPATTHANA = (
+        "Bodhirasa eBook Library/Bhikkhu Analayo/Satipatthana_ The Direct Path to "
+        "Realization (6332)/Satipatthana_ The Direct Path to Realization - Bhikkhu "
+        "Analayo.pdf"
+    )
+    _MANUAL = (
+        "Bodhirasa eBook Library/Bhikkhu Bodhi/A Comprehensive Manual of Abhidhamm "
+        "(597)/A Comprehensive Manual of Abhid - Bhikkhu Bodhi.pdf"
+    )
+    _SCAN = (
+        "Bodhirasa eBook Library/Mahasi Sayadaw/Brahmavihara Dhamma (638)/"
+        "Brahmavihara Dhamma - Mahasi Sayadaw.mobi"
+    )
+    _SATI_CITE = "Satipaṭṭhāna: The Direct Path to Realization — Bhikkhu Anālayo"
+    _MANUAL_CITE = "A Comprehensive Manual of Abhidhamma — Bhikkhu Bodhi"
+
+    @classmethod
+    def _library_dossier(cls, *, read_ids=(), extra_hits=()) -> str:
         hits = [
-            {"document_id": d, "title": f"doc{d}", "extraction_status": s}
-            for d, s in statuses.items()
-        ]
+            {
+                "document_id": d,
+                "title": p.rsplit("/", 1)[-1],
+                "relative_path": p,
+                "extraction_status": s,
+            }
+            for d, p, s in (
+                (322, cls._SATIPATTHANA, "ok"),
+                (935, cls._MANUAL, "ok"),
+                (77, cls._SCAN, "empty"),
+            )
+        ] + list(extra_hits)
         text = (
             "### 2026-11-18T10:00:00 · search-library-folders\n- args: `x`\n"
             f"- results:\n```json\n{json.dumps(hits)}\n```\n"
@@ -2456,26 +2482,35 @@ class TestScratchDossier:
             )
         return text
 
+    @staticmethod
+    def _books(entries) -> list:
+        return [(e["book"], e["read_library"]) for e in entries]
+
     def test_unread_library_citations_flags_cited_unread_docs(self):
         from tools.scratch import unread_library_citations
 
         note = (
-            '---\nlibrary_refs:\n  - "322: Satipaṭṭhāna — Anālayo"\n'
-            "web_refs:\n  - https://x\n---\nBodhi (Calibre #935) agrees.\n"
+            f'---\nlibrary_refs:\n  - "{self._SATI_CITE}"\n'
+            "web_refs:\n  - https://x\n---\nBodhi agrees.[^lib-1]\n\n"
+            "[^lib-1]: [[A Comprehensive Manual of Abhidhamma]] — Bhikkhu Bodhi\n"
         )
 
         result = unread_library_citations(note, self._library_dossier())
 
-        assert result == {
-            "cited_not_read": [322, 935],
-            "flagged_unread_but_readable": [],
-            "rejected_unread": [],
-        }
+        assert self._books(result["cited_not_read"]) == [
+            (self._SATI_CITE, [322]),
+            (self._MANUAL_CITE, [935]),
+        ]
+        assert result["flagged_unread_but_readable"] == []
+        assert result["rejected_unread"] == []
 
     def test_unread_library_citations_clears_after_read_library(self):
         from tools.scratch import unread_library_citations
 
-        note = '---\nlibrary_refs:\n  - "322: Satipaṭṭhāna"\n---\nCalibre #935.\n'
+        note = (
+            f'---\nlibrary_refs:\n  - "{self._SATI_CITE}"\n---\nBodhi.[^lib-1]\n\n'
+            f"[^lib-1]: [[A Comprehensive Manual of Abhidhamma]] — Bhikkhu Bodhi\n"
+        )
 
         result = unread_library_citations(
             note, self._library_dossier(read_ids=(322, 935))
@@ -2487,22 +2522,65 @@ class TestScratchDossier:
             "rejected_unread": [],
         }
 
+    def test_unread_library_citations_reading_one_copy_reads_the_book(self):
+        from tools.scratch import unread_library_citations
+
+        copy = {
+            "document_id": 4410,
+            "title": "Analayo_Satipatthana-The-Direct-Path-to-Realization.pdf",
+            "relative_path": "Buddhist (English) eBooks, Journals, Dictionaries, "
+            "Encyclopeadias & Articles in English/03. Guides to the Titpitaka & "
+            "Other Works/04. Satipatthana/Bhikkhu Analayo/"
+            "Analayo_Satipatthana-The-Direct-Path-to-Realization.pdf",
+            "extraction_status": "ok",
+        }
+        note = f'---\nlibrary_refs:\n  - "{self._SATI_CITE}"\n---\n'
+
+        unread = unread_library_citations(
+            note, self._library_dossier(extra_hits=[copy])
+        )
+        read = unread_library_citations(
+            note, self._library_dossier(read_ids=(4410,), extra_hits=[copy])
+        )
+
+        assert self._books(unread["cited_not_read"]) == [(self._SATI_CITE, [322, 4410])]
+        assert read["cited_not_read"] == []
+
     def test_unread_library_citations_flags_snippet_only_gap_line(self):
         from tools.scratch import unread_library_citations
 
         note = (
-            "## Critical Gaps\n- Anālayo fn 11 (Calibre #322) snippet-only; "
-            "volume unmounted.\n"
+            "## Critical Gaps\n- Anālayo, *Satipaṭṭhāna: The Direct Path to "
+            "Realization*, fn 11 snippet-only; volume unmounted.\n"
         )
 
         result = unread_library_citations(note, self._library_dossier(read_ids=(322,)))
 
-        assert result["flagged_unread_but_readable"] == [322]
+        assert self._books(result["flagged_unread_but_readable"]) == [
+            ("Satipatthana_ The Direct Path to Realization - Bhikkhu Analayo", [322])
+        ]
+
+    def test_unread_library_citations_flags_a_footnote_marker_on_a_gap_line(self):
+        from tools.scratch import unread_library_citations
+
+        note = (
+            "## Critical Gaps\n- The manual's table[^lib-1] was snippet-only.\n\n"
+            "[^lib-1]: [[A Comprehensive Manual of Abhidhamma]] — Bhikkhu Bodhi\n"
+        )
+
+        result = unread_library_citations(note, self._library_dossier(read_ids=(935,)))
+
+        assert [e["read_library"] for e in result["flagged_unread_but_readable"]] == [
+            [935]
+        ]
 
     def test_unread_library_citations_exempts_failed_and_ungathered_docs(self):
         from tools.scratch import unread_library_citations
 
-        note = "Scan (Calibre #77) is unread; memory cite Calibre #5555.\n"
+        note = (
+            "Brahmavihara Dhamma — Mahasi Sayadaw is unread; memory cite.[^lib-1]\n\n"
+            "[^lib-1]: [[The Ego Tunnel]] — Thomas Metzinger\n"
+        )
 
         result = unread_library_citations(note, self._library_dossier())
 
@@ -2517,19 +2595,18 @@ class TestScratchDossier:
 
         note = (
             "## Sources Investigated, Not Used\n"
-            "| Bodhi (Calibre #935) | T3 | tangential; snippet only |\n"
-            "| Anālayo (Calibre #322) | T3 | read; off-topic |\n"
+            "| Source | Tier | Reason |\n|---|---|---|\n"
+            f"| {self._MANUAL_CITE} | T3 | tangential; snippet only |\n"
+            f"| {self._SATI_CITE} | T3 | read; off-topic |\n"
             "## Critical Gaps\n- none\n"
         )
 
         before = unread_library_citations(note, self._library_dossier())
         after = unread_library_citations(note, self._library_dossier(read_ids=(935,)))
 
-        assert before == {
-            "cited_not_read": [],
-            "flagged_unread_but_readable": [],
-            "rejected_unread": [935],
-        }
+        assert self._books(before["rejected_unread"]) == [(self._MANUAL_CITE, [935])]
+        assert before["cited_not_read"] == []
+        assert before["flagged_unread_but_readable"] == []
         assert after["rejected_unread"] == []
 
     def test_unread_library_citations_any_snippet_rejection_needs_one_read(self):
@@ -2538,25 +2615,103 @@ class TestScratchDossier:
         # Reworded rejection from the 2026-11-18 brahma run; the same word in
         # the body is not a rejection and stays unflagged.
         note = (
-            "The snippet for Anālayo (Calibre #322) led to MN49.\n"
+            "The snippet for Anālayo's *Satipaṭṭhāna: The Direct Path to "
+            "Realization* led to MN49.\n"
             "## Sources Investigated, Not Used\n"
-            "| Bodhi (Calibre #935) | T3 | Seen only as passing mentions in "
+            f"| {self._MANUAL_CITE} | T3 | Seen only as passing mentions in "
             "snippets |\n"
         )
 
         result = unread_library_citations(note, self._library_dossier(read_ids=(322,)))
 
-        assert result == {
-            "cited_not_read": [],
-            "flagged_unread_but_readable": [],
-            "rejected_unread": [935],
+        assert self._books(result["rejected_unread"]) == [(self._MANUAL_CITE, [935])]
+        assert result["cited_not_read"] == []
+        assert result["flagged_unread_but_readable"] == []
+
+    def test_unread_library_citations_ignores_a_book_named_in_a_rejection_reason(
+        self,
+    ):
+        from tools.scratch import unread_library_citations
+
+        # The row rejects a web essay; the library book is only the reason's
+        # point of comparison, so it needs no read.
+        note = (
+            "## Sources Investigated, Not Used\n"
+            "| SuttaCentral essay on MN 10 | T3 | Snippet shows it only repeats "
+            "Bodhi's A Comprehensive Manual of Abhidhamma |\n"
+        )
+
+        result = unread_library_citations(note, self._library_dossier())
+
+        assert result["rejected_unread"] == []
+
+    def test_unread_library_citations_ignores_a_one_word_title_in_prose(self):
+        from tools.scratch import unread_library_citations
+
+        vism = {
+            "document_id": 512,
+            "title": "Visuddhimagga - Buddhaghosa.pdf",
+            "relative_path": "Bodhirasa eBook Library/Buddhaghosa/Visuddhimagga "
+            "(4410)/Visuddhimagga - Buddhaghosa.pdf",
+            "extraction_status": "ok",
         }
+        prose = "We should not read the Visuddhimagga as a meditation manual.\n"
+        gap = "- Buddhaghosa's Visuddhimagga was snippet-only.\n"
+
+        plain = unread_library_citations(
+            prose, self._library_dossier(extra_hits=[vism])
+        )
+        flagged = unread_library_citations(
+            gap, self._library_dossier(extra_hits=[vism])
+        )
+
+        assert plain["flagged_unread_but_readable"] == []
+        assert [e["read_library"] for e in flagged["flagged_unread_but_readable"]] == [
+            [512]
+        ]
+
+    def test_unread_library_citations_reading_a_copy_under_its_author_reads_it(
+        self,
+    ):
+        from tools.scratch import unread_library_citations
+
+        # The note credits the translator; Calibre credits the author. The
+        # Calibre copy was read, so the book was read.
+        calibre = {
+            "document_id": 600,
+            "title": "The Path of Purification - Buddhaghosa.pdf",
+            "relative_path": "Bodhirasa eBook Library/Buddhaghosa/The Path of "
+            "Purification (55)/The Path of Purification - Buddhaghosa.pdf",
+            "cite_as": "The Path of Purification — Buddhaghosa",
+            "extraction_status": "ok",
+        }
+        plain = {
+            "document_id": 601,
+            "title": "The Path of Purification.pdf",
+            "relative_path": "Misc/The Path of Purification.pdf",
+            "extraction_status": "ok",
+        }
+        cite = "The Path of Purification — Bhikkhu Ñāṇamoli"
+        note = f'---\nlibrary_refs:\n  - "{cite}"\n---\n'
+
+        read = unread_library_citations(
+            note, self._library_dossier(read_ids=(600,), extra_hits=[calibre, plain])
+        )
+        unread = unread_library_citations(
+            note, self._library_dossier(extra_hits=[calibre, plain])
+        )
+
+        assert read["cited_not_read"] == []
+        assert self._books(unread["cited_not_read"]) == [(cite, [601])]
 
     def test_unread_library_citations_stops_library_refs_at_frontmatter_end(self):
         from tools.scratch import unread_library_citations
 
         # library_refs is the last key; the body list after `---` is not refs.
-        note = '---\nlibrary_refs:\n  - "322: X"\n---\n- 935: a body list item\n'
+        note = (
+            f'---\nlibrary_refs:\n  - "{self._SATI_CITE}"\n---\n'
+            f"- {self._MANUAL_CITE}: a body list item\n"
+        )
 
         result = unread_library_citations(note, self._library_dossier(read_ids=(322,)))
 
@@ -2565,11 +2720,11 @@ class TestScratchDossier:
     def test_unread_library_citations_tolerates_not_used_heading_variants(self):
         from tools.scratch import unread_library_citations
 
-        # Trailing space and CRLF must still mark the table, so its ids are
+        # Trailing space and CRLF must still mark the table, so its rows are
         # not counted as citations.
         note = (
             "Body.\r\n### Sources Investigated, Not Used \r\n"
-            "| Bodhi (Calibre #935) | T3 | off-topic after reading |\r\n"
+            f"| {self._MANUAL_CITE} | T3 | off-topic after reading |\r\n"
         )
 
         result = unread_library_citations(note, self._library_dossier())
@@ -2585,9 +2740,10 @@ class TestScratchDossier:
         # after it escapes the citation check; a deeper heading stays inside.
         note = (
             "### Sources Investigated, Not Used\n"
-            "| Bodhi (Calibre #935) | T3 | off-topic after reading |\n"
-            "#### Sub-table\n| Other (Calibre #935) | T3 | dup |\n"
-            "### Findings\nAnālayo (Calibre #322) argues X.\n"
+            f"| {self._MANUAL_CITE} | T3 | off-topic after reading |\n"
+            f"#### Sub-table\n| {self._MANUAL_CITE} | T3 | dup |\n"
+            "### Findings\nAnālayo argues X.[^lib-1]\n\n"
+            f"[^lib-1]: [[{self._SATI_CITE.split(' — ')[0]}]] — Bhikkhu Anālayo\n"
         )
 
         result = unread_library_citations(note, self._library_dossier())
@@ -2598,30 +2754,32 @@ class TestScratchDossier:
             self._library_dossier(),
         )
 
-        assert result["cited_not_read"] == [322]
-        assert tabbed["cited_not_read"] == [322]
+        assert [e["read_library"] for e in result["cited_not_read"]] == [[322]]
+        assert [e["read_library"] for e in tabbed["cited_not_read"]] == [[322]]
 
     def test_unread_library_citations_flags_unmounted_claim_in_not_used_table(
         self,
     ):
         from tools.scratch import unread_library_citations
 
-        # The real 2026-11-18 line that motivated the gate.
+        # The real 2026-11-18 line that motivated the gate, now naming the book.
         note = (
             "## Sources Investigated, Not Used\n"
-            "| Anālayo (library #322) | T3 | Index snippets only (volumes "
+            f"| {self._SATI_CITE} | T3 | Index snippets only (volumes "
             "unmounted); see Critical Gaps |\n"
         )
 
         result = unread_library_citations(note, self._library_dossier())
 
-        assert result["flagged_unread_but_readable"] == [322]
+        assert [e["read_library"] for e in result["flagged_unread_but_readable"]] == [
+            [322]
+        ]
         assert result["cited_not_read"] == []
 
     def test_unread_library_citations_noop_without_library_hits(self):
         from tools.scratch import unread_library_citations
 
-        note = '---\nlibrary_refs:\n  - "322: X"\n---\nCalibre #322 unread.\n'
+        note = f'---\nlibrary_refs:\n  - "{self._SATI_CITE}"\n---\nunread.\n'
 
         result = unread_library_citations(note, "## Phase 3 — Library\n")
 
@@ -2630,6 +2788,238 @@ class TestScratchDossier:
             "flagged_unread_but_readable": [],
             "rejected_unread": [],
         }
+
+    def test_unread_library_citations_finds_a_title_in_the_indexed_text(self, tmp_path):
+        # Real case: the file is `prebish-article.pdf`; the title is printed
+        # at the start of its text (offset 97 in the real index).
+        from tools.library_folders import LibraryFoldersConfig, refresh
+        from tools.scratch import unread_library_citations
+
+        root = tmp_path / "library"
+        articles = root / "06. Life of the Buddha" / "Articles"
+        articles.mkdir(parents=True)
+        source = articles / "prebish-article.txt"
+        source.write_text(
+            "Journal of Global Buddhism\n"
+            "The Implications of the New Dating of the Buddha\n"
+            "Charles S. Prebish\n\nBody of the article.\n",
+            encoding="utf-8",
+        )
+        index = tmp_path / "index.sqlite"
+        refresh(LibraryFoldersConfig(roots=[root], index=index))
+        hit = {
+            "document_id": 14491,
+            "title": "prebish-article.txt",
+            "relative_path": "06. Life of the Buddha/Articles/prebish-article.txt",
+            "source_path": str(source),
+            "extraction_status": "ok",
+        }
+        cite = "The Implications of the New Dating of the Buddha — Charles S. Prebish"
+        note = f'---\nlibrary_refs:\n  - "{cite}"\n---\n'
+        dossier = self._library_dossier(extra_hits=[hit])
+
+        found = unread_library_citations(note, dossier, index=index)
+        no_index = unread_library_citations(note, dossier, index=tmp_path / "none")
+
+        assert self._books(found["cited_not_read"]) == [(cite, [14491])]
+        assert no_index["cited_not_read"] == []
+
+    def test_unread_library_citations_checks_each_book_in_a_grouped_rejection(self):
+        from tools.scratch import unread_library_citations
+
+        romanticism = {
+            "document_id": 1283,
+            "title": "Buddhist Romanticism - Thanissaro Bhikkhu.mobi",
+            "relative_path": "Bodhirasa eBook Library/Thanissaro Bhikkhu/Buddhist "
+            "Romanticism (1283)/Buddhist Romanticism - Thanissaro Bhikkhu.mobi",
+            "extraction_status": "ok",
+        }
+        tunnel = {
+            "document_id": 5758,
+            "title": "The Ego Tunnel_ The Science of the Mind an - Thomas "
+            "Metzinger.epub",
+            "relative_path": "Bodhirasa eBook Library/Thomas Metzinger/The Ego "
+            "Tunnel_ The Science of the Mind and the Myth of the Self (5758)/The "
+            "Ego Tunnel_ The Science of the Mind an - Thomas Metzinger.epub",
+            "extraction_status": "ok",
+        }
+        note = (
+            "## Sources Investigated, Not Used\n"
+            "| Buddhist Romanticism — Thanissaro Bhikkhu; The Ego Tunnel — Thomas "
+            "Metzinger | T3 | snippets only |\n"
+        )
+
+        result = unread_library_citations(
+            note,
+            self._library_dossier(read_ids=(1283,), extra_hits=[romanticism, tunnel]),
+        )
+
+        assert self._books(result["rejected_unread"]) == [
+            ("The Ego Tunnel — Thomas Metzinger", [5758])
+        ]
+
+    def test_unread_library_citations_reads_library_refs_from_frontmatter_only(self):
+        from tools.scratch import unread_library_citations
+
+        note = (
+            "---\ntopic: x\n---\n# Note\n\nAn example of the format:\n\n"
+            f'library_refs:\n  - "{self._SATI_CITE}"\n'
+        )
+
+        result = unread_library_citations(note, self._library_dossier())
+
+        assert result["cited_not_read"] == []
+
+    @staticmethod
+    def _real_hit(doc_id, path, status="ok"):
+        return {
+            "document_id": doc_id,
+            "title": path.rsplit("/", 1)[-1],
+            "relative_path": path,
+            "extraction_status": status,
+        }
+
+    def test_unread_library_citations_not_read_as_interpret_spares_a_read_book(self):
+        from tools.scratch import unread_library_citations
+
+        hit = self._real_hit(
+            1807,
+            "Bodhirasa eBook Library/Richard Gombrich/What The Buddha Thought (1807)/What The Buddha Thought - Richard Gombrich.docx",
+        )
+        prose = (
+            "Gombrich's *What the Buddha Thought* does not read anattā as a "
+            "denial of the self.\n"
+        )
+        snippet = "Gombrich's *What the Buddha Thought* was snippet-only.\n"
+        dossier = self._library_dossier(read_ids=(1807,), extra_hits=[hit])
+
+        assert (
+            unread_library_citations(prose, dossier)["flagged_unread_but_readable"]
+            == []
+        )
+        assert [
+            e["read_library"]
+            for e in unread_library_citations(snippet, dossier)[
+                "flagged_unread_but_readable"
+            ]
+        ] == [[1807]]
+
+    def test_unread_library_citations_reading_another_translation_does_not_count(
+        self,
+    ):
+        from tools.scratch import unread_library_citations
+
+        hits = [
+            self._real_hit(
+                4382,
+                "Bodhirasa eBook Library/Edwin F. Bryant/The Yoga Sutras of Patanjali (10958)/The Yoga Sutras of Patanjali - Edwin F. Bryant.epub",
+            ),
+            self._real_hit(
+                4383,
+                "Bodhirasa eBook Library/Michael Beloved/Yoga Sutras of Patanjali (10957)/Yoga Sutras of Patanjali - Michael Beloved.pdf",
+            ),
+        ]
+        note = (
+            '---\nlibrary_refs:\n  - "The Yoga Sutras of Patanjali — Edwin F. '
+            'Bryant"\n---\n'
+        )
+
+        result = unread_library_citations(
+            note, self._library_dossier(read_ids=(4383,), extra_hits=hits)
+        )
+
+        assert [e["read_library"] for e in result["cited_not_read"]] == [[4382]]
+
+    def test_unread_library_citations_keeps_reading_refs_after_a_blank_line(self):
+        from tools.scratch import unread_library_citations
+
+        note = f'---\nlibrary_refs:\n\n  - "{self._SATI_CITE}"\n---\n'
+
+        result = unread_library_citations(note, self._library_dossier())
+
+        assert [e["read_library"] for e in result["cited_not_read"]] == [[322]]
+
+    def test_unread_library_citations_uses_the_latest_extraction_status(self):
+        from tools.scratch import unread_library_citations
+
+        note = f'---\nlibrary_refs:\n  - "{self._SATI_CITE}"\n---\n'
+        later = self._real_hit(322, self._SATIPATTHANA)
+        dossier = self._library_dossier().replace(
+            '"extraction_status": "ok"', '"extraction_status": "empty"', 1
+        )
+        dossier += (
+            "### 2026-11-18T11:00:00 · search-library-folders\n- args: `y`\n"
+            f"- results:\n```json\n{json.dumps([later])}\n```\n"
+        )
+
+        result = unread_library_citations(note, dossier)
+
+        assert [e["read_library"] for e in result["cited_not_read"]] == [[322]]
+
+    def test_unread_library_citations_ignores_a_fenced_footnote_example(self):
+        from tools.scratch import unread_library_citations
+
+        note = (
+            "Format example:\n\n```\n[^lib-1]: [[A Comprehensive Manual of "
+            "Abhidhamma]] — Bhikkhu Bodhi\n```\n"
+        )
+
+        result = unread_library_citations(note, self._library_dossier())
+
+        assert result["cited_not_read"] == []
+
+    def test_unread_library_citations_gives_each_rejected_book_its_own_marker(self):
+        from tools.scratch import unread_library_citations
+
+        note = (
+            "## Sources Investigated, Not Used\n"
+            "| A Comprehensive Manual of Abhidhamma[^lib-1]; Satipaṭṭhāna: The "
+            "Direct Path to Realization — Bhikkhu Anālayo | T3 | snippets only; "
+            "see also[^lib-1] |\n\n"
+            "[^lib-1]: [[A Comprehensive Manual of Abhidhamma]] — Bhikkhu Bodhi\n"
+        )
+
+        result = unread_library_citations(note, self._library_dossier(read_ids=(935,)))
+
+        assert [e["read_library"] for e in result["rejected_unread"]] == [[322]]
+
+    def test_unread_library_citations_text_lookup_respects_the_cited_volume(
+        self, tmp_path
+    ):
+        from tools.library_folders import LibraryFoldersConfig, refresh
+        from tools.scratch import unread_library_citations
+
+        root = tmp_path / "library"
+        folder = (
+            root
+            / "Bhikkhu Analayo"
+            / "A Comparative Study Of The Majjhima Nikaya 1 (344)"
+        )
+        folder.mkdir(parents=True)
+        source = (
+            folder / "A Comparative Study Of The Majjhima Nikaya - Bhikkhu Analayo.txt"
+        )
+        source.write_text(
+            "A Comparative Study of the Majjhima-nikaya Volume 1\nBhikkhu Analayo\n",
+            encoding="utf-8",
+        )
+        index = tmp_path / "index.sqlite"
+        refresh(LibraryFoldersConfig(roots=[root], index=index))
+        hit = self._real_hit(
+            344,
+            "Bodhirasa eBook Library/Bhikkhu Analayo/A Comparative Study Of The Majjhima Nikaya 1 (344)/A Comparative Study Of The Majjhima Nikaya - Bhikkhu Analayo.pdf",
+        )
+        hit["source_path"] = str(source)
+        note = (
+            '---\nlibrary_refs:\n  - "A Comparative Study of the Majjhima-nikāya: '
+            'Vol. 2 — Anālayo"\n---\n'
+        )
+
+        result = unread_library_citations(
+            note, self._library_dossier(extra_hits=[hit]), index=index
+        )
+
+        assert result["cited_not_read"] == []
 
     def test_phase_7_gate_refuses_cited_library_doc_never_read(
         self, tmp_path, monkeypatch
@@ -2644,7 +3034,11 @@ class TestScratchDossier:
         monkeypatch.setattr("tools.scratch._SCRATCH_DIR", tmp_path)
         path = scratch_init("test-unread-library-gate")
         vault = tmp_path / "note.md"
-        vault.write_text("# Note\n\nAnālayo (Calibre #322) argues.\n", encoding="utf-8")
+        vault.write_text(
+            "# Note\n\nAnālayo argues.[^lib-1]\n\n"
+            f"[^lib-1]: [[{self._SATI_CITE.split(' — ')[0]}]] — Bhikkhu Anālayo\n",
+            encoding="utf-8",
+        )
         text = path.read_text(encoding="utf-8").replace(
             "**Vault note:** <set at Phase 7>", f"**Vault note:** {vault}"
         )
@@ -2660,7 +3054,7 @@ class TestScratchDossier:
         result = scratch_gate("7")
 
         assert result["ok"] is False
-        assert result["cited_not_read"] == [322]
+        assert [e["read_library"] for e in result["cited_not_read"]] == [[322]]
         assert "read-library" in result["message"]
 
     def test_thematic_run_auto_skips_2_5_and_3b(self, tmp_path, monkeypatch):
@@ -3171,6 +3565,7 @@ class TestScratchCheckCoverage:
             {
                 "document_id": 2366,
                 "title": "Meditation Centers Directory.pdf",
+                "cite_as": "Meditation Centers Directory",
                 "relative_path": "Library/Meditation Centers Directory.pdf",
                 "snippet": "... clearly on-topic passage ...",
                 "queries": 1,
@@ -3191,7 +3586,7 @@ class TestScratchCheckCoverage:
         self._log_library_hit(tmp_path, 2365)
         note = tmp_path / "note.md"
         note.write_text(
-            "# Note\n\nSome claim.[^calibre-2365]\n\n[^calibre-2365]: A Relevant Book.\n",
+            "# Note\n\nSome claim.[^lib-1]\n\n[^lib-1]: A Relevant Book.\n",
             encoding="utf-8",
         )
         assert scratch_set_note(str(note))["ok"]
@@ -3201,7 +3596,9 @@ class TestScratchCheckCoverage:
         assert result["ok"] is True
         assert result["unaccounted"] == []
 
-    def test_passes_when_logged_in_rejection_table_by_id(self, tmp_path, monkeypatch):
+    def test_passes_when_logged_in_rejection_table_by_title(
+        self, tmp_path, monkeypatch
+    ):
         from tools.research_sources import (
             scratch_check_coverage,
             scratch_init,
@@ -3216,7 +3613,7 @@ class TestScratchCheckCoverage:
         note.write_text(
             "# Note\n\n"
             "## Sources Investigated, Not Used\n"
-            "| A Relevant Book (Calibre #7439) | T3 Library | Off-topic |\n",
+            "| A Relevant Book | T3 Library | Off-topic |\n",
             encoding="utf-8",
         )
         assert scratch_set_note(str(note))["ok"]
@@ -3243,102 +3640,154 @@ class TestScratchCheckCoverage:
         assert scratch_set_note(str(note))["ok"]
         return scratch_check_coverage()
 
-    def test_credits_every_spelling_of_the_index_number(self, tmp_path, monkeypatch):
-        # Issue #113: forms real notes used that the checker read as missing.
-        result = self._coverage_for(
-            tmp_path,
-            monkeypatch,
-            "coverage-spellings",
-            [{"document_id": n} for n in (11854, 765, 860, 42333, 42334, 3203)],
-            "# Note\n\n"
-            "Timeline source (#11854).\n\n"
-            "| Reviewed as a set: #765, #860 | T3 Library | tangential |\n"
-            "| Duplicate pair (Calibre #42333 / #42334) | T3 Library | dup |\n"
-            "| Clark, library index #3203 | T3 Library | off-topic |\n",
-        )
+    # Real logged paths (Calibre book folders and one other collection).
+    _BOOKS = {
+        2023: "Bodhirasa eBook Library/Bhikkhu Analayo/Satipatthana Meditation _ A "
+        "Practice Guide (13851)/Satipatthana Meditation _ A Practice Guide - "
+        "Bhikkhu Analayo.pdf",
+        597: "Bodhirasa eBook Library/Bhikkhu Bodhi/A Comprehensive Manual of "
+        "Abhidhamm (597)/A Comprehensive Manual of Abhid - Bhikkhu Bodhi.pdf",
+        8757: "Bodhirasa eBook Library/Bhikkhu Analayo/Memento Mori_ Recollection of "
+        "Death in Early Buddhist Meditation (8757)/Memento Mori_ Recollection of "
+        "Death in Ear - Bhikkhu Analayo.pdf",
+        1283: "Bodhirasa eBook Library/Thanissaro Bhikkhu/Buddhist Romanticism "
+        "(1283)/Buddhist Romanticism - Thanissaro Bhikkhu.mobi",
+        5758: "Bodhirasa eBook Library/Thomas Metzinger/The Ego Tunnel_ The Science "
+        "of the Mind and the Myth of the Self (5758)/The Ego Tunnel_ The Science of "
+        "the Mind an - Thomas Metzinger.epub",
+    }
 
-        assert result["unaccounted"] == []
-        assert result["ok"] is True
-
-    def test_html_entity_is_not_a_citation(self, tmp_path, monkeypatch):
-        result = self._coverage_for(
-            tmp_path,
-            monkeypatch,
-            "coverage-entity",
-            [{"document_id": 8212}],
-            "# Note\n\nA dash &#8212; in prose.\n",
-        )
-
-        assert [d["document_id"] for d in result["unaccounted"]] == [8212]
-
-    def test_reports_folder_number_cited_in_place_of_index_number(
-        self, tmp_path, monkeypatch
-    ):
-        # Real index row (20260904-161608): document_id 2097, Calibre folder 8904.
-        result = self._coverage_for(
-            tmp_path,
-            monkeypatch,
-            "coverage-folder-number",
-            [
-                {
-                    "document_id": 2097,
-                    "title": "The Luminous Mind in Theravada and Dharmag - Bhikkhu Analayo.pdf",
-                    "relative_path": "Bodhirasa eBook Library/Bhikkhu Analayo/"
-                    "The Luminous Mind in Theravada and Dharmaguptaka Discourses (8904)/"
-                    "The Luminous Mind in Theravada and Dharmag - Bhikkhu Analayo.pdf",
-                }
-            ],
-            "# Note\n\n[^calibre-8904]: [[The Luminous Mind]] — Anālayo (Calibre #8904)\n",
-        )
-
-        assert result["ok"] is False
-        assert result["unaccounted"] == []
-        assert result["folder_number_cited"] == [
+    def _book_hits(self, *ids):
+        return [
             {
-                "document_id": 2097,
-                "folder_number": 8904,
-                "title": "The Luminous Mind in Theravada and Dharmag - Bhikkhu Analayo.pdf",
-                "cite_as": "Calibre #2097",
+                "document_id": d,
+                "title": self._BOOKS[d].rsplit("/", 1)[-1],
+                "relative_path": self._BOOKS[d],
             }
+            for d in ids
         ]
-        assert result["cited_not_gathered"] == []
 
-    def test_correct_citation_does_not_hide_a_folder_number_citation(
-        self, tmp_path, monkeypatch
-    ):
+    def test_credits_every_way_a_note_names_a_book(self, tmp_path, monkeypatch):
+        # Issue #113 listed the forms real notes use; they now name books by
+        # title: a library_refs entry, a footnote, a body sentence, a Not Used
+        # row, and a row that rejects several books at once.
         result = self._coverage_for(
             tmp_path,
             monkeypatch,
-            "coverage-both-numbers",
-            [
-                {
-                    "document_id": 2097,
-                    "relative_path": "Bodhirasa eBook Library/Bhikkhu Analayo/"
-                    "The Luminous Mind in Theravada and Dharmaguptaka Discourses (8904)/"
-                    "The Luminous Mind in Theravada and Dharmag - Bhikkhu Analayo.pdf",
-                }
-            ],
-            "# Note\n\nClaim.[^calibre-2097]\n\nLater claim (Calibre #8904).\n",
+            "coverage-forms",
+            self._book_hits(2023, 597, 8757, 1283, 5758),
+            '---\nlibrary_refs:\n  - "Satipaṭṭhāna Meditation: A Practice Guide — '
+            'Bhikkhu Anālayo"\n---\n# Note\n\n'
+            "Claim.[^lib-1]\n\n"
+            "Anālayo's *Memento Mori: Recollection of Death in Early Buddhist "
+            "Meditation* agrees.\n\n"
+            "## Sources Investigated, Not Used\n"
+            "| A Comprehensive Manual of Abhidhamma — Bhikkhu Bodhi | T3 | dup |\n"
+            "| Reviewed as a set: Buddhist Romanticism — Thanissaro Bhikkhu; The "
+            "Ego Tunnel — Thomas Metzinger | T3 | tangential |\n\n"
+            "[^lib-1]: [[A Comprehensive Manual of Abhidhamma]] — Bhikkhu Bodhi\n",
         )
 
-        assert result["ok"] is False
-        assert [d["folder_number"] for d in result["folder_number_cited"]] == [8904]
+        assert result["unaccounted"] == []
+        assert result["ok"] is True
 
-    def test_lists_cited_numbers_that_match_no_gathered_hit(
-        self, tmp_path, monkeypatch
-    ):
-        # An enrichment note carrying a number from before the 2026-09-03
-        # index rebuild, which now names a different book.
+    def test_a_folder_word_alone_does_not_name_a_hit(self, tmp_path, monkeypatch):
+        # A hit's folder is a category ("Library"); a line that only holds that
+        # word must not account for every book in it.
         result = self._coverage_for(
             tmp_path,
             monkeypatch,
-            "coverage-stale-number",
-            [{"document_id": 2365}],
-            "# Note\n\nClaim.[^calibre-2365]\n\nOld claim (Calibre #1272).\n",
+            "coverage-folder-word",
+            [{"document_id": 7439}],
+            "# Note\n\n| Clark, library index | T3 Library | off-topic |\n",
+        )
+
+        assert [d["document_id"] for d in result["unaccounted"]] == [7439]
+
+    def test_a_file_named_by_a_code_is_named_by_that_code(self, tmp_path, monkeypatch):
+        # 2026-11-15 ethics-as-self-love: "journal PDFs filed by author
+        # abbreviation (schm1, baum1, baum2, … dreyfus)".
+        root = (
+            "Na Uyana eBook Library/Buddhist Books/Journals, Articles etc/"
+            "Journal of Buddhist Ethics/"
+        )
+        result = self._coverage_for(
+            tmp_path,
+            monkeypatch,
+            "coverage-file-code",
+            [
+                {
+                    "document_id": d,
+                    "title": f"{n}.pdf",
+                    "relative_path": f"{root}{n}.pdf",
+                }
+                for d, n in ((30258, "baum1"), (30221, "baum2"), (30175, "dreyfus"))
+            ],
+            "# Note\n\n| ~40 further hits: journal PDFs filed by author abbreviation "
+            "(baum1, baum2, dreyfus) | T3 Scholarly | tangential |\n",
+        )
+
+        assert result["unaccounted"] == []
+
+    def test_a_row_holding_the_start_of_a_title_names_it(self, tmp_path, monkeypatch):
+        # 2026-11-06 teaching-the-dhamma and 2026-11-12 pali-sanskrit rows.
+        lib = "Bodhirasa eBook Library/"
+        result = self._coverage_for(
+            tmp_path,
+            monkeypatch,
+            "coverage-title-start",
+            [
+                {
+                    "document_id": 6619,
+                    "title": "Buddhism in Sinhalese Society 1 - Kitsiri Malalgoda.pdf",
+                    "relative_path": f"{lib}Kitsiri Malalgoda/Buddhism in Sinhalese "
+                    "Society 1750- (2765)/Buddhism in Sinhalese Society 1 - Kitsiri "
+                    "Malalgoda.pdf",
+                },
+                {
+                    "document_id": 1488,
+                    "title": "Old Prakrit Characteristics in Tipiaka - Aruna K. Gamage.pdf",
+                    "relative_path": f"{lib}Aruna K. Gamage/Old Prakrit Characteristics "
+                    "in Tipiaka (8462)/Old Prakrit Characteristics in Tipiaka - Aruna "
+                    "K. Gamage.pdf",
+                },
+            ],
+            "# Note\n\n| Malalgoda, *Buddhism in Sinhalese Society* | T3 Scholarly | "
+            "Sociological history |\n"
+            '| Gamage, "Old Prakrit Characteristics in Tipiṭaka" | T3 Scholarly | '
+            "Overlaps Oberlies |\n",
+        )
+
+        assert result["unaccounted"] == []
+
+    def test_an_index_number_does_not_account_for_a_book(self, tmp_path, monkeypatch):
+        # Numbers change on every rebuild; only the title counts.
+        result = self._coverage_for(
+            tmp_path,
+            monkeypatch,
+            "coverage-number",
+            self._book_hits(2023),
+            "# Note\n\nClaim (Calibre #2023, doc 13851).[^calibre-2023]\n",
+        )
+
+        assert [d["document_id"] for d in result["unaccounted"]] == [2023]
+        assert result["unaccounted"][0]["cite_as"] == (
+            "Satipatthana Meditation _ A Practice Guide - Bhikkhu Analayo"
+        )
+
+    def test_lists_citations_that_match_no_gathered_hit(self, tmp_path, monkeypatch):
+        # A book cited from memory or carried from an older note.
+        result = self._coverage_for(
+            tmp_path,
+            monkeypatch,
+            "coverage-not-gathered",
+            self._book_hits(2023),
+            '---\nlibrary_refs:\n  - "Satipaṭṭhāna Meditation: A Practice Guide — '
+            'Bhikkhu Anālayo"\n  - "Being with Dying — Joan Halifax"\n---\n',
         )
 
         assert result["ok"] is True
-        assert result["cited_not_gathered"] == [1272]
+        assert result["cited_not_gathered"] == ["Being with Dying — Joan Halifax"]
 
     def _log_search(self, tmp_path, query, document_ids, limit="15", duplicate_of=None):
         import json as _json
@@ -3411,7 +3860,7 @@ class TestScratchCheckCoverage:
         unaccounted = scratch_check_coverage()["unaccounted"]
 
         assert "snippet" in unaccounted[9]
-        assert unaccounted[10] == {"document_id": 1010, "title": "Book 1010.pdf"}
+        assert unaccounted[10] == {"document_id": 1010, "cite_as": "Book 1010"}
 
     def test_hit_with_a_nested_duplicate_record_is_counted(self, tmp_path, monkeypatch):
         # Review finding: a flat-object regex skipped every hit whose
@@ -3474,7 +3923,7 @@ class TestScratchCheckCoverage:
         monkeypatch.setenv("VICAYA_SCRATCH", str(path))
         self._log_search(tmp_path, "parami", [101, 202])
         draft = tmp_path / "coverage-draft.phase5-draft.md"
-        draft.write_text("Cited.[^calibre-101]\n", encoding="utf-8")
+        draft.write_text("Cited.[^lib-1]\n\n[^lib-1]: [[Book 101]]\n", encoding="utf-8")
 
         result = scratch_check_coverage(note=draft)
 

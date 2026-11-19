@@ -251,6 +251,12 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             value TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS calibre_books (
+            source_path TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            authors TEXT NOT NULL
+        );
+
         CREATE INDEX IF NOT EXISTS idx_documents_content_hash
         ON documents(content_hash);
 
@@ -943,16 +949,43 @@ def _safe_fts_query(query: str) -> str:
     return " ".join(f'"{term.replace('"', '""')}"' for term in terms)
 
 
-def _build_calibre_metadata_lookup(calibre_root: Path) -> dict[str, str]:
-    """Return {absolute_file_path: metadata_prefix} for all files in a Calibre library."""
+@dataclass(frozen=True)
+class CalibreBook:
+    title: str
+    authors: str
+    prefix: str
+
+
+def _calibre_libraries(root: Path) -> list[Path]:
+    """Calibre libraries at a source root or one folder below it.
+
+    A source root often holds several Calibre libraries side by side; reading
+    only `root/metadata.db` found none of them, so no indexed book carried
+    Calibre's title or authors (0 of 46,456 on 2026-11-19).
+    """
+    dbs = [root / "metadata.db", *sorted(root.glob("*/metadata.db"))]
+    return [db.parent for db in dbs if db.is_file()]
+
+
+def _build_calibre_metadata_lookup(
+    calibre_root: Path,
+) -> dict[str, CalibreBook] | None:
+    """Return {absolute_file_path: CalibreBook} for all files in a Calibre library.
+
+    None when `metadata.db` exists but cannot be read (a lock, a damaged
+    file), so the refresh keeps the titles it stored before.
+    """
     metadata_db = calibre_root / "metadata.db"
     if not metadata_db.exists():
         return {}
     try:
         with sqlite3.connect(f"file:{metadata_db}?mode=ro", uri=True) as conn:
             authors_by_book: dict[int, list[str]] = {}
+            # Calibre keeps an author list in link-row order; the first is
+            # the one a citation leads with.
             for book_id, name in conn.execute(
-                "SELECT bal.book, a.name FROM books_authors_link bal JOIN authors a ON bal.author = a.id"
+                "SELECT bal.book, a.name FROM books_authors_link bal "
+                "JOIN authors a ON bal.author = a.id ORDER BY bal.id"
             ).fetchall():
                 authors_by_book.setdefault(int(book_id), []).append(str(name))
             tags_by_book: dict[int, list[str]] = {}
@@ -960,9 +993,10 @@ def _build_calibre_metadata_lookup(calibre_root: Path) -> dict[str, str]:
                 "SELECT btl.book, t.name FROM books_tags_link btl JOIN tags t ON btl.tag = t.id"
             ).fetchall():
                 tags_by_book.setdefault(int(book_id), []).append(str(name))
-            lookup: dict[str, str] = {}
-            for book_id, book_path, file_name, fmt in conn.execute(
-                "SELECT b.id, b.path, d.name, d.format FROM books b JOIN data d ON b.id = d.book"
+            lookup: dict[str, CalibreBook] = {}
+            for book_id, title, book_path, file_name, fmt in conn.execute(
+                "SELECT b.id, b.title, b.path, d.name, d.format "
+                "FROM books b JOIN data d ON b.id = d.book"
             ).fetchall():
                 book_id = int(book_id)
                 file_path = str(
@@ -970,15 +1004,45 @@ def _build_calibre_metadata_lookup(calibre_root: Path) -> dict[str, str]:
                 )
                 authors = ", ".join(authors_by_book.get(book_id, []))
                 tags = ", ".join(tags_by_book.get(book_id, []))
-                parts = [f"Calibre #{book_id}"]
+                # No Calibre book number in the indexed text: agents copied it
+                # into notes as if it named the book, and it names nothing
+                # outside this one library.
+                parts: list[str] = []
                 if authors:
                     parts.append(f"Authors: {authors}")
                 if tags:
                     parts.append(f"Tags: {tags}")
-                lookup[file_path] = "[" + " | ".join(parts) + "]"
+                lookup[file_path] = CalibreBook(
+                    title=str(title),
+                    authors=authors,
+                    prefix="[" + " | ".join(parts) + "]" if parts else "",
+                )
     except sqlite3.Error:
-        return {}
+        return None
     return lookup
+
+
+def _replace_calibre_books(
+    conn: sqlite3.Connection,
+    roots: list[Path],
+    lookup: dict[str, CalibreBook],
+) -> None:
+    """Rewrite the stored Calibre titles for the roots this refresh reached.
+
+    Stored at refresh time so a citation title is readable with the source
+    volume unmounted. Rows under roots this refresh did not reach stay.
+    """
+    for root in roots:
+        prefix = str(root) + os.sep
+        conn.execute(
+            "DELETE FROM calibre_books WHERE substr(source_path, 1, ?) = ?",
+            (len(prefix), prefix),
+        )
+    conn.executemany(
+        "INSERT OR REPLACE INTO calibre_books(source_path, title, authors) "
+        "VALUES (?, ?, ?)",
+        [(path, book.title, book.authors) for path, book in lookup.items()],
+    )
 
 
 def _upsert_document(
@@ -1133,9 +1197,17 @@ def refresh(
     index = config.index
     index.parent.mkdir(parents=True, exist_ok=True)
     indexed_at = _utc_now()
-    calibre_lookup: dict[str, str] = {}
+    calibre_lookup: dict[str, CalibreBook] = {}
+    title_roots = []
     for root in available_roots:
-        calibre_lookup.update(_build_calibre_metadata_lookup(root))
+        lookups = [
+            _build_calibre_metadata_lookup(lib) for lib in _calibre_libraries(root)
+        ]
+        for lookup in lookups:
+            calibre_lookup.update(lookup or {})
+        # A catalogue that could not be read keeps this root's stored titles.
+        if all(lookup is not None for lookup in lookups):
+            title_roots.append(root)
     files = _iter_files(available_roots, limit, config.exclude)
     extracted_count = 0
     metadata_only = 0
@@ -1147,6 +1219,7 @@ def refresh(
     last_commit = time.monotonic()
     with sqlite3.connect(index) as conn:
         initialize_schema(conn)
+        _replace_calibre_books(conn, title_roots, calibre_lookup)
         # smoothing over recent files, not the whole run: a retry pass skips
         # tens of thousands of unchanged files in seconds and then spends hours
         # on a few hundred scans, so a cumulative average rate reports an ETA
@@ -1210,7 +1283,8 @@ def refresh(
             # percentage is dominated by skips, so the counts are what tell the
             # user whether anything is actually being extracted.
             progress.set_postfix(read=written, skipped=skipped, refresh=False)
-            prefix = calibre_lookup.get(source_path, "")
+            book = calibre_lookup.get(source_path)
+            prefix = book.prefix if book else ""
             fts_text = (
                 (prefix + "\n\n" + extracted.text).strip() if prefix else extracted.text
             )
@@ -1663,6 +1737,35 @@ def _hit_source_available(
     return available
 
 
+def _cite_as(conn: sqlite3.Connection, docs: list[tuple[str, str]]) -> dict[str, str]:
+    """{source_path: "<title> — <authors>"} for (source_path, filename) pairs.
+
+    A note names a book by this string, never by its index id: the id is a row
+    number that changes on every rebuild, move or rename. Calibre books take
+    Calibre's own title and authors; any other file takes its file name.
+    """
+    stored: dict[str, tuple[str, str]] = {}
+    try:
+        for source_path, _filename in docs:
+            row = conn.execute(
+                "SELECT title, authors FROM calibre_books WHERE source_path = ?",
+                (source_path,),
+            ).fetchone()
+            if row is not None:
+                stored[source_path] = (str(row[0]), str(row[1]))
+    except sqlite3.OperationalError:
+        # An index last refreshed before the table existed has no titles yet.
+        stored = {}
+    cites: dict[str, str] = {}
+    for source_path, filename in docs:
+        if source_path in stored:
+            title, authors = stored[source_path]
+            cites[source_path] = f"{title} — {authors}" if authors else title
+        else:
+            cites[source_path] = Path(filename).stem
+    return cites
+
+
 def search(
     query: str,
     config: LibraryFoldersConfig | None = None,
@@ -1684,6 +1787,9 @@ def search(
             duplicate_map = _exact_duplicate_map(conn)
             weak_hints = _weak_duplicate_hints(conn, duplicate_map)
             rows = _search_rows(conn, query, candidate_limit, timeout=timeout)
+            cites = _cite_as(
+                conn, [(str(r["source_path"]), str(r["filename"])) for r in rows]
+            )
         except sqlite3.Error:
             return []
     root_reachable = _source_availability(rows, source_timeout)
@@ -1700,6 +1806,7 @@ def search(
             {
                 "document_id": int(row["id"]),
                 "title": row["filename"],
+                "cite_as": cites[str(row["source_path"])],
                 "source_root": row["source_root"],
                 "relative_path": row["rel_path"],
                 "source_path": row["source_path"],
@@ -1818,8 +1925,8 @@ def read_document(
     try:
         with _connect_readonly(config.index) as conn:
             doc = conn.execute(
-                "SELECT filename, rel_path, extraction_status, indexed_at "
-                "FROM documents WHERE id = ?",
+                "SELECT filename, rel_path, extraction_status, indexed_at, "
+                "source_path FROM documents WHERE id = ?",
                 (document_id,),
             ).fetchone()
             if doc is None:
@@ -1830,16 +1937,18 @@ def read_document(
             text_row = conn.execute(
                 "SELECT text FROM document_fts WHERE rowid = ?", (document_id,)
             ).fetchone()
+            cite_as = _cite_as(conn, [(str(doc[4]), str(doc[0]))])[str(doc[4])]
     except sqlite3.Error as exc:
         return {
             "ok": False,
             "error": f"library folders index could not be read: {exc}",
         }
-    filename, rel_path, status, indexed_at = doc
+    filename, rel_path, status, indexed_at, _source_path = doc
     text = text_row[0] if text_row else ""
     result: dict[str, Any] = {
         "document_id": document_id,
         "title": filename,
+        "cite_as": cite_as,
         "relative_path": rel_path,
         "extraction_status": status,
         "text_available": extraction_succeeded(status) and bool(text),

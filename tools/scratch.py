@@ -702,15 +702,17 @@ def scratch_gate(phase: str, scratch: Path | None = None) -> dict:
                             **unread,
                             "message": (
                                 "Phase 7 gate refused: the index holds the full "
-                                "text of these documents, mounted volume or not. "
-                                'Run `read-library <id> --around "<phrase>"` '
-                                "for each id in cited_not_read, and replace every "
-                                "'unread / snippet-only' line naming an id in "
-                                "flagged_unread_but_readable with what the "
-                                "document actually says. For each id in "
-                                "rejected_unread, read it once (`--chars 1500` "
-                                "is enough), then give the rejection a real "
-                                "reason or use the source."
+                                "text of these books, mounted volume or not. For "
+                                "each book in cited_not_read, run `read-library "
+                                '<id> --around "<phrase>"` with an id from its '
+                                "read_library list, and replace every 'unread / "
+                                "snippet-only' line naming a book in "
+                                "flagged_unread_but_readable with what the book "
+                                "actually says. For each book in rejected_unread, "
+                                "read it once (`--chars 1500` is enough), then "
+                                "give the rejection a real reason or use the "
+                                "source. The ids are handles for this run only: "
+                                "the note names each book by title and author."
                             ),
                         }
     # For gather phases and the Phase 6 cross-check, require at least one real
@@ -926,6 +928,510 @@ def _logged_library_hits(text: str) -> list[dict]:
     return hits
 
 
+_TITLE_STOPWORDS = frozenset(
+    "the and for from with into onto that this these those its are was were "
+    "upon about over under between through his her their our your not but "
+    "all any some other what which who whom how why when where "
+    "vol volume part chapter page pages".split()
+)
+# Share of a citation's title words that must appear among a hit's words.
+_TITLE_MATCH_SHARE = 0.8
+_NUMBER_WORDS = {
+    word: str(n)
+    for n, word in enumerate(
+        "zero one two three four five six seven eight nine ten eleven twelve "
+        "thirteen fourteen fifteen sixteen seventeen eighteen nineteen "
+        "twenty".split()
+    )
+}
+_ROMAN_NUMERALS = {
+    word: str(n)
+    for n, word in enumerate("i ii iii iv v vi vii viii ix x".split(), start=1)
+}
+_NUMBERED_PARTS = frozenset({"vol", "volume", "part", "chapter", "ch", "book"})
+
+
+def _folded_words(text: str) -> list[str]:
+    """Lowercase words with accents dropped; `_` and punctuation split words.
+
+    Letters and digits split apart and a number loses its leading zeros:
+    Piya Tan's files write `sd.04.9` for the "SD 4.9" a note cites, and notes
+    write "SD33.8" for `sd.33.8`. Number words become digits, and so does a
+    Roman numeral after "Vol.", "Part" or "Chapter": notes write "ch. 19" for
+    a file's "Chapter Nineteen" and "Vol. I" for its "1".
+    """
+    import unicodedata
+
+    plain = "".join(
+        c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c)
+    )
+    words: list[str] = []
+    for w in _re.findall(r"\d+|[^\W\d_]+", plain.casefold()):
+        if w.isdigit():
+            w = w.lstrip("0") or "0"
+        elif w in _NUMBER_WORDS:
+            w = _NUMBER_WORDS[w]
+        elif w in _ROMAN_NUMERALS and words and words[-1] in _NUMBERED_PARTS:
+            w = _ROMAN_NUMERALS[w]
+        words.append(w)
+    # A numeral that ends a title is a volume too ("73180057-Mahāvastu-I").
+    if len(words) > 1 and words[-1] in _ROMAN_NUMERALS:
+        words[-1] = _ROMAN_NUMERALS[words[-1]]
+    return words
+
+
+def _word_set(text: str) -> set[str]:
+    """A text's folded words, plus each pair of neighbours joined.
+
+    Pāḷi compounds split in different places in different files: a note's
+    "Nibbānagāminīpaṭipadā" is a folder's "NIBBĀNA GĀMINIPAŢIPADĀ", and a
+    note's "Loka,dhamma" a file's "Lokadhamma".
+    """
+    words = _folded_words(text)
+    return set(words) | {a + b for a, b in zip(words, words[1:]) if a.isalpha()}
+
+
+def _title_sequence(title: str) -> list[str]:
+    """A title's content words in order: no stop words, no download ids.
+
+    A run of six or more digits is a download id ("122209229-A-Study-of…"),
+    not part of the title.
+    """
+    return [
+        w
+        for w in _folded_words(title)
+        if not (w.isdigit() and len(w) >= 6)
+        and ((len(w) >= 3 and w not in _TITLE_STOPWORDS) or w.isdigit())
+    ]
+
+
+def _title_words(title: str) -> set[str]:
+    words = [w for w in _folded_words(title) if not (w.isdigit() and len(w) >= 6)]
+    return set(_title_sequence(title)) or set(words)
+
+
+def _title_tries(title: str) -> list[set[str]]:
+    """A title's words, then looser forms of it.
+
+    The looser forms drop bracketed notes ("(4th ed.)", "(MN22)") and then the
+    subtitle after a colon (Calibre writes `_ ` for one, and many titles use
+    " - "): Calibre's cut names lose the subtitle, and notes drop or misquote
+    it.
+    """
+    tries = [_title_words(title)]
+    for looser in (_unbracketed(title), _main_title(title)):
+        words = _title_words(looser)
+        if words and words not in tries:
+            tries.append(words)
+    return [words for words in tries if words]
+
+
+def _unbracketed(title: str) -> str:
+    return _re.sub(r"\([^)]*\)|\[[^\]]*\]", " ", title)
+
+
+def _main_title(title: str) -> str:
+    return _re.split(r":|_ | - | — ", _unbracketed(title), maxsplit=1)[0]
+
+
+def _split_citation(citation: str) -> tuple[str, set[str], set[str]]:
+    """(title, author words sure enough to rule a hit out, author words).
+
+    The author follows the last " — ": notes also write "Dying to Live — The
+    Role of Kamma in Dying and Rebirth — Aggacitta Bhikkhu". Older notes write
+    "The Secret - Rhonda Byrne", but " - " also ends main titles ("Mahavamsa
+    - The Great Chronicle"), so an author read that way can back a match but
+    never rule one out.
+    """
+    title, dash, author = citation.rpartition(" — ")
+    if dash:
+        sure = _author_words(author)
+        return _FILE_EXTENSION_RE.sub("", title), sure, sure
+    title = _FILE_EXTENSION_RE.sub("", citation)
+    # "Journal - Sayagyi U Ba Khin - S.N. Goenka": any part after the first
+    # dash may be the author.
+    _, dash, rest = title.partition(" - ")
+    return title, set(), _author_words(rest) if dash else set()
+
+
+_CALIBRE_FOLDER_RE = _re.compile(r"^(.*?)\s*\(\d+\)$")
+_AUTHOR_STOPWORDS = frozenset(
+    "bhikkhu bhikkhuni ven venerable ajahn ajaan thera mahathera sayadaw "
+    "editor editors trans translator prof professor unknown various "
+    "anonymous".split()
+)
+
+
+def _author_words(text: str) -> set[str]:
+    return {
+        w for w in _folded_words(text) if len(w) >= 3 and w not in _AUTHOR_STOPWORDS
+    }
+
+
+def _authors_agree(left: set[str], right: set[str]) -> bool:
+    """Do two author lists share a name, allowing a typo?
+
+    Calibre's own metadata misspells names ("Sanhgarakshita", "Russel T.
+    Hulbert"), so an exact match alone rejected the right book.
+    """
+    from difflib import SequenceMatcher
+
+    if left & right:
+        return True
+    return any(
+        len(a) >= 5
+        and a[0] == b[0]
+        and abs(len(a) - len(b)) <= 2
+        and SequenceMatcher(None, a, b).ratio() >= 0.8
+        for a in left
+        for b in right
+    )
+
+
+class _HitNames:
+    """How a library hit can be named: its titles, authors and cut words."""
+
+    __slots__ = (
+        "titles",
+        "tries",
+        "authors",
+        "hints",
+        "cut",
+        "words",
+        "file_code",
+        "seqs",
+    )
+
+    def __init__(self, hit: dict) -> None:
+        """Read the names from the `cite_as` string, the file name and folders.
+
+        Only the file name and its folder give titles: the folders above are
+        categories ("1 Theravada", "Articles") that match unrelated citations.
+        Inside a Calibre book folder a file is named `<title> - <author>` (the
+        title may hold " - " itself); elsewhere " - " is no such sign ("The
+        five Khandhas - Their treatment…"). Outside Calibre the two folders
+        above a file often name its author ("P. Masefield, Tr", "Analayo,
+        Ven") but as often a category, so they only `hints`: they can back a
+        short title, never rule a match out. Calibre cuts a long title
+        mid-word in its folder and file names ("…Lord of Deat (3197)"), so the
+        last word of each may be a prefix.
+        """
+        titles: list[str] = []
+        authors: set[str] = set()
+        cut: set[str] = set()
+        file_code = ""
+        cite_as = hit.get("cite_as")
+        if isinstance(cite_as, str) and cite_as.strip():
+            title, _, author = cite_as.partition(" — ")
+            titles.append(title)
+            authors |= _author_words(author)
+        rel = hit.get("relative_path")
+        rel = rel if isinstance(rel, str) else ""
+        parts = rel.split("/")
+        folder = parts[-2] if len(parts) >= 2 else ""
+        calibre = _CALIBRE_FOLDER_RE.match(folder)
+        name = hit.get("title")
+        name = name if isinstance(name, str) and name else parts[-1]
+        if name:
+            stem = name.rsplit(".", 1)[0] if "." in name else name
+            head, _, author = stem.rpartition(" - ")
+            # The title part of a Calibre name: "Comparative-Dhammapada -
+            # Unknown" is coded by "Comparative-Dhammapada".
+            code_words = _folded_words(head if calibre and head else stem)
+            if len(code_words) <= 2 and len("".join(code_words)) >= 5:
+                file_code = "".join(code_words)
+            if calibre and head:
+                titles.append(head)
+                authors |= _author_words(author)
+            else:
+                titles.append(stem)
+            cut.update(_folded_words(head or stem)[-1:])
+        if folder:
+            titles.append(calibre.group(1) if calibre else folder)
+            if calibre:
+                cut.update(_folded_words(calibre.group(1))[-1:])
+        self.titles = titles
+        self.tries = [_title_tries(t) for t in titles]
+        self.authors = authors
+        self.hints = (
+            set() if calibre else _author_words(" ".join(parts[-3:-1]))
+        ) - authors
+        self.cut = {w for w in cut if len(w) >= 3}
+        self.words = authors.union(*(_word_set(t) for t in titles))
+        # A file named by a code ("pettit991", "baum2", "dreyfus"): notes name
+        # such files by that code, as no title exists to name them by.
+        self.file_code = file_code
+        self.seqs = [_title_sequence(t) for t in titles]
+
+
+def _word_found(
+    word: str, have: set[str], cut: set[str], word_cut: bool, typo: bool = False
+) -> bool:
+    """Is `word` among `have`, allowing a plural, a cut word and maybe a typo?
+
+    `cut` holds words of `have` that may be cut short; `word_cut` says `word`
+    itself may be. `typo` lets a long word differ by a slip ("Uconscious",
+    "VIijnaptimatratasiddhi" in Calibre's own titles); 0.93 keeps
+    "Dhammapada"/"Dhammapāla" and "Abhidhamma"/"Abhidharma" (0.9) apart.
+    """
+    if word in have or word + "s" in have or word + "es" in have:
+        return True
+    if word.endswith("s") and (word[:-1] in have or word[:-2] in have):
+        return True
+    if any(word.startswith(c) for c in cut):
+        return True
+    if word_cut and any(h.startswith(word) for h in have):
+        return True
+    if not typo or len(word) < 8:
+        return False
+    from difflib import SequenceMatcher
+
+    return any(
+        h[0] == word[0]
+        and abs(len(h) - len(word)) <= 2
+        and SequenceMatcher(None, word, h).ratio() >= 0.93
+        for h in have
+    )
+
+
+def _share_found(
+    wanted: set[str],
+    have: set[str],
+    cut: set[str],
+    wanted_cut: set[str],
+    typo: bool = False,
+) -> bool:
+    found = sum(1 for w in wanted if _word_found(w, have, cut, w in wanted_cut, typo))
+    return found >= _TITLE_MATCH_SHARE * len(wanted)
+
+
+def _names_hit(
+    words: set[str],
+    names: _HitNames,
+    author_words: set[str],
+    cited_title: str | None = None,
+) -> bool:
+    """Do these words (a note line's, or a citation's) hold one of the hit's titles?
+
+    A title of one or two words ("Merit", "Buddhist Romanticism") names many
+    books, so it counts only when the author is named too, or when the hit
+    has no known author and its two title words are the citation's title. A
+    hit's shortened title must be found within a citation's main title, not
+    anywhere in it: "Pāli: A Grammar of the Language of the Theravāda
+    Tipiṭaka" holds Oberlies's other book "Pali Grammar" in its subtitle.
+    A typo in a title word is forgiven only when the author is named.
+    `author_words` are the words the hit's author is looked for in. A folder
+    word that is also the title being tried ("Library", "Articles") is no
+    evidence of an author: it let any line holding that word name the hit.
+    """
+    known = _authors_agree(names.authors, author_words)
+    cited_words = _title_words(cited_title) if cited_title is not None else None
+    cited_main = (
+        set(_folded_words(_main_title(cited_title)))
+        if cited_title is not None
+        else words
+    )
+    for tries in names.tries:
+        for n, wanted in enumerate(tries):
+            author_named = known or _authors_agree(names.hints - wanted, author_words)
+            if len(wanted) < 3 and not (
+                author_named
+                or (not names.authors and len(wanted) == 2 and wanted == cited_words)
+            ):
+                continue
+            if _share_found(
+                wanted,
+                cited_main if n else words,
+                set(),
+                wanted & names.cut,
+                author_named,
+            ):
+                return True
+    return False
+
+
+def _line_sequence(line: str) -> str:
+    return " " + " ".join(_title_sequence(line)) + " "
+
+
+def _line_names_hit(
+    line_words: set[str], names: _HitNames, line_seq: str = "", codes: bool = True
+) -> bool:
+    """Does a note line (a Not Used row, a sentence) name this library hit?
+
+    `line_words` is `_word_set(line)` and `line_seq` is `_line_sequence(line)`,
+    built once per line by the caller. A line also names a hit when it holds
+    the start of the hit's title, word for word: four title words, or three
+    beside the author ("Malalgoda, *Buddhism in Sinhalese Society*" for the
+    file "Buddhism in Sinhalese Society 1"; "Mihita, 'Buddha as Progenitor of
+    Pali'" for a cut Calibre name). `codes=False` drops the file-code match:
+    a code can be an ordinary word ("Visuddhimagga - Buddhaghosa.pdf" codes
+    "visuddhimagga"), which is harmless for coverage but let any gate line
+    mentioning the text refuse a run.
+    """
+    if codes and names.file_code and names.file_code in line_words:
+        return True
+    if line_seq:
+        named = None
+        for seq in names.seqs:
+            if len(seq) >= 4 and f" {' '.join(seq[:4])} " in line_seq:
+                return True
+            if len(seq) < 3 or f" {' '.join(seq[:3])} " not in line_seq:
+                continue
+            if named is None:
+                named = _authors_agree(names.authors | names.hints, line_words)
+            if named:
+                return True
+    return _names_hit(line_words, names, line_words)
+
+
+def _volume_numbers(title: str, trailing: bool = True) -> set[str]:
+    """Numbers a title gives after "Vol.", "Part" or "Chapter".
+
+    With `trailing`, a number ending the title counts too: Calibre names
+    Anālayo's second volume "A Comparative Study Of The Majjhima Nikaya 2".
+    """
+    words = _folded_words(_unbracketed(title))
+    numbers = {
+        b for a, b in zip(words, words[1:]) if a in _NUMBERED_PARTS and b.isdigit()
+    }
+    if trailing and len(words) > 1 and words[-1].isdigit() and len(words[-1]) <= 2:
+        numbers.add(words[-1])
+    return numbers
+
+
+def _volumes_conflict(cited: set[str], names: _HitNames) -> bool:
+    """Does the hit give a volume, part or chapter other than the cited one?"""
+    if not cited:
+        return False
+    found = set().union(*(_volume_numbers(t) for t in names.titles))
+    return bool(found) and not cited & found
+
+
+def library_title_matches(citation: str, hit: dict | _HitNames) -> bool:
+    """Does a note's citation (`<Title> — <Author>`) name this library hit?
+
+    Notes name a book by title and author because the index id is a row
+    number that changes on every rebuild, move or rename. Copies of one book
+    (PDF and EPUB, two folders) all match. The hit's names come from its
+    `cite_as`, file name and folder, so a hit logged before `cite_as` existed
+    still matches on its file name and Calibre folder.
+
+    The match runs both ways. The citation's title must be found among the
+    hit's words, and one of the hit's titles among the citation's words: one
+    way alone joined "The Gospel of Judas" to "Reading Judas: The Gospel of
+    Judas and the Shaping of Christianity". When both name an author, they
+    must share one, or every translation of the Yoga Sutras matches.
+    """
+    names = hit if isinstance(hit, _HitNames) else _HitNames(hit)
+    title, sure_authors, cited_authors = _split_citation(citation)
+    if names.authors and sure_authors:
+        if not _authors_agree(names.authors, sure_authors):
+            return False
+    if _volumes_conflict(_volume_numbers(title, trailing=False), names):
+        return False
+    # The exact label the library tool emits for an authorless file
+    # ("Dhammapada") names that file, however short.
+    if (
+        not names.authors
+        and names.titles
+        and _folded_words(title) == _folded_words(names.titles[0])
+    ):
+        return True
+    # The cited author's name inside the hit's own name counts too
+    # ("Aorist in Pali_Ruiz-Falques_SSBU OPEN DAY_" for "— A. Ruiz-Falqués").
+    author_named = bool(cited_authors) and _authors_agree(
+        names.authors | names.hints | names.words, cited_authors
+    )
+    if _title_prefix_match(title, names, author_named, cited_authors):
+        return True
+    if not any(
+        _share_found(w, names.words, names.cut, set(), author_named)
+        for w in _title_tries(title)
+    ):
+        return False
+    if not _names_hit(_word_set(citation), names, cited_authors, title):
+        return False
+    # The words alone ignore which title is the main one: Keyes's "Flourishing:
+    # Positive Psychology and the Life…" holds every word of Compton's
+    # "Positive Psychology: … Happiness and Flourishing". Main titles that
+    # share no word, author names aside, are two books. A main title of
+    # author names only ("Marcus Aurelius - Meditations", "Bhikkhu Anālayo:
+    # Overeating…") says nothing either way.
+    author_like = names.authors | cited_authors | _AUTHOR_STOPWORDS
+    cited_main = _title_words(_main_title(title)) - author_like
+    if not cited_main:
+        return True
+    for hit_title in names.titles:
+        main = _title_words(_main_title(hit_title)) - author_like
+        if not main or any(
+            a == b
+            or (min(len(a), len(b)) >= 4 and (a.startswith(b) or b.startswith(a)))
+            for a in main
+            for b in cited_main
+        ):
+            return True
+    return False
+
+
+_FILE_EXTENSION_RE = _re.compile(
+    r"\.(?:pdf|epub|mobi|azw3|docx?|txt|html?|rtf|odt|djvu)\s*$", _re.I
+)
+
+
+def _starts_with(longer: list[str], prefix: list[str], last_cut: bool) -> bool:
+    if not prefix or len(prefix) > len(longer):
+        return False
+    if longer[: len(prefix) - 1] != prefix[:-1]:
+        return False
+    end, last = longer[len(prefix) - 1], prefix[-1]
+    return end == last or (last_cut and end.startswith(last))
+
+
+def _title_prefix_match(
+    title: str, names: _HitNames, author_named: bool, cited_authors: set[str]
+) -> bool:
+    """Does one title begin with the other, word for word?
+
+    Calibre ends a main title with a full stop or a comma as often as a colon
+    ("Wings to Awakening. An Anthology from the"), and cuts a long one short
+    ("Buddhist Forest Monasteries and Med"); in both, one title starts the
+    other. One word never counts ("Satipatthana" starts dozens of titles). A
+    shared start of two words ("Buddhist Ethics") also starts unrelated books,
+    so it counts only when the authors agree, or when the two words are the
+    whole of both titles and the hit has no known author ("Collett 2009").
+    A file name may lead with the cited author ("Neelis-ed-Early-Buddhist-
+    Transmission…"); those leading words are skipped.
+    """
+    cited = _title_sequence(_unbracketed(title))
+    for hit_title in names.titles:
+        seq = _title_sequence(hit_title)
+        named = author_named
+        while seq and seq[0] in cited_authors and seq[0] not in cited[:1]:
+            # The file name itself names the cited author ("Robert Sharf,
+            # Buddhist Modernism.pdf").
+            seq, named = seq[1:], True
+        last_cut = bool(seq) and seq[-1] in names.cut
+        # A cut that leaves a fragment too short to be a title word ("…in
+        # Cu") still ends the title there; dropping it let "The Role of the
+        # Brahmavihara in Cu" start any Brahmavihara title by the author.
+        tail = _folded_words(hit_title)[-1:]
+        if tail and tail[0] not in seq[-1:] and tail[0] not in _TITLE_STOPWORDS:
+            if not tail[0].isdigit() and len(tail[0]) < 3:
+                seq, last_cut = [*seq, tail[0]], True
+        shorter = min(len(cited), len(seq))
+        whole_pair = not names.authors and len(cited) == len(seq) == 2
+        if shorter < 2 or (shorter < 3 and not (named or whole_pair)):
+            continue
+        if _starts_with(seq, cited, False):
+            return True
+        # A shorter hit title that is whole and has no author behind it is a
+        # folder of parts ("Wisdom Of The Lotus Sutra"), not the cited part.
+        if (last_cut or named) and _starts_with(cited, seq, last_cut):
+            return True
+    return False
+
+
 def _library_hit_stats(text: str) -> dict[int, tuple[int, int]]:
     """{document_id: (distinct queries that returned it, best 1-based rank)}.
 
@@ -949,14 +1455,18 @@ def _library_hit_stats(text: str) -> dict[int, tuple[int, int]]:
 _READ_LIBRARY_BLOCK_RE = _re.compile(
     r"^### \S+ · read-library\n(.*?)(?=^### |\Z)", _re.M | _re.S
 )
-_NOTE_DOC_ID_RE = _re.compile(
-    r"(?:calibre[\s#-]*|(?<![\w&])#|\bdoc(?:ument)?\s*#?\s*)(\d+)(?!\d)", _re.I
+_LIBRARY_REF_RE = _re.compile(r"""^\s*-\s*["']?(?:\d+\s*:\s*)?(.*?)["']?\s*$""")
+_LIB_FOOTNOTE_DEF_RE = _re.compile(
+    r"^\[\^((?:lib|calibre)-[^\]]*)\]:[ \t]*(.+)$", _re.M
 )
-_LIBRARY_REF_ID_RE = _re.compile(r'^\s*-\s*"?(\d+)\s*:')
+_LIB_FOOTNOTE_MARK_RE = _re.compile(r"\[\^((?:lib|calibre)-[^\]]*)\]")
 _UNREAD_FLAG_RE = _re.compile(
     r"snippet[- ]only|snippets? only|\bunread\b|\bnot (?:yet )?read\b|"
     r"could not (?:be )?(?:read|opened)",
     _re.I,
+)
+_SNIPPET_FLAG_RE = _re.compile(
+    r"snippet[- ]only|snippets? only|could not (?:be )?(?:read|opened)", _re.I
 )
 # In the Not Used table any snippet mention marks a snippet-based rejection
 # ("seen only as passing mentions in snippets", "Snippet showed ..."); in the
@@ -966,21 +1476,263 @@ _REJECT_FLAG_RE = _re.compile(_UNREAD_FLAG_RE.pattern + r"|\bsnippets?\b", _re.I
 _MOUNT_FLAG_RE = _re.compile(r"\bunmounted\b|\bnot mounted\b", _re.I)
 
 
-def _note_library_ref_ids(note_text: str) -> set[int]:
-    """Ids listed under `library_refs:` in the note's frontmatter."""
-    ids: set[int] = set()
+def _logged_library_docs(text: str) -> dict[int, dict]:
+    """{document_id: hit} over every logged library result, fields merged.
+
+    A `read-library` result logs the same `document_id` without the title
+    and path a search hit holds; letting it replace the hit left the title
+    matcher nothing to match.
+    """
+    docs: dict[int, dict] = {}
+    for hit in _logged_library_hits(text):
+        merged = {**hit, **docs.get(hit["document_id"], {})}
+        # The latest extraction status wins: a `--retry-failed` refresh can
+        # make a document readable later in the same run.
+        if hit.get("extraction_status"):
+            merged["extraction_status"] = hit["extraction_status"]
+        docs[hit["document_id"]] = merged
+    return docs
+
+
+def _clean_citation(text: str) -> str:
+    """A citation without wikilink brackets or emphasis marks."""
+    text = _re.sub(r"\[\[([^\]|]*)(?:\|[^\]]*)?\]\]", r"\1", text)
+    return text.replace("*", "").strip()
+
+
+def _note_library_refs(note_text: str) -> list[str]:
+    """Entries listed under `library_refs:` in the note's frontmatter.
+
+    An old entry's `<n>:` prefix is dropped: the number is an index row id,
+    not the book.
+    """
+    refs: list[str] = []
+    lines = note_text.splitlines()
+    # Only the opening frontmatter: a body example of a `library_refs:` list
+    # is not the note's citations.
+    if not lines or lines[0].rstrip() != "---":
+        return refs
     in_refs = False
-    for line in note_text.splitlines():
+    for line in lines[1:]:
+        if line.rstrip() == "---":
+            break
         if line.startswith("library_refs:"):
             in_refs = True
             continue
         if in_refs:
-            if line.rstrip() == "---" or not line.startswith((" ", "-")):
+            if not line.strip():
+                continue
+            if not line.startswith((" ", "-")):
                 break
-            match = _LIBRARY_REF_ID_RE.match(line)
-            if match:
-                ids.add(int(match.group(1)))
-    return ids
+            match = _LIBRARY_REF_RE.match(line)
+            if match and match.group(1).strip():
+                refs.append(_clean_citation(match.group(1)))
+    return refs
+
+
+_FENCE_RE = _re.compile(r"^(```|~~~).*?^\1[^\n]*$", _re.M | _re.S)
+
+
+def _note_footnotes(note_text: str) -> dict[str, str]:
+    """{footnote label: citation} for the note's library footnotes.
+
+    Fenced code is skipped: a format example is not a citation.
+    """
+    return {
+        m.group(1): _clean_citation(m.group(2))
+        for m in _LIB_FOOTNOTE_DEF_RE.finditer(_FENCE_RE.sub("", note_text))
+    }
+
+
+def _note_citations(note_text: str) -> list[str]:
+    """The note's library citations: `library_refs` and library footnotes."""
+    cites = _note_library_refs(note_text) + list(_note_footnotes(note_text).values())
+    return list(dict.fromkeys(c for c in cites if c))
+
+
+def _not_used_rows(note_text: str) -> list[tuple[str, str]]:
+    """(row, first cell) for each data row of the Not Used tables."""
+    rows: list[tuple[str, str]] = []
+    for section in _NOT_USED_SECTION_RE.finditer(note_text):
+        for line in section.group(0).splitlines():
+            cells = line.strip().split("|")
+            if len(cells) < 3 or not line.lstrip().startswith("|"):
+                continue
+            first = cells[1].strip()
+            if not first or set(first) <= set("-: ") or first.lower() == "source":
+                continue
+            rows.append((line, _clean_citation(first)))
+    return rows
+
+
+# Characters of a book's indexed text searched for its cited title: a title
+# page, a header and a contents list fit (the five probe hits sat at 0-1,074).
+_OPENING_CHARS = 3000
+# Words of that text that count as the title page (see _title_in_opening).
+_TITLE_PAGE_WORDS = 60
+
+
+class _IndexText:
+    """Read-only look-ups of logged hits' text in the library index.
+
+    A hit is found by its `source_path`: its `document_id` moves on a rebuild.
+    The index is opened only when a citation needs it, and a missing or
+    unreadable index makes every look-up come back empty.
+    """
+
+    def __init__(self, index: Path | None) -> None:
+        self._index = index
+        self._conn = None
+        self._failed = False
+        self._openings: dict[str, str] = {}
+
+    def _connection(self):
+        import sqlite3
+
+        if self._conn is not None or self._failed:
+            return self._conn
+        index = self._index
+        if index is None:
+            from tools.library_folders import default_config
+
+            index = default_config().index
+        if index is None or not index.exists():
+            self._failed = True
+            return None
+        try:
+            self._conn = sqlite3.connect(f"file:{index}?mode=ro", uri=True)
+        except sqlite3.Error:
+            self._failed = True
+        return self._conn
+
+    def opening(self, hit: dict) -> str:
+        """The hit's first words as ` w1 w2 … `, or "" when unknown."""
+        import sqlite3
+
+        path = hit.get("source_path")
+        if not isinstance(path, str):
+            return ""
+        if path not in self._openings:
+            conn = self._connection()
+            text = ""
+            if conn is not None:
+                try:
+                    row = conn.execute(
+                        "SELECT substr(f.text, 1, ?) FROM documents d "
+                        "JOIN document_fts f ON f.rowid = d.id "
+                        "WHERE d.source_path = ?",
+                        (_OPENING_CHARS, path),
+                    ).fetchone()
+                except sqlite3.Error:
+                    row = None
+                text = row[0] if row and row[0] else ""
+            self._openings[path] = " " + " ".join(_folded_words(text)) + " "
+        return self._openings[path]
+
+    def close(self) -> None:
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
+
+
+def _title_in_opening(citation: str, names: _HitNames, opening: str) -> bool:
+    """Is the cited title printed on the hit's title page?
+
+    For a file whose name holds no title ("prebish-article.pdf",
+    "2008_LutzA_PlosOne{CompassionMeditation}.pdf"). Measured on 38 real
+    look-ups: right ones sat within the first 60 words, while wrong ones were
+    other books naming the title later, in an "Also by" list or a reference
+    (word 91-418). So the title must have three or more title words, start
+    within the first 60 words, and, when the citation names an author, that
+    name must be on the same page; one-word titles ("Satipatthana") and
+    generic phrases otherwise matched the author's other books.
+    """
+    words = opening.split()
+    if not words:
+        return False
+    title, sure_authors, cited_authors = _split_citation(citation)
+    if names.authors and sure_authors:
+        if not _authors_agree(names.authors, sure_authors):
+            return False
+    page = set(words[: _TITLE_PAGE_WORDS * 2])
+    if cited_authors and not _authors_agree(cited_authors, page):
+        return False
+    head = " " + " ".join(words[: _TITLE_PAGE_WORDS + 40]) + " "
+    for form in (_unbracketed(title), _main_title(title)):
+        phrase = _folded_words(form)
+        if len(_title_words(form)) < 3:
+            continue
+        found = head.find(f" {' '.join(phrase)} ")
+        if found != -1 and head[:found].count(" ") <= _TITLE_PAGE_WORDS:
+            return True
+    return False
+
+
+def _hits_cited(
+    citation: str,
+    names: dict[int, _HitNames],
+    docs: dict[int, dict],
+    index_text: _IndexText | None,
+) -> set[int]:
+    """Logged hits a citation names: by name, else by the title in their text."""
+    ids = {d for d, n in names.items() if library_title_matches(citation, n)}
+    if ids or index_text is None:
+        return ids
+    cited_volumes = _volume_numbers(_split_citation(citation)[0], trailing=False)
+    return {
+        d
+        for d, n in names.items()
+        if not _volumes_conflict(cited_volumes, n)
+        and _title_in_opening(citation, n, index_text.opening(docs[d]))
+    }
+
+
+def _hits_named_in_line(line: str, names: dict[int, _HitNames]) -> set[int]:
+    """Hits a gate line names by title; file codes do not count here."""
+    words = _word_set(line)
+    seq = _line_sequence(line)
+    return {
+        d
+        for d, n in names.items()
+        if not n.words.isdisjoint(words) and _line_names_hit(words, n, seq, codes=False)
+    }
+
+
+def _read_under_own_author(
+    citation: str, names: dict[int, _HitNames], read: set[int]
+) -> bool:
+    """Was a read hit this citation's book, credited to another author?
+
+    Notes credit a translator ("— Bhikkhu Ñāṇamoli") where Calibre credits
+    the author ("— Buddhaghosa"); the author check then rules out the copy
+    that was read while an authorless copy still matches, and the gate asked
+    for a book already read. Copies of one book count as that book.
+    """
+    title, dash, _ = citation.rpartition(" — ")
+    if not dash or not title.strip():
+        return False
+    # Only when every copy the citation matches has no known author: a
+    # citation that matched an edition by name (Bryant's Yoga Sutras) is not
+    # read by reading another translator's edition (Beloved's).
+    matched = [n for n in names.values() if library_title_matches(citation, n)]
+    if not matched or any(n.authors for n in matched):
+        return False
+    for d in read:
+        hit = names.get(d)
+        if hit is None:
+            continue
+        own = " ".join(sorted(hit.authors))
+        if library_title_matches(f"{title} — {own}" if own else title, hit):
+            return True
+    return False
+
+
+def _book_label(hit: dict) -> str:
+    cite_as = hit.get("cite_as")
+    if isinstance(cite_as, str) and cite_as.strip():
+        return cite_as
+    title = str(hit.get("title") or hit.get("relative_path") or "")
+    return title.rsplit("/", 1)[-1].rsplit(".", 1)[0] if "." in title else title
 
 
 # Any heading level, trailing whitespace and CRLF: a missed match would count
@@ -994,40 +1746,48 @@ _NOT_USED_SECTION_RE = _re.compile(
 )
 
 
-def unread_library_citations(note_text: str, dossier_text: str) -> dict:
-    """Library documents the note cites, or calls unreadable, without reading them.
+def unread_library_citations(
+    note_text: str, dossier_text: str, index: Path | None = None
+) -> dict:
+    """Library books the note cites, or calls unreadable, without reading them.
 
-    Only documents the dossier shows with successfully extracted text count:
-    their full text is in the index whether or not the source volume is
-    mounted, so `read-library` can always read them. A document whose
-    extraction failed is exempt (its gap is real), and a run with no library
-    hits logged checks nothing.
+    A note names a book by title and author; the match to the run's logged
+    hits is by title (`library_title_matches`), and copies of one book count
+    as that book, so reading any copy reads it. Only books the dossier shows
+    with successfully extracted text count: their full text is in the index
+    whether or not the source volume is mounted, so `read-library` can always
+    read them. A book whose extraction failed is exempt (its gap is real), and
+    a run with no library hits logged checks nothing.
 
     The "Sources Investigated, Not Used" table is skipped for citations and
-    snippet-only flags: it tags every rejected hit with its id
-    (scratch-check-coverage asks for that), and rejecting a tangential hit on
-    its snippet is triage, not a citation. Over 8 real runs that table held
-    9-55 ids each, against 2-4 `library_refs`. A line there that blames an
-    unmounted volume is still flagged — that is the false claim this catches.
-    A row there that rejects a readable document as not read or on its
-    snippet (any mention of "snippet") is reported under `rejected_unread`
-    until one successful `read-library` call has looked at it: a rejection
-    needs one look, not a full reading (0-5 such rows in most of 57 real runs,
-    up to 26 in one).
+    snippet-only flags: it names every rejected hit (scratch-check-coverage
+    asks for that), and rejecting a tangential hit on its snippet is triage,
+    not a citation. Over 8 real runs that table held 9-55 books each, against
+    2-4 `library_refs`. A line there that blames an unmounted volume is still
+    flagged — that is the false claim this catches. A row there that rejects a
+    readable book as not read or on its snippet (any mention of "snippet") is
+    reported under `rejected_unread` until one successful `read-library` call
+    has looked at it: a rejection needs one look, not a full reading (0-5
+    such rows in most of 57 real runs, up to 26 in one).
+
+    Each list holds `{"book": <title>, "read_library": [<document_id>, …]}`:
+    the title to fix in the note, and the ids this run can pass to
+    `read-library`. The ids are handles inside this run only; a note never
+    carries them.
     """
-    not_used = "\n".join(m.group(0) for m in _NOT_USED_SECTION_RE.finditer(note_text))
-    mount_flagged = {
-        int(n)
-        for line in note_text.splitlines()
-        if _MOUNT_FLAG_RE.search(line)
-        for n in _NOTE_DOC_ID_RE.findall(line)
-    }
-    note_text = _NOT_USED_SECTION_RE.sub("", note_text)
     from tools.library_folders import extraction_succeeded
 
+    empty: dict = {
+        "cited_not_read": [],
+        "flagged_unread_but_readable": [],
+        "rejected_unread": [],
+    }
+    docs = _logged_library_docs(dossier_text)
+    if not docs:
+        return empty
     readable = {
-        hit["document_id"]
-        for hit in _logged_library_hits(dossier_text)
+        d
+        for d, hit in docs.items()
         if extraction_succeeded(str(hit.get("extraction_status") or ""))
     }
     read: set[int] = set()
@@ -1035,30 +1795,86 @@ def unread_library_citations(note_text: str, dossier_text: str) -> dict:
         for hit in _logged_library_hits(block.group(1)):
             if hit.get("ok") is True:
                 read.add(hit["document_id"])
-    cited = _note_library_ref_ids(note_text) | {
-        int(n) for n in _NOTE_DOC_ID_RE.findall(note_text)
-    }
-    flagged = mount_flagged | {
-        int(n)
-        for line in note_text.splitlines()
-        if _UNREAD_FLAG_RE.search(line)
-        for n in _NOTE_DOC_ID_RE.findall(line)
-    }
-    rejected = {
-        int(n)
-        for line in not_used.splitlines()
-        if _REJECT_FLAG_RE.search(line)
-        for n in _NOTE_DOC_ID_RE.findall(line)
-    }
+    names = {d: _HitNames(hit) for d, hit in docs.items()}
+    index_text = _IndexText(index)
+    footnotes = _note_footnotes(note_text)
+
+    def named_in(line: str) -> set[int]:
+        ids = _hits_named_in_line(line, names)
+        for label in _LIB_FOOTNOTE_MARK_RE.findall(line):
+            if label in footnotes and not line.lstrip().startswith(f"[^{label}]:"):
+                ids |= _hits_cited(footnotes[label], names, docs, index_text)
+        return ids
+
+    def entry(book: str, ids: set[int]) -> dict:
+        return {"book": book, "read_library": sorted(ids & readable)}
+
+    try:
+        body = _NOT_USED_SECTION_RE.sub("", note_text)
+        cited_not_read = []
+        for citation in _note_citations(body):
+            ids = _hits_cited(citation, names, docs, index_text)
+            if (
+                ids & readable
+                and not ids & read
+                and not _read_under_own_author(citation, names, read)
+            ):
+                cited_not_read.append(entry(citation, ids))
+
+        flagged: dict[str, set[int]] = {}
+        for line in note_text.splitlines():
+            if _MOUNT_FLAG_RE.search(line):
+                for d in named_in(line) & readable:
+                    flagged.setdefault(_book_label(docs[d]), set()).add(d)
+        # "Snippet-only" is a claim about the run; "not read" and "unread" are
+        # also ordinary English ("Gombrich does not read anattā as …"), so they
+        # flag only a book this run did not read.
+        for line in body.splitlines():
+            if not _UNREAD_FLAG_RE.search(line) or _MOUNT_FLAG_RE.search(line):
+                continue
+            strong = _SNIPPET_FLAG_RE.search(line)
+            for d in named_in(line) & readable:
+                if strong or d not in read:
+                    flagged.setdefault(_book_label(docs[d]), set()).add(d)
+
+        rejected_unread = []
+        for row, first_cell in _not_used_rows(note_text):
+            if not _REJECT_FLAG_RE.search(row):
+                continue
+            # The first cell is what the row rejects; a book named only in the
+            # reason ("repeats Bodhi's …[^lib-3]") is a comparison, not the
+            # rejection. One row may reject several books ("A — X; B — Y"):
+            # each part is checked with its own footnote markers only.
+            cell = next((c for c in row.split("|")[1:] if c.strip()), first_cell)
+            for part in [p.strip() for p in cell.split(";") if p.strip()]:
+                ids = named_in(part) | _hits_cited(
+                    _clean_citation(_LIB_FOOTNOTE_MARK_RE.sub("", part)),
+                    names,
+                    docs,
+                    index_text,
+                )
+                label = _clean_citation(_LIB_FOOTNOTE_MARK_RE.sub("", part))
+                if (
+                    ids & readable
+                    and not ids & read
+                    and not _read_under_own_author(label, names, read)
+                ):
+                    rejected_unread.append(entry(label, ids))
+    finally:
+        index_text.close()
     return {
-        "cited_not_read": sorted((cited & readable) - read),
-        "flagged_unread_but_readable": sorted(flagged & readable),
-        "rejected_unread": sorted((rejected & readable) - read),
+        "cited_not_read": cited_not_read,
+        "flagged_unread_but_readable": [
+            entry(book, ids) for book, ids in sorted(flagged.items())
+        ],
+        "rejected_unread": rejected_unread,
     }
 
 
 def scratch_check_coverage(
-    scratch: Path | None = None, note: Path | None = None
+    scratch: Path | None = None,
+    note: Path | None = None,
+    index: Path | None = None,
 ) -> dict:
     """Flag library-folder hits gathered but mentioned nowhere in the final note.
 
@@ -1068,16 +1884,14 @@ def scratch_check_coverage(
     (62-87% citation rate against the note's own funnel, with reasons logged
     for the rest). The one confirmed gap was a library document with an
     on-topic snippet that never appeared in the note's citations or its
-    Sources Investigated, Not Used table. This checks for that specific
-    pattern by matching the hit's `document_id` anywhere in the note text,
-    written as `calibre-<id>`, `Calibre #<id>`, or a bare `#<id>` — tag a
-    rejection with the id to clear this check.
+    Sources Investigated, Not Used table. This checks for that pattern by
+    title: a hit is accounted for when a `library_refs` entry, a library
+    footnote or a Not Used row names it (`library_title_matches`), or a note
+    line holds its title. Name each rejected book in its Not Used row to
+    clear it. Index numbers prove nothing here: they change on every rebuild.
 
-    A Calibre path also carries Calibre's own book number as a `(N)` folder
-    suffix, and the index prints that number as "Calibre #N" inside its
-    searchable text, so notes kept citing it in place of the `document_id`.
-    That cites a different document, so it is reported apart from plain
-    omissions with the token to paste instead.
+    `cited_not_gathered` lists citations that name no hit logged this run:
+    a book cited from memory or carried from an older note. Advisory.
 
     Broad sweeps leave dozens of tangential hits unaccounted (median 42 per
     dossier over 73 real runs), which buried the one real miss (issue #89).
@@ -1110,52 +1924,50 @@ def scratch_check_coverage(
         return {"ok": False, "error": f"note not found: {note_path}"}
     note_text = note_path.read_text(encoding="utf-8")
 
-    docs: dict[int, dict] = {
-        hit["document_id"]: hit for hit in _logged_library_hits(text)
-    }
-
-    def cites(number: int) -> bool:
-        # `&` excludes HTML entities such as `&#8212;`.
-        pattern = rf"(?:calibre[\s#-]*|(?<![\w&])#){number}(?!\d)"
-        return _re.search(pattern, note_text, _re.I) is not None
-
-    unaccounted = []
-    folder_number_cited = []
-    folder_numbers_reported: set[int] = set()
-    for doc_id, hit in sorted(docs.items()):
-        relative_path = hit.get("relative_path") or ""
-        folder = _re.findall(r"\((\d+)\)[/\\]", relative_path)
-        folder_number = int(folder[-1]) if folder else None
-        # Checked before the correct id, so a right citation elsewhere in the
-        # note does not hide a wrong one. A folder number that is also a
-        # gathered document_id could be a correct citation of that other
-        # document, so it proves nothing here.
-        if (
-            folder_number is not None
-            and folder_number not in docs
-            and cites(folder_number)
+    docs = _logged_library_docs(text)
+    names = {d: _HitNames(hit) for d, hit in docs.items()}
+    index_text = _IndexText(index)
+    accounted: set[int] = set()
+    cited_not_gathered = []
+    try:
+        for citation in _note_citations(note_text):
+            ids = _hits_cited(citation, names, docs, index_text)
+            if ids:
+                accounted |= ids
+            else:
+                cited_not_gathered.append(citation)
+        for _row, first_cell in _not_used_rows(note_text):
+            accounted |= _hits_cited(first_cell, names, docs, index_text)
+    finally:
+        index_text.close()
+    # Citation lines were matched above, with the author and volume checks;
+    # the looser prose pass would credit a sibling volume through them.
+    lines = [
+        (_word_set(line), _line_sequence(line))
+        for line in note_text.splitlines()
+        if line.strip() and not _LIB_FOOTNOTE_DEF_RE.match(line)
+    ]
+    for doc_id, hit_names in names.items():
+        if doc_id in accounted:
+            continue
+        if any(
+            (not hit_names.words.isdisjoint(words) or hit_names.file_code in words)
+            and _line_names_hit(words, hit_names, seq)
+            for words, seq in lines
         ):
-            folder_numbers_reported.add(folder_number)
-            folder_number_cited.append(
-                {
-                    "document_id": doc_id,
-                    "folder_number": folder_number,
-                    "title": hit.get("title"),
-                    "cite_as": f"Calibre #{doc_id}",
-                }
-            )
-            continue
-        if cites(doc_id):
-            continue
-        unaccounted.append(
-            {
-                "document_id": doc_id,
-                "title": hit.get("title"),
-                "relative_path": relative_path,
-                "snippet": (hit.get("snippet") or "")[:200],
-            }
-        )
+            accounted.add(doc_id)
 
+    unaccounted = [
+        {
+            "document_id": doc_id,
+            "title": hit.get("title"),
+            "cite_as": _book_label(hit),
+            "relative_path": hit.get("relative_path") or "",
+            "snippet": (hit.get("snippet") or "")[:200],
+        }
+        for doc_id, hit in sorted(docs.items())
+        if doc_id not in accounted
+    ]
     stats = _library_hit_stats(text)
     unaccounted.sort(
         key=lambda d: (
@@ -1164,30 +1976,23 @@ def scratch_check_coverage(
             d["document_id"],
         )
     )
-    for index, entry in enumerate(unaccounted):
+    for position, entry in enumerate(unaccounted):
         queries, best_rank = stats.get(entry["document_id"], (0, 0))
-        if index < _COVERAGE_REVIEW_FIRST:
+        if position < _COVERAGE_REVIEW_FIRST:
             entry["queries"] = queries
             entry["best_rank"] = best_rank or None
         else:
-            unaccounted[index] = {
+            unaccounted[position] = {
                 "document_id": entry["document_id"],
-                "title": entry["title"],
+                "cite_as": entry["cite_as"],
             }
 
-    cited_not_gathered = sorted(
-        {int(n) for n in _re.findall(r"calibre[\s#-]*(\d+)", note_text, _re.I)}
-        - docs.keys()
-        - folder_numbers_reported
-    )
-
     return {
-        "ok": not unaccounted and not folder_number_cited,
+        "ok": not unaccounted,
         "note": str(note_path),
         "library_hits_gathered": len(docs),
         "unaccounted_count": len(unaccounted),
         "unaccounted": unaccounted,
-        "folder_number_cited": folder_number_cited,
         "cited_not_gathered": cited_not_gathered,
     }
 

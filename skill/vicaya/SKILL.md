@@ -101,7 +101,7 @@ It prints all `VICAYA_*` values as shell-quoted `export` lines with `~` expanded
 - Helper module: `<repo>/tools/research_sources.py`
 - Canon db: read-only SQLite at `$VICAYA_CANON_DB`.
 - DPD dictionary db: read-only SQLite at `$VICAYA_DPD_DB` — Pāḷi word meanings, grammar, roots, and inflected-form resolution. See the **DPD dictionary database** section below for the two lookup paths.
-- Library folders: `$VICAYA_LIBRARY_FOLDERS` (pipe-separated paths) are indexed into `$VICAYA_LIBRARY_FOLDERS_INDEX`, a local SQLite FTS5 database. Calibre libraries are recognised automatically — author and tag metadata (`Calibre #id | Authors: … | Tags: …`) is prepended to each book's FTS text, making tag/author searches work through the unified index. Normal search reads the index only; source files are touched only during `library-folders-refresh` or manual inspection.
+- Library folders: `$VICAYA_LIBRARY_FOLDERS` (pipe-separated paths) are indexed into `$VICAYA_LIBRARY_FOLDERS_INDEX`, a local SQLite FTS5 database. Calibre libraries at a library root or one folder below it are recognised automatically: each Calibre book's own title and authors are stored at refresh time and returned as `cite_as`, and author and tag metadata (`Authors: … | Tags: …`) is prepended to a book's FTS text when the book is next extracted (books extracted before 2026-11-19 do not carry it yet). Normal search reads the index only; source files are touched only during `library-folders-refresh` or manual inspection.
 - Cross-check uses `VICAYA_CROSS_CHECK_CHAIN` (env), a pipe-separated `app:model` list tried in order (`opencode run -m <model>`, `agy --print ... --model <model>`, or `pi -p --model <provider/id> ...`). The first successful subprocess response wins; if the chain is empty or every entry fails, the helper returns a `# SELF_REVIEW:` sentinel whose header names **exactly which entry failed and why** (timeout / non-zero exit / could not start / no output) — fix the named cause and retry once before accepting self-review. `cross-check --preflight --timeout 60` probes every entry with a tiny prompt before the long wait. vicaya does not store any provider API keys — the app (`opencode`, `agy`, or `pi`) must already be authenticated; `pi` entries use pi's own key store (`pi auth check --provider zai`), so `pi:zai/glm-5.3` runs on the original Z.ai API, not OpenRouter. **Pin a thinking level on pi entries** (`pi:zai/glm-5.3:off`) — pi's `--model` accepts the `:thinking` suffix natively, and an unpinned entry inherits the machine's `defaultThinkingLevel` (often `max` = a 10+ minute review); `:off` keeps a full review in the ~1–2 min range while still catching tier and citation errors (measured 2026-08-17: glm-5.3:off 87 s, flash:off 32 s, vs 12–17 min at inherited max).
 - **Book code → source XML map**: `/home/bodhirasa/MyFiles/3_Active/dpd-db/tools/pali_text_files.py` maps every canon book code (e.g. `s0201m_mul`) to its source XML file in the DPD database. Consult this when you need to know which raw XML file a given book code corresponds to, or when debugging why a search returns no results for a book you expect to exist.
 - **EBC vault** (Early Buddhist Connections): `$VICAYA_EBC_VAULT_PATH` — a separate, read-only Obsidian vault of curated EBT material. Supplies per-sutta Āgama-parallel metadata, multiple parallel English translations of each sutta, Chinese-Āgama translations (Patton + BDK), and a Pātimokkha rule/commentary set. See the **EBC vault** section below.
@@ -183,7 +183,7 @@ Every helper returns dataclasses serialised to JSON by the CLI. Field names are 
 - **CanonHit**: `book_code` (str, e.g. `s0201m_mul`), `paranum` (str), `pali` (str), `english` (str). **No `snippet` field** — quote from `pali` / `english` directly. XML/TEI markup is stripped automatically; text is plain UTF-8. Hits on continuation rows (which carry no paranum of their own) come back with the nearest preceding paranum — the paragraph they belong to — so `paranum` pipes straight into `resolve-citation`.
 - **Sweep result** (`sweep-canon`): `complete` (true for a default sweep; false when `--books` limited it, though nothing is capped either way), `tables_searched`, `rows_searched`, `strata_searched`, and `terms[]`. Each term has `rows` and `occurrences` (different bases: name the one you use), `by_stratum[]` of `{stratum, tier, rows, occurrences, tables}` in order `mula-ebt` (T1a), `mula-later` (T1b), `exegetical-mula`, `atthakatha`, `tika` (all T2), `post-canonical` (a stratum the sweep did not cover reads `searched: false`, never 0), `tables[]` of `{table, book, stratum, tier, rows, occurrences, paranums}` (up to 3 paranums to read), `forms[]` of `{form, count}` (top 30, then `forms_not_shown`), `excluded[]` of `{prefix, occurrences, distinct_forms, forms}` (one entry per `--exclude` prefix that removed anything), `variant_only_rows` (the term occurs only inside a manuscript variant reading), `vowel_length_variants` `{extra_rows, forms}`, `stem_probes[]` and, for a phrase, `rows_with_every_word_stem` (each `{rows, by_stratum: {<stratum>: {rows, examples}}}`), and `hints[]`. With several terms, `family[]` gives rows matching any of them per stratum. A sweep limited by `--books` adds `not_searched` and a `warning`.
 - **Citation**: `machine` (e.g. `s0201m_mul:23`), `human` (e.g. `MN60 Apaṇṇakasuttaṃ para 97`), `pitaka`, `text_type`, `paranum`, `suttacentral` (the SuttaCentral number of the sutta `human` names, present only when it differs from the DPD code in `human`; `null` otherwise, including for commentary and book-level labels), `paranum_exists` (`true` = the book's table has a row for this paranum; `false` = it has none, so the reference is bogus and the command exits 1; `null` = could not be checked). Never cite a `false`.
-- **Library folders hit**: plain dict with `document_id`, `title`, `relative_path`, `source_path`, `extension`, `snippet`, `extraction_status`, `duplicate_count`, `duplicate_paths`, `possible_duplicate_of`, `text_available` (`true` = the index holds the full extracted text, readable with `read-library`), and `source_available` (`true` = the file is on disk; `false` = its library root is reachable but the file is gone; `null` = its library root could not be reached (volume unmounted, folder moved, mount hung) — this concerns the file only, not the text: `read-library` still reads the full text, and mounting matters only for re-indexing). `document_id` is the number a note cites; the `(N)` at the end of a Calibre folder name in `relative_path` is Calibre's own book number, a different number that names a different document in the index.
+- **Library folders hit**: plain dict with `document_id`, `title`, `relative_path`, `source_path`, `extension`, `snippet`, `extraction_status`, `duplicate_count`, `duplicate_paths`, `possible_duplicate_of`, `text_available` (`true` = the index holds the full extracted text, readable with `read-library`), and `source_available` (`true` = the file is on disk; `false` = its library root is reachable but the file is gone; `null` = its library root could not be reached (volume unmounted, folder moved, mount hung) — this concerns the file only, not the text: `read-library` still reads the full text, and mounting matters only for re-indexing), and `cite_as`. **`cite_as` is what a note cites:** `<Title> — <Authors>` from Calibre's own metadata for a Calibre book (diacritics kept, never cut short), or the file name for any other file. `document_id` is only the handle to pass to `read-library` during this run: it is an index row number that changes on every rebuild, move or rename, so it never goes into a note — and neither does the `(N)` at the end of a Calibre folder name, which is Calibre's own book number (see Rule F4). `read-library` results carry the same `cite_as`.
 - **YouTubeHit**: `video_id` (str), `title` (str), `channel` (str), `channel_id` (str), `duration` (float | null, seconds), `url` (str), `tier` (str — `trusted` | `probationary`; `excluded` never appears here, those are filtered out).
 - **YouTubeTranscript**: `video_id` (str), `lang` (str, e.g. `"en"`), `is_auto` (bool — **true means Pāḷi terms are unreliable; paraphrase, don't quote**), `segments` (list of `{start, duration, text}`), `fetched` (ISO date).
 - **search-chinese result** (plain dict): `query`, `total_hits` (int, all matches), `total_texts` (int, all matching texts), `by_text` (list of `{id, title, count}`, at most 50, most matches first — `id` like `T0099`, suffix letters kept as in `T0128a`), `hits` (list of `{id, title, vol, line, snippet}` — `vol` is the volume, e.g. `T02`; `line` is the Taishō page-line the match starts on, e.g. `0120a05`).
@@ -597,27 +597,25 @@ Buddhaghosa. *Visuddhimagga* (Path of Purification). Chaṭṭha Saṅgāyana Ti
 Monograph:
 ```
 Harvey, Peter. *The Selfless Mind: Personality, Consciousness and Nirvāṇa in Early
-  Buddhism*. Richmond: Curzon Press, 1995. (Calibre #6294)
+  Buddhism*. Richmond: Curzon Press, 1995.
 ```
 
 Edited volume:
 ```
 Williams, Paul, ed. *Buddhism: Volume IV — Abhidharma and Madhyamaka*. London:
-  Routledge, 2005. (Calibre #4937)
+  Routledge, 2005.
 ```
 
 Chapter in edited volume:
 ```
 Gethin, Rupert. "Bhavaṅga and Rebirth According to the Abhidhamma." In *The Buddhist
   Forum, vol. III*, edited by T. Skorupski and U. Pagel, 11–35. London: SOAS, 1994.
-  (Calibre #10228)
 ```
 
 Journal article (if available via library folders or web):
 ```
 Anālayo, Bhikkhu. "The Luminous Mind in Theravāda and Dharmaguptaka Discourses."
   *Journal of the Oxford Centre for Buddhist Studies* 13 (2017): 10–51.
-  (Calibre #8904)
 ```
 
 When publisher / year / page range are not available from the library folders metadata, include
@@ -1600,7 +1598,7 @@ The library folders index is an FTS5 database. All Calibre books are included wi
 
 **Hard rule:** search results are evidence, not a complete survey. Always run `search-library-folders` before concluding a topic has no library coverage.
 
-**Read before you cite.** A snippet is a lead, not a reading. Run `read-library <document_id> --around "<phrase>"` on every library document the note will cite (its `library_refs`) and every one flagged as dissenting. The index holds each book's full text, so an unmounted volume never blocks this; only a document whose `text_available` is false is a real gap. `scratch-gate 7` refuses a note that cites a readable document never read, or calls one unread, snippet-only or unmounted, and refuses a "Sources Investigated, Not Used" row that rejects one as not read or on its snippet (any row mentioning a snippet) until one successful short read (`--chars 1500`) has looked at it. The gate sees only documents this run's own logged searches returned, so a book cited from memory or from an older note is not checked: read it anyway. Read each document once with one wide window (`--chars 8000`) around its key term; for further matches jump with `--offset` from `match_offsets` instead of new `--around` searches. `--around` matches literal text only; on `phrase not found`, retry with one word that the result's `word_matches` shows in the book (or `--offset 0`) before judging the document. Before reading, check the dossier: a passage another phase already logged is already read — quote it from there.
+**Read before you cite.** A snippet is a lead, not a reading. Run `read-library <document_id> --around "<phrase>"` (the hit's `document_id`, a handle for this run only) on every library document the note will cite (its `library_refs`) and every one flagged as dissenting. The index holds each book's full text, so an unmounted volume never blocks this; only a document whose `text_available` is false is a real gap. `scratch-gate 7` refuses a note that cites a readable document never read, or calls one unread, snippet-only or unmounted, and refuses a "Sources Investigated, Not Used" row that rejects one as not read or on its snippet (any row mentioning a snippet) until one successful short read (`--chars 1500`) has looked at it. It matches the note's citations to this run's logged hits by title and author, and lists each book it refuses with the `document_id`s to read. The gate sees only documents this run's own logged searches returned, so a book cited from memory or from an older note is not checked: read it anyway. Read each document once with one wide window (`--chars 8000`) around its key term; for further matches jump with `--offset` from `match_offsets` instead of new `--around` searches. `--around` matches literal text only; on `phrase not found`, retry with one word that the result's `word_matches` shows in the book (or `--offset 0`) before judging the document. Before reading, check the dossier: a passage another phase already logged is already read — quote it from there.
 
 #### Query conventions — different from the canon DB
 
@@ -1887,7 +1885,7 @@ Citation forms:
 | Source type | ID form | Example |
 |---|---|---|
 | Canon | `[^<booktable>-<para>]` | `[^s0201m-70]` |
-| Library | `[^calibre-<book_id>]` | `[^calibre-223]` |
+| Library | `[^lib-<n>]`, numbered 1, 2, 3 by first use | `[^lib-1]`, `[^lib-2]` |
 | Web / YouTube | `[^web-<n>]` | `[^web-1]`, `[^web-2]` |
 
 The footnote definitions go at the bottom of the note (see Phase 7 template). Keep definitions short — they are locators, not evidence repeats. The full Pāḷi/English blockquotes belong in the Evidence sections.
@@ -2147,7 +2145,7 @@ canon_refs:
   - <human_ref>
   - ...
 library_refs:
-  - "<book_id>: <title> — <author>"
+  - "<title> — <author>"  # the hit's cite_as; never a number (Rule F4)
 web_refs:
   - <url>
 ---
@@ -2196,12 +2194,12 @@ Evidence funnel: <N> T1 canon hits → <N> T2 commentary hits → <N> T3 library
 |--------|------|-----------------|
 | MN60 para 12 | T1 Canon | Duplicate of para 97 — same argument, verbatim repetition |
 | Papañcasūdanī para 45 | T2 Commentary | Redundant — same gloss covered by para 44 already cited |
-| [[Some Book Title]] — Author (Calibre #6294) | T3 Scholarly | Metadata hit only; no FTS snippet; title too generic to cite without content |
+| [[Some Book Title]] — Author | T3 Scholarly | Metadata hit only; no FTS snippet; title too generic to cite without content |
 | ~180 further library FTS hits — broad "clinging"/"grief" sweep | T3 Scholarly | Reviewed as a set: tangential shelf noise (general psychology, unrelated histories); none load-bearing |
 | https://example.com/article | T3 Web | Blocked / JS-only; content not retrievable |
 | Channel — Talk Title (video_id) | T4 Talks | Auto-captions only; Pāḷi terms mangled beyond reliable paraphrase |
 
-Individually rejected library sources carry their `document_id` as a `Calibre #<id>` token (grouped forms like `Calibre #1944/#27645` count for every id). A broad FTS sweep's tangential tail does not get per-row entries: review it as a set and account for it with a single consolidated row, as in the example.
+Name each individually rejected library book by title and author, as its `cite_as` gives them, so `scratch-check-coverage` can match the row to its hit; one row may name several books ("Reviewed as a set: <Title> — <Author>; <Title> — <Author>"). Never add a number (Rule F4). A broad FTS sweep's tangential tail does not get per-row entries: review it as a set and account for it with a single consolidated row, as in the example.
 
 ## Angles Not Pursued
 | Angle | Reason not pursued |
@@ -2236,10 +2234,10 @@ block. Omit any subsection that has no entries. Sort Secondary Sources by author
 ### Secondary Sources
 
 Harvey, Peter. *The Selfless Mind: Personality, Consciousness and Nirvāṇa in Early
-  Buddhism*. Richmond: Curzon Press, 1995. (Calibre #6294)
+  Buddhism*. Richmond: Curzon Press, 1995.
 
 Karunadasa, Y. *Theravāda Abhidhamma: Its Inquiry into the Nature of Conditioned
-  Reality*. Hong Kong: University of Hong Kong, 2010. (Calibre #7335)
+  Reality*. Hong Kong: University of Hong Kong, 2010.
 
 ### Online Sources
 
@@ -2260,7 +2258,7 @@ Ajahn Brahm. "Understanding Nibbāna." *Buddhist Society of Western Australia* (
 *Researched by [Vicaya](https://github.com/bdhrs/vicaya) using <Model family + version> (<host app>) on YYYY-MM-DD HH:MM.*
 
 [^s0201m-70]: MN9 Sammādiṭṭhisuttaṃ para 70 — db: s0201m_mul, para 70
-[^calibre-223]: [[On Meditation]] — Ajahn Chah (Calibre #223)
+[^lib-1]: [[On Meditation]] — Ajahn Chah
 [^web-1]: [Ānāpānasati Sutta](https://www.dhammatalks.org/suttas/mn/mn118.html) — retrieved YYYY-MM-DD
 ```
 
@@ -2313,23 +2311,21 @@ Put retrieval dates and annotations in the Web Evidence section body, not here.
 - https://accesstoinsight.org/tipitaka/dn/dn.22.0.than.html
 ```
 
-**Rule F4 — `library_refs` entries must be quoted strings, not bare mappings.**
+**Rule F4 — Cite a library book by its title and author, never by a number; `library_refs` entries are quoted strings.**
 
-Obsidian's property renderer cannot display nested YAML objects. A bare `- 223: Title`
-is a YAML mapping (key `223`, value `Title`) — Obsidian shows it as a red broken
-property. Wrap the whole entry in double quotes so it is a plain string:
+Obsidian's property renderer cannot display nested YAML objects, and a bare entry with `: ` inside it is a YAML mapping that Obsidian shows as a red broken property. Wrap the whole entry in double quotes so it is a plain string:
 
 ```yaml
-# WRONG — YAML mapping, renders red/broken in Obsidian
+# WRONG — a number, and a YAML mapping that renders red in Obsidian
 library_refs:
   - 223: On Meditation — Ajahn Chah
 
-# CORRECT — quoted string, renders cleanly
+# CORRECT — quoted title and author
 library_refs:
-  - "223: On Meditation — Ajahn Chah"
+  - "On Meditation — Ajahn Chah"
 ```
 
-The `book_id` must come from the `document_id` in a library folders hit — never invent an ID. **Never use the number in brackets at the end of the book's folder name.** In `…/The Luminous Mind in Theravada and Dharmaguptaka Discourses (8904)/…` the `8904` is Calibre's own book number, and the index also prints it as "Calibre #8904" inside its searchable text, so it can turn up in a snippet. It is not the citation number: that hit's `document_id` is 2097, and index id 8904 is an unrelated Piya Tan essay. `scratch-check-coverage` reports a hit cited by its folder number under `folder_number_cited`, with the token to paste instead. **`document_id`s survive an ordinary `library-folders-refresh`, but a full rebuild renumbers every document.** The index was rebuilt on 2026-09-03, so an id in a note written before then may now name a different book (a real instance: id 8757 moved from Anālayo's *Memento Mori* to an unrelated Abhidhamma title). Re-resolve any id you reuse from an older note with a fresh `search-library-folders` hit before citing it.
+Copy the hit's `cite_as`: `<Title> — <Authors>`, with Calibre's own title and diacritics for a Calibre book, or the file name for any other file — then take the author from the book itself. **Never write a library number anywhere in a note:** not the hit's `document_id`, not `Calibre #N`, not a `[^calibre-N]` label, not the `(N)` at the end of a Calibre folder name. A `document_id` is an index row number handed out in walk order, so a rebuild, a moved or renamed file, or another person's library renumbers it. The index was rebuilt on 2026-09-03 and id 8757 moved from Anālayo's *Memento Mori* to an unrelated Abhidhamma title; an audit of 2,058 older `library_refs` entries on 2026-11-19 found only 29% still pointed at the right book. The folder's `(N)` is Calibre's own book number and names nothing outside that one library. `validate_note.py` reports any library number as a `library-number` error. The `document_id` is only the handle you pass to `read-library` during the run.
 
 **Rule F5 — `agent` field and footer line: self-identify accurately.**
 
@@ -2412,8 +2408,8 @@ canon_refs:
   - MN118 Ānāpānasatisuttaṃ para 977
   - SN54.1 Ekadhammosuttaṃ para 1
 library_refs:
-  - "223: On Meditation - Instructions from Talks by Ajaan Chah — Ajahn Chah"
-  - "1683: Buddhist Meditation and Depth Psychology — Douglas M. Burns"
+  - "On Meditation - Instructions from Talks by Ajaan Chah — Ajahn Chah"
+  - "Buddhist Meditation and Depth Psychology — Douglas M. Burns"
 web_refs:
   - https://accesstoinsight.org/tipitaka/mn/mn.118.than.html
 ---
@@ -2450,7 +2446,7 @@ uv run scripts/validate_note.py "Vicaya/${TODAY} - ${SLUG}.md"
 ```
 
 **Read the validator's output, including warnings and errors.** An `error`-severity line
-(e.g. `under-quoted-evidence`, `missing-canon-ref` or `undefined-footnote`) fails the command. `undefined-footnote` means a `[^id]` marker in the body has no `[^id]:` definition line, so the reader sees raw text and loses the citation: add the definition or remove the marker (issue 136). A `warning` still
+(e.g. `under-quoted-evidence`, `missing-canon-ref` or `undefined-footnote`) fails the command. `undefined-footnote` means a `[^id]` marker in the body has no `[^id]:` definition line, so the reader sees raw text and loses the citation: add the definition or remove the marker (issue 136). `library-number` means a library book is cited by a number (`Calibre #N`, `doc N`, `[^calibre-N]`, a numbered `library_refs` entry): replace it with the book's title and author (Rule F4). A `warning` still
 names a real defect in the note you just wrote. A `long-sentence` warning means a sentence of explanatory prose runs past 45 words: split it into one idea per sentence (Style notes), never just shave words to get under the limit. Before continuing: edit the note to fix
 every issue the validator reports, then re-run `validate_note.py` to confirm the output is
 clean. Only once it prints no warnings or errors, proceed:
@@ -2495,22 +2491,14 @@ citations and the rejection table silently. It is advisory, not a hard
 gate — a nonzero exit just means review the listed documents and either cite
 them or add a one-line reason to the rejection table.
 
-The check credits a document when its `document_id` appears anywhere in the note as `calibre-<id>`, `Calibre #<id>`, or a bare `#<id>`; grouped forms such as `Calibre #1944/#27645` or `#765, #860` count for every id. **When logging a library source in `## Sources Investigated, Not Used`, include its `document_id`** (e.g. `Author, Title (Calibre #2365)`) so the rejection is machine-checkable, not just a title a future pass can't verify against. Never use the Calibre folder number (see Rule F4).
+The check matches by title, never by number: a gathered hit is accounted for when a `library_refs` entry, a library footnote or a Not Used row names its book, or when a note line holds its title. Accents, case, Calibre's cut names, dropped subtitles and copies of one book in several libraries are tolerated; when no logged hit matches a citation by name, the title is looked up on the title page of each hit's indexed text (a file such as `prebish-article.pdf` holds no title in its name). **When logging a library source in `## Sources Investigated, Not Used`, name it by title and author** as its `cite_as` gives them (Rule F4).
 
-The JSON result holds `ok`, `note`, `library_hits_gathered`, `unaccounted_count`, and three lists:
+The JSON result holds `ok`, `note`, `library_hits_gathered`, `unaccounted_count`, and two lists:
 
-- `unaccounted` — gathered documents the note never mentions, **most likely to matter first**: returned by more distinct searches, then by best rank. The first ten carry `relative_path`, `snippet`, `queries` and `best_rank`; the rest carry only `document_id` and `title`. Review the first ten one by one — cite each or give it its own rejection row — then scan the remaining titles and account for them with the consolidated row below. (Measured over 73 real dossiers: a book a note did cite, removed and re-ranked, landed in the first ten 49% of the time against 35% for random order — the ordering helps, but scanning the remaining titles still matters.)
-- `folder_number_cited` — documents the note cited by their Calibre folder number. That number names a different document, so the citation is wrong: replace it with the `cite_as` token. Any entry here makes `ok` false.
-- `cited_not_gathered` — `Calibre #` numbers in the note that match no library hit logged this run. Advisory: a number carried from an older note or written from memory lands here, so check that each one still names the book the note says.
+- `unaccounted` — gathered documents the note never mentions, **most likely to matter first**: returned by more distinct searches, then by best rank. The first ten carry `cite_as`, `relative_path`, `snippet`, `queries` and `best_rank`; the rest carry only `document_id` and `cite_as`. Review the first ten one by one — cite each or give it its own rejection row — then scan the remaining titles and account for them with the consolidated row below. (Measured over 73 real dossiers: a book a note did cite, removed and re-ranked, landed in the first ten 49% of the time against 35% for random order — the ordering helps, but scanning the remaining titles still matters.)
+- `cited_not_gathered` — citations (`library_refs` entries and library footnotes) that name no library hit logged this run. Advisory: a book cited from memory or carried from an older note lands here, so search for it and read it before keeping the citation.
 
-**Large FTS tails don't need per-row accounting.** A broad Phase 3 sweep on a
-common term routinely leaves 50–300 tangential index hits unaccounted, and the
-check will report them; that is expected, not a defect to enumerate away.
-Name the genuinely load-bearing near-misses individually (each with its
-`Calibre #<id>`), then account for the remainder with one consolidated
-rejection row ("~N further library FTS hits — broad sweep, reviewed as a set,
-non-load-bearing"). The check is advisory: after that review, a nonzero
-residual count is an acceptable outcome to report, not a gate failure.
+**Large FTS tails don't need per-row accounting.** A broad Phase 3 sweep on a common term routinely leaves 50–300 tangential index hits unaccounted, and the check will report them; that is expected, not a defect to enumerate away. Name the genuinely load-bearing near-misses individually (each by title and author), then account for the remainder with one consolidated rejection row ("~N further library FTS hits — broad sweep, reviewed as a set, non-load-bearing"). The check is advisory: after that review, a nonzero residual count is an acceptable outcome to report, not a gate failure.
 
 ### Citation shape check (hard — blocks the gate)
 
@@ -2638,7 +2626,7 @@ fails silently. In `summary-vicaya.md` the alias pipe inside a table row is
 escaped (`[[target\|Display]]`), so keep that form. After editing, confirm with
 a grep that your new line appears exactly once and under the intended heading.
 
-→ **Phase 7 exit:** after validation/PDF generation, run `scratch-set-note` (records the saved note + PDF paths), then `check-citation-shape` (hard — fix every finding), then `check-quotes` (advisory — fix every real finding), then `check-bibliography` (advisory — find or remove every flagged entry), then `scratch-check-coverage` (advisory — review any flagged library documents), then `scratch-self-audit` with answers (the gate refuses without it), then `scratch-gate 7` (it also refuses on `cited_not_read` / `flagged_unread_but_readable` / `rejected_unread` library ids — run `read-library` on each, fix the note, regenerate its PDF if the run made one, re-run `scratch-set-note` (with `--pdf skipped` when it did not), then gate again), then `uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"`; then update the two vault index notes — add a dated row with a one-sentence description to the matching table in `Vicaya/summary-vicaya.md`, and a wikilink under the matching (or a new) topic heading in `Vicaya/catalog-by-topics.md` — then run `uv run scripts/check_vault_indexes.py --note "Vicaya/${TODAY} - ${SLUG}.md"` (hard — fix every finding before publishing; see **Vault index check**) and publish both with `uv run scripts/sync_notes.py "Vicaya/summary-vicaya.md"` and `uv run scripts/sync_notes.py "Vicaya/catalog-by-topics.md"`; after writing the reflection, run `uv run scripts/sync_run_report.py`. The run is not complete until the gate passes and every sync command has been attempted — the gate confirms the vault path and PDF path are recorded in the dossier, note sync publishes the saved note, index sync keeps `summary-vicaya.md`/`catalog-by-topics.md` current, and run-report sync publishes the latest `runs/*.md` report. `scripts/sync_run_report.py` is a pre-approved run-report publishing script and may pull, commit, and push Vicaya run reports in this project repo. New or materially modified scripts are not automatically pre-approved for git, publishing, deployment, sync, delete, or overwrite operations.
+→ **Phase 7 exit:** after validation/PDF generation, run `scratch-set-note` (records the saved note + PDF paths), then `check-citation-shape` (hard — fix every finding), then `check-quotes` (advisory — fix every real finding), then `check-bibliography` (advisory — find or remove every flagged entry), then `scratch-check-coverage` (advisory — review any flagged library documents), then `scratch-self-audit` with answers (the gate refuses without it), then `scratch-gate 7` (it also refuses on `cited_not_read` / `flagged_unread_but_readable` / `rejected_unread` library books — run `read-library` on an id from each book's `read_library` list, fix the note, regenerate its PDF if the run made one, re-run `scratch-set-note` (with `--pdf skipped` when it did not), then gate again), then `uv run scripts/sync_notes.py "Vicaya/${TODAY} - ${SLUG}.md"`; then update the two vault index notes — add a dated row with a one-sentence description to the matching table in `Vicaya/summary-vicaya.md`, and a wikilink under the matching (or a new) topic heading in `Vicaya/catalog-by-topics.md` — then run `uv run scripts/check_vault_indexes.py --note "Vicaya/${TODAY} - ${SLUG}.md"` (hard — fix every finding before publishing; see **Vault index check**) and publish both with `uv run scripts/sync_notes.py "Vicaya/summary-vicaya.md"` and `uv run scripts/sync_notes.py "Vicaya/catalog-by-topics.md"`; after writing the reflection, run `uv run scripts/sync_run_report.py`. The run is not complete until the gate passes and every sync command has been attempted — the gate confirms the vault path and PDF path are recorded in the dossier, note sync publishes the saved note, index sync keeps `summary-vicaya.md`/`catalog-by-topics.md` current, and run-report sync publishes the latest `runs/*.md` report. `scripts/sync_run_report.py` is a pre-approved run-report publishing script and may pull, commit, and push Vicaya run reports in this project repo. New or materially modified scripts are not automatically pre-approved for git, publishing, deployment, sync, delete, or overwrite operations.
 
 After both sync commands have been attempted, clean only this run's disposable repo-local temp directory; never remove `data/scratch/` or scratch-local draft/review files:
 
@@ -2837,8 +2825,8 @@ Format rules:
 
 - **Canon:** `[^<booktable>-<para>]: <human_ref> — db: <table>, para <paranum>`
   Example: `[^s0201m-70]: MN9 Sammādiṭṭhisuttaṃ para 70 — db: s0201m_mul, para 70`
-- **Library:** `[^calibre-<id>]: [[<Title>]] — <Author> (Calibre #<id>)`
-  Example: `[^calibre-223]: [[On Meditation]] — Ajahn Chah (Calibre #223)`
+- **Library:** `[^lib-<n>]: [[<Title>]] — <Author>`, numbered 1, 2, 3 by first use; title and author from the hit's `cite_as`, never a number (Rule F4)
+  Example: `[^lib-1]: [[On Meditation]] — Ajahn Chah`
 - **Web:** `[^web-<n>]: [<page title>](<url>) — retrieved YYYY-MM-DD`
   Example: `[^web-1]: [Ānāpānasati Sutta](https://www.dhammatalks.org/suttas/mn/mn118.html) — retrieved 2026-05-14`
 - **YouTube:** `[^web-<n>]: [<Channel> — <Title>](https://youtu.be/<id>?t=<sec>) — retrieved YYYY-MM-DD`

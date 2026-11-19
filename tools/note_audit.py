@@ -146,10 +146,11 @@ def _bibliography_entries(note_text: str) -> list[tuple[str, str]]:
 
 
 def _untraced_reason(entry: str, dossier: str) -> str | None:
-    """Why `entry` cannot have come from this run's evidence, or None if it can."""
-    calibre = re.search(r"Calibre #(\d+)", entry)
-    if calibre and calibre.group(1) in dossier:
-        return None
+    """Why `entry` cannot have come from this run's evidence, or None if it can.
+
+    A library book is traced by its author and title only: an index or
+    Calibre number in the entry proves nothing, as it changes on a rebuild.
+    """
     url = re.search(r"https?://([^/\s)]+)", entry)
     if url and url.group(1).removeprefix("www.") in dossier:
         return None

@@ -106,9 +106,7 @@ Write the answer directly to the user, scaled to the question:
 
 1. **Direct answer first** — lead with the conclusion, a few sentences.
 2. **Evidence** — the key passages with citations: canon as
-   `**MN60 Apaṇṇakasuttaṃ para 97** — "<pāḷi>" / "<english>"`, library as
-   `[[Book]] — Author: "<snippet>"`, web as `[title](url)`, EBC translations
-   cited to the translator (Bodhi/Sujato/Patton/…), never to "EBC".
+   `**MN60 Apaṇṇakasuttaṃ para 97** — "<pāḷi>" / "<english>"`, library as `[[Book]] — Author: "<snippet>"` with the title and author copied from the hit's `cite_as` (for a file outside Calibre, `cite_as` is only the file name: take the author from the book itself; never a library number: index ids change on every rebuild), web as `[title](url)`, EBC translations cited to the translator (Bodhi/Sujato/Patton/…), never to "EBC".
 3. **Honesty line** — one line on what's uncertain, contested, or not searched.
 
 Keep it tight. This is an answer, not a dossier — depth lives in the sources you
