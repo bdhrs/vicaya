@@ -39,3 +39,6 @@ complement the global rules and the canonical `/vicaya` workflow in
 
 ## Research Dossiers
 - Helper calls auto-log into whichever research run is active, found through a shared state file. While any /vicaya run is live, even one run by another agent, prefix side calls to `tools/research_sources.py` and any pytest run with `VICAYA_SCRATCH=/dev/null/none`, or they land in that run's dossier.
+
+## Vault edits
+- The vault (`<vault>/Vicaya`) is pulled automatically with `git pull --autostash`. Bulk note edits left uncommitted can come back with conflict markers when another committer changes the same note; commit vault edits (with the user's go-ahead) as soon as they are verified, and run any end-to-end check before applying, not after.

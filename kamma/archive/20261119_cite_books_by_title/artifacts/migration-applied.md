@@ -1,4 +1,4 @@
-# Migration dry run
+# Migration applied
 
 Notes considered: 360. Notes changed: 334. Notes with a dossier: 157.
 
@@ -158,7 +158,7 @@ Notes considered: 360. Notes changed: 334. Notes with a dossier: 157.
 - `2026-06-10 - nibbana-nibbuto-parinibbuto-morphology.md`:306 — 836: no title in refs or dossier — `| Bhikkhu Bodhi article collection, Calibre #836 | T3 Scholarly/teacher | Relevant index snippet found, but source file was unavailable; mūla canon and web sources cover the claim directly. |`
 - `2026-06-10 - nibbana-nibbuto-parinibbuto-morphology.md`:307 — 3730: no title in refs or dossier — `| Thanissaro, *The Mind Like Fire Unbound*, Calibre #3730 | T3 Teacher/scholar | Local file unavailable; official dhammatalks.org version was used instead. |`
 - `2026-06-11 - early-buddhist-teaching-and-the-work.md`:193 — 2345: no title in refs or dossier — `Majjhima Nikaya. "Madhupindika Sutta - Majjhima Nikaya." Translated by Thanissaro Bhikkhu. Calibre #2345, local file `Madhupindika Sutta - Majjhima Nikaya.txt`.`
-- `2026-06-11 - early-buddhist-teaching-and-the-work.md`:247 — 2345: no title in refs or dossier — `[^lib-1]: Calibre #2345, document id 35290, "Madhupindika Sutta - Majjhima Nikaya.txt." Readable local file under `/Users/deva/calibre-local/Majjhima Nikaya/Madhupindika Sutta (2345)/`.`
+- `2026-06-11 - early-buddhist-teaching-and-the-work.md`:247 — 2345: no title in refs or dossier — `[^lib-1]: Calibre #2345, document id 35290, "Madhupindika Sutta - Majjhima Nikaya.txt." Readable local file under `<home>/calibre-local/Majjhima Nikaya/Madhupindika Sutta (2345)/`.`
 - `2026-06-12 - khandha-ayatana-relationship.md`:375 — 6352: no title in refs or dossier — `| `nit` | Hamilton's experience-thesis cited via Ronkin rather than from *Identity and Experience* directly | Locate the book (Calibre #6352 per the 2026-06-03 run) and quote chapter 1/5 directly |`
 - `2026-06-14 - avirulhichanda-arahant-chanda-rebirth.md`:202 — 9137: no title in refs or dossier — `| Ratana Sutta — Nissaya, Paritta.htm, Sri Lankan Chanting, etc. (Calibre #9137, #9080, #9139, #3038…) | T3 Library | Chanting/*paritta* files only; `source_available: false`; no exegesis of *avirūḷhichanda* |`
 - `2026-06-14 - avirulhichanda-arahant-chanda-rebirth.md`:202 — 9080: no title in refs or dossier — `| Ratana Sutta — Nissaya, Paritta.htm, Sri Lankan Chanting, etc. (Calibre #9137, #9080, #9139, #3038…) | T3 Library | Chanting/*paritta* files only; `source_available: false`; no exegesis of *avirūḷhichanda* |`
