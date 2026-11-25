@@ -3825,6 +3825,13 @@ def _cli() -> int:
         _dump(result, quiet=getattr(args, "quiet", False))
         return _done([args.term], result, exit_code=0 if result["ok"] else 1)
 
+    def _handle_fetch_wikipedia(args):
+        from tools.wikipedia import fetch_wikipedia
+
+        result = fetch_wikipedia(args.title)
+        _dump(result, quiet=getattr(args, "quiet", False))
+        return _done([args.title], result, exit_code=0 if result["ok"] else 1)
+
     def _handle_check_bibliography(args):
         from tools.note_audit import check_bibliography
 
@@ -4461,6 +4468,16 @@ def _cli() -> int:
         help="Keep each definition whole (default cuts each at 2,500 characters).",
     )
     pwl.set_defaults(func=_handle_fetch_wisdomlib)
+
+    pwp = sub.add_parser(
+        "fetch-wikipedia",
+        help="Plain-text extract of one English Wikipedia article (Phase 4). "
+        "Uses the system resolver, else DNS-over-HTTPS when DNS is sinkholed "
+        "(0.0.0.0) or the connection fails. If both fail it returns "
+        "blocked=true: record one gap and do not retry.",
+    )
+    pwp.add_argument("title", help="One article title, e.g. 'Atthakavagga'.")
+    pwp.set_defaults(func=_handle_fetch_wikipedia)
 
     pcb = sub.add_parser(
         "check-bibliography",

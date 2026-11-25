@@ -42,3 +42,7 @@ complement the global rules and the canonical `/vicaya` workflow in
 
 ## Vault edits
 - The vault (`<vault>/Vicaya`) is pulled automatically with `git pull --autostash`. Bulk note edits left uncommitted can come back with conflict markers when another committer changes the same note; commit vault edits (with the user's go-ahead) as soon as they are verified, and run any end-to-end check before applying, not after.
+
+## Vicaya helpers — test through the skill
+
+When adding or changing a `research_sources.py` helper, verify it the way the skill uses it: a throwaway `scratch-init` run, the `VICAYA_PHASE=<phase> … --quiet` call template, the auto-logged dossier entry, and (for discoverability) a Haiku dispatch with the skill's real gather prompt. The user never runs helpers outside the skill. Delete the throwaway dossier and its `.active-*.json` pointer afterwards.
