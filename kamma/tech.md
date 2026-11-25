@@ -22,7 +22,7 @@
 
 ## OpenAlex (scholarly index)
 
-`search_openalex()` in `tools/research_sources.py` is the **only helper that touches the network** — everything else is local files, SQLite or a subprocess. It queries `https://api.openalex.org/works` over plain `urllib`, no auth, no SDK, no new dependency. The HTTP opener is injectable so tests never make a real request.
+`search_openalex()` in `tools/research_sources.py`, `tools/wisdomlib.py` and `tools/wikipedia.py` are the **only helpers that touch the network** — everything else is local files, SQLite or a subprocess. `tools/wikipedia.py` falls back to DNS-over-HTTPS (`1.1.1.1`) because some networks answer `0.0.0.0` for `*.wikipedia.org` on port 53 (2026-11-25). `search_openalex()` queries `https://api.openalex.org/works` over plain `urllib`, no auth, no SDK, no new dependency. The HTTP opener is injectable so tests never make a real request.
 
 Four behaviours are load-bearing and were each established by measurement, not by the API docs — changing any of them silently degrades the channel to noise:
 
